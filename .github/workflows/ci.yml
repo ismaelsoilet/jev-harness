@@ -39,6 +39,11 @@ jobs:
           python src/jev_harness/cli.py route --task "Fix typo in docstrings" --json --mock
           echo "ModuleNotFoundError: test" | python src/jev_harness/cli.py test-gate --mock
 
+      - name: Test MCP Server entrypoints (Installed & Direct script)
+        run: |
+          echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' | jev-mcp
+          echo '{"jsonrpc":"2.0","id":2,"method":"initialize","params":{}}' | python src/jev_harness/mcp_server.py
+
   test-typescript:
     name: TypeScript (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest

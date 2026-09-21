@@ -149,6 +149,17 @@ class TestMCPServer(unittest.TestCase):
         content = json.loads(resp["result"]["content"][0]["text"])
         self.assertTrue(content["is_verified"])
 
+    def test_mcp_run_server_loop(self):
+        from io import StringIO
+        from unittest.mock import patch
+        from jev_harness.mcp_server import run_mcp_server
+
+        req = json.dumps({"jsonrpc": "2.0", "id": 99, "method": "ping"}) + "\n"
+        with patch("sys.stdin", StringIO(req)), patch("sys.stdout", new_callable=StringIO) as mock_out:
+            run_mcp_server(client=self.client)
+            output = mock_out.getvalue().strip()
+            self.assertIn('"id": 99', output)
+
 
 if __name__ == "__main__":
     unittest.main()

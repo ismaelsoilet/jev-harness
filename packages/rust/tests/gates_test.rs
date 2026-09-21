@@ -142,3 +142,45 @@ async fn test_verify_step_completion() {
     assert!(res.is_verified);
     assert!(!res.needs_rework);
 }
+
+#[tokio::test]
+async fn test_adversarial_negated_abort() {
+    let client = JevClient::with_mock();
+    let res = should_abort_trajectory(
+        "Do NOT abort, proceed with database migration steps",
+        "Previous step completed migration script",
+        Some(&client),
+    )
+    .await
+    .expect("Abort check failed");
+
+    assert!(!res.should_abort, "Negated abort statement must NOT trigger abort");
+    assert_eq!(res.action, "proceed");
+}
+
+#[tokio::test]
+async fn test_adversarial_assertion_testing_module() {
+    let client = JevClient::with_mock();
+    let res = triage_test_failure(
+        "FAILED tests/test_loader.py::test_missing - AssertionError: expected 'No module named foo' to be raised",
+        Some(&client),
+    )
+    .await
+    .expect("Triage failed");
+
+    assert_eq!(res.category, "deep_logic", "AssertionError must take precedence over substring module names");
+    assert!(!res.skip_llm, "Logic failure must NOT skip LLM");
+}
+
+#[tokio::test]
+async fn test_adversarial_heavy_priority_over_typo() {
+    let client = JevClient::with_mock();
+    let res = route_model_tier(
+        "Architect enterprise distributed kernel allocator and fix typo in docstring",
+        Some(&client),
+    )
+    .await
+    .expect("Route failed");
+
+    assert_eq!(res.selected_tier, "heavy_system2", "Heavy architectural keywords must override typo in routing");
+}

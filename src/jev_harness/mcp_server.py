@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import sys
+from typing import Any, Dict, List, Optional
 
 try:
     from .client import JevClient

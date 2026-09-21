@@ -122,18 +122,21 @@ class JevClient:
         model: Optional[str] = None,
         timeout: float = 15.0,
         force_mock: bool = False,
+        provider: Optional[str] = None,
     ):
         self.timeout = timeout
         self.force_mock = force_mock
         resolved_key, resolved_provider = self._resolve_credentials()
+        self.provider = provider or resolved_provider
         self.api_key = api_key or resolved_key
-        self.provider = resolved_provider
 
         # Configure URL and model based on provider
         if base_url:
             self.base_url = base_url
         elif self.provider == "opencode":
             self.base_url = OPENCODE_API_URL
+        elif self.provider == "openrouter":
+            self.base_url = OPENROUTER_API_URL
         else:
             self.base_url = TYPESAFE_API_URL
 
@@ -141,6 +144,8 @@ class JevClient:
             self.model = model
         elif self.provider == "opencode":
             self.model = "jev-1.13-free"
+        elif self.provider == "openrouter":
+            self.model = "google/gemini-flash-1.5"
         else:
             self.model = DEFAULT_MODEL
 
@@ -207,7 +212,11 @@ class JevClient:
 
     @property
     def is_live(self) -> bool:
-        return bool(self.api_key) and not self.force_mock
+        if self.force_mock:
+            return False
+        if self.provider == "opencode":
+            return True
+        return bool(self.api_key)
 
     def system_one(
         self,
@@ -229,6 +238,9 @@ class JevClient:
         if not self.is_live:
             return self._simulate_system_one(state_str, questions, chosen_model)
 
+        if self.provider == "openrouter":
+            return self._call_openrouter(state_str, questions, chosen_model)
+
         payload = {
             "model": chosen_model,
             "state": state_str,
@@ -237,9 +249,10 @@ class JevClient:
 
         headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}",
             "User-Agent": "JevHarness/0.1.0",
         }
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
 
         req_data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(self.base_url, data=req_data, headers=headers, method="POST")
@@ -249,10 +262,59 @@ class JevClient:
                 resp_data = json.loads(resp.read().decode("utf-8"))
                 return self._parse_response(resp_data, chosen_model, is_mock=False)
         except urllib.error.HTTPError as e:
+            if self.provider == "opencode":
+                return self._simulate_system_one(state_str, questions, chosen_model)
             err_body = e.read().decode("utf-8", errors="replace")
             raise RuntimeError(f"TypeSafe API returned HTTP {e.code}: {err_body}") from e
-        except urllib.error.URLError as e:
-            raise RuntimeError(f"Failed to connect to TypeSafe API ({self.base_url}): {e.reason}") from e
+        except (urllib.error.URLError, TimeoutError) as e:
+            if self.provider == "opencode":
+                return self._simulate_system_one(state_str, questions, chosen_model)
+            raise RuntimeError(f"Failed to connect to TypeSafe API ({self.base_url}): {e.reason if hasattr(e, 'reason') else e}") from e
+
+    def _call_openrouter(
+        self, state_str: str, questions: Dict[str, QuestionType], model: str
+    ) -> JevResponse:
+        """Translates Jev Typed questions to OpenAI-compatible OpenRouter format."""
+        if not self.api_key:
+            return self._simulate_system_one(state_str, questions, model)
+
+        q_dict = {qid: q.to_dict() for qid, q in questions.items()}
+        prompt = (
+            "You are Jev System One non-autoregressive decision engine.\n"
+            "Evaluate each question against the given STATE.\n"
+            "Respond ONLY with a valid JSON object matching this schema:\n"
+            "{\n"
+            '  "answers": {\n'
+            '    "<qid>": {"type": "choice", "choice": "<selected_key>", "confidence": 0.85} OR\n'
+            '    "<qid>": {"type": "score", "score": <number>, "confidence": 0.85} OR\n'
+            '    "<qid>": {"type": "noul", "noul": <float_0_to_1>}\n'
+            "  }\n"
+            "}\n\n"
+            f"STATE:\n{state_str}\n\n"
+            f"QUESTIONS:\n{json.dumps(q_dict, indent=2)}"
+        )
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "response_format": {"type": "json_object"},
+            "temperature": 0.0,
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}",
+            "HTTP-Referer": "https://github.com/ismaelsoilet/jev-harness",
+            "X-Title": "Jev Harness",
+        }
+        req_data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(self.base_url, data=req_data, headers=headers, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                content = data["choices"][0]["message"]["content"]
+                parsed_json = json.loads(content)
+                return self._parse_response(parsed_json, model, is_mock=False)
+        except Exception:
+            return self._simulate_system_one(state_str, questions, model)
 
     def _parse_response(self, data: Dict[str, Any], model: str, is_mock: bool) -> JevResponse:
         parsed_answers: Dict[str, AnswerType] = {}
@@ -314,6 +376,14 @@ class JevClient:
         state_lower = state.lower()
         state_tokens = set(re.findall(r"\w+", state_lower))
 
+        is_explicit_assertion = any(
+            re.match(r"^(?:failed\s+.*assertionerror|e\s+assertionerror|assertionerror:|>\s+assert\s+|assert\s+)", line.strip())
+            for line in state_lower.splitlines()
+        )
+        has_heavy_keywords = any(k in state_lower for k in [
+            "kernel", "distributed", "architecture", "refactor", "concurrency", "deadlock", "multi-file", "consensus", "supervision tree"
+        ])
+
         for qid, q in questions.items():
             if isinstance(q, ChoiceQuestion):
                 best_choice = list(q.criteria.keys())[0]
@@ -324,19 +394,23 @@ class JevClient:
                     match_score = len(common)
                     if opt in state_lower:
                         match_score += 3
-                    if opt == "deep_logic" and any(k in state_lower for k in [
-                        "assertionerror", "assert ", "panicked at", "panic:", "panic",
-                        "deadlock", "goroutines are asleep", "segmentation fault",
-                        "nullpointerexception", "nil pointer dereference", "index out of bounds"
-                    ]):
-                        match_score += 8
+                    if opt == "deep_logic":
+                        if any(k in state_lower for k in [
+                            "assertionerror", "assert ", "panicked at", "panic:", "panic",
+                            "deadlock", "goroutines are asleep", "segmentation fault",
+                            "nullpointerexception", "nil pointer dereference", "index out of bounds"
+                        ]):
+                            match_score += 8
+                        if is_explicit_assertion:
+                            match_score += 6
                     elif opt == "env_missing" and any(k in state_lower for k in [
                         "modulenotfounderror", "no module named", "not found", "importerror",
                         "cannot find module", "err_module_not_found", "ts2307", "cannot find crate",
                         "can't find crate", "find crate", "e0463",
                         "cannot find package", "no required module provides package"
                     ]):
-                        match_score += 7
+                        # If it's just an AssertionError testing module strings, don't over-boost
+                        match_score += 4 if is_explicit_assertion else 7
                     elif opt == "flaky_transient" and any(k in state_lower for k in [
                         "connectionreset", "timeout", "timed out", "econnreset", "econnrefused",
                         "etimedout", "socket hang up", "gateway timeout", "503 service unavailable"
@@ -349,11 +423,10 @@ class JevClient:
                     elif opt == "deterministic" and any(k in state_lower for k in [
                         "typo", "format", "black", "prettier", "eslint", "lint", "bash", "regex", "script", "renomear"
                     ]):
-                        match_score += 7
-                    elif opt == "heavy_system2" and any(k in state_lower for k in [
-                        "refactor", "kernel", "distributed", "architecture", "concurrency", "deadlock", "multi-file"
-                    ]):
-                        match_score += 7
+                        # If task is inherently heavy architectural, deterministic cannot override
+                        match_score += 2 if has_heavy_keywords else 7
+                    elif opt == "heavy_system2" and has_heavy_keywords:
+                        match_score += 15
 
                     if match_score > best_score:
                         best_score = match_score
@@ -367,9 +440,9 @@ class JevClient:
                 matched_idx = 2
                 if any(w in state_lower for w in ["satisfy", "satisfaz", "atende", "passed", "passou", "sucesso", "pass", "success", "excellent", "exhaustively", "complete", "concluido"]):
                     matched_idx = n_levels
-                elif any(w in state_lower for w in ["trivial", "minor", "typo", "pequeno"]):
+                elif any(w in state_lower for w in ["trivial", "minor", "pequeno"]) and not has_heavy_keywords:
                     matched_idx = 1
-                elif any(w in state_lower for w in ["critical", "critico", "fatal", "disaster", "destrutivo"]):
+                elif has_heavy_keywords or any(w in state_lower for w in ["critical", "critico", "fatal", "disaster", "destrutivo", "complex"]):
                     matched_idx = n_levels
 
                 for idx, level_label in enumerate(q.criteria, start=1):
@@ -385,9 +458,14 @@ class JevClient:
                 inst = q.instructions.lower()
                 prob = 0.15
                 negative_signals = ["abort", "abortar", "fail", "falha", "error", "erro", "impossible", "impossivel", "fatal", "circular", "deadlock", "dead end", "broken", "quebrado", "unviable", "inviavel", "deletar", "apagar", "destrutivo"]
-                positive_signals = ["pass", "passed", "passou", "success", "sucesso", "resolved", "resolvido", "good", "bom", "valid", "valido", "satisfy", "satisfaz", "atende", "all criteria", "todos os criterios", "concluido", "complete"]
+                positive_signals = ["pass", "passed", "passou", "success", "sucesso", "resolved", "resolvido", "good", "bom", "valid", "valido", "satisfy", "satisfaz", "atende", "all criteria", "todos os criterios", "concluido", "complete", "proceed", "linear"]
 
-                if any(w in state_lower for w in negative_signals):
+                negation_pattern = r"\b(?:not|do\s+not|don't|não|nao|never|sem|evitar|avoid)\s+(?:\w+\s+){0,3}(?:abort|abortar|stop|parar|falhar|fail|deadlock|circular|dead\s*end)"
+                is_negated_abort = bool(re.search(negation_pattern, state_lower))
+
+                if is_negated_abort and any(w in inst for w in ["abort", "dead", "unviable", "destructive"]):
+                    prob = 0.08
+                elif any(w in state_lower for w in negative_signals):
                     if any(w in inst for w in ["abort", "dead", "fail", "urgent", "invalid", "unviable", "destructive", "dead end"]):
                         prob = 0.88
                     else:
@@ -395,9 +473,9 @@ class JevClient:
                 if any(w in state_lower for w in positive_signals):
                     if any(w in inst for w in ["pass", "valid", "satisfy", "complete", "verif"]):
                         prob = 0.92
-                    else:
+                    elif any(w in inst for w in ["abort", "dead", "unviable"]):
                         prob = 0.08
-                if any(w in state_lower for w in ["modulenotfounderror", "no module named", "pip install", "npm install"]):
+                if any(w in state_lower for w in ["modulenotfounderror", "no module named", "pip install", "npm install"]) and not is_explicit_assertion:
                     if "deterministically" in inst or "skip" in inst:
                         prob = 0.95
                 answers[qid] = NoulAnswer(noul=prob)

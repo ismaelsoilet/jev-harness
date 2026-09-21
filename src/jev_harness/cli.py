@@ -66,6 +66,40 @@ def cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_metrics(args: argparse.Namespace) -> int:
+    from .session import load_session, reset_metrics
+    if args.reset:
+        reset_metrics()
+        print("\n[OK] Jev Harness metrics reset successfully.\n")
+        return 0
+
+    s = load_session()
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "total_triage_calls": s.total_triage_calls,
+                    "skipped_llm_calls": s.skipped_llm_calls,
+                    "abort_guards_triggered": s.abort_guards_triggered,
+                    "deterministic_routes": s.deterministic_routes,
+                    "estimated_tokens_saved": s.estimated_tokens_saved,
+                    "estimated_cost_saved_usd": round(s.estimated_cost_saved_usd, 2),
+                },
+                indent=2,
+            )
+        )
+    else:
+        print("\n=== JEV HARNESS ROI & TOKEN METRICS ===")
+        print(f"Total Test Triages:      {s.total_triage_calls}")
+        print(f"LLM Calls Intercepted:   {s.skipped_llm_calls} (Fixed deterministically)")
+        print(f"Doom Loops Aborted:      {s.abort_guards_triggered}")
+        print(f"Deterministic Routes:    {s.deterministic_routes}")
+        print(f"Estimated Tokens Saved:  ⚡ {s.estimated_tokens_saved:,} tokens")
+        print(f"Estimated API Cost Saved: 💸 ${s.estimated_cost_saved_usd:.2f} USD")
+        print("=======================================\n")
+    return 0
+
+
 def cmd_init(args: argparse.Namespace) -> int:
     cwd = Path.cwd()
     print(f"Initializing Jev Harness integration in: {cwd}")
@@ -86,7 +120,7 @@ license: MIT
 This repository is connected to the global **Jev System One Harness**.
 
 ## Usage in this repo:
-- CLI command: `jev-harness [test-gate | abort-check | route | verify | status | mcp]`
+- CLI command: `jev-harness [test-gate | abort-check | route | verify | status | metrics | mcp]`
 - Local configuration: `.jev.json` or `.env`
 - Global engine: `jev-harness`
 
@@ -128,9 +162,9 @@ This repository is connected to the global **Jev System One Harness**.
         )
         print(f"  [+] Created env template: {env_example.relative_to(cwd)}")
 
-    # 4. Create Cursor MCP snippet if .cursor exists
+    # 4. Create Cursor MCP snippet if .cursor exists or requested
     cursor_dir = cwd / ".cursor"
-    if cursor_dir.exists() or args.cursor:
+    if cursor_dir.exists() or getattr(args, "cursor", False) or getattr(args, "all", False):
         cursor_dir.mkdir(exist_ok=True)
         cursor_mcp = cursor_dir / "mcp.json"
         if not cursor_mcp.exists():
@@ -150,6 +184,62 @@ This repository is connected to the global **Jev System One Harness**.
                 encoding="utf-8",
             )
             print(f"  [+] Created Cursor MCP config: {cursor_mcp.relative_to(cwd)}")
+
+    # 5. Configure Antigravity IDE if requested
+    if getattr(args, "antigravity", False) or getattr(args, "all", False):
+        antigravity_dir = Path.home() / ".gemini" / "config"
+        try:
+            antigravity_dir.mkdir(parents=True, exist_ok=True)
+            hooks_file = antigravity_dir / "hooks.json"
+            if not hooks_file.exists():
+                hooks_file.write_text(
+                    json.dumps(
+                        {
+                            "jev-token-guard": {
+                                "PreInvocation": [
+                                    {
+                                        "type": "command",
+                                        "command": "echo '{\"injectSteps\": [{\"ephemeralMessage\": \"[JEV ACTIVE] Jev System One está ativo no sistema. Ao lidar com testes com erro, utilize jev-harness test-gate. Se skip_llm=true, resolva o ambiente/dependência deterministicamente sem gastar tokens de LLM. Se houver falhas consecutivas, avalie com jev-harness abort-check.\"}]}'",
+                                    }
+                                ]
+                            }
+                        },
+                        indent=2,
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+                print(f"  [+] Configured Antigravity hook: {hooks_file}")
+            mcp_file = antigravity_dir / "mcp_config.json"
+            if not mcp_file.exists():
+                mcp_file.write_text(
+                    json.dumps(
+                        {
+                            "mcpServers": {
+                                "jev-harness": {
+                                    "command": "jev-mcp",
+                                    "args": [],
+                                }
+                            }
+                        },
+                        indent=2,
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+                print(f"  [+] Configured Antigravity MCP: {mcp_file}")
+        except Exception as e:
+            print(f"  [!] Antigravity configuration notice: {e}")
+
+    # 6. Install Git pre-commit hook if requested
+    if getattr(args, "git", False) or getattr(args, "all", False):
+        git_hooks = cwd / ".git" / "hooks"
+        if git_hooks.exists():
+            pre_commit = git_hooks / "pre-commit"
+            hook_script = "#!/bin/sh\n# Jev Harness Pre-commit Gate\npython -m unittest 2>&1 | jev-harness test-gate || exit 1\n"
+            pre_commit.write_text(hook_script, encoding="utf-8")
+            pre_commit.chmod(0o755)
+            print(f"  [+] Installed Git pre-commit guardrail: {pre_commit.relative_to(cwd)}")
 
     print("\n[OK] Repository configured successfully! You can now run 'jev-harness status'.\n")
     return 0
@@ -334,7 +424,15 @@ def main() -> None:
     # init
     p_init = subparsers.add_parser("init", parents=[common_parser], help="Initialize Jev adapter and configs in current repository")
     p_init.add_argument("--cursor", action="store_true", help="Also generate .cursor/mcp.json")
+    p_init.add_argument("--antigravity", action="store_true", help="Configure Antigravity IDE hooks and MCP config")
+    p_init.add_argument("--git", action="store_true", help="Install git pre-commit test-gate hook")
+    p_init.add_argument("--all", action="store_true", help="Configure all integrations (Cursor, Antigravity, Git)")
     p_init.set_defaults(func=cmd_init)
+
+    # metrics
+    p_metrics = subparsers.add_parser("metrics", parents=[common_parser], help="Display token ROI, intercepted LLM calls, and cost savings")
+    p_metrics.add_argument("--reset", action="store_true", help="Reset saved telemetry counters")
+    p_metrics.set_defaults(func=cmd_metrics)
 
     # test-gate
     p_test = subparsers.add_parser("test-gate", parents=[common_parser], help="Triage test failures and avoid unnecessary LLM calls")

@@ -4,7 +4,7 @@
   <a href="https://github.com/ismaelsoilet/jev-harness"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License MIT"></a>
   <a href="https://pypi.org/project/jev-harness/"><img src="https://img.shields.io/pypi/v/jev-harness.svg?color=blue" alt="PyPI version"></a>
   <a href="https://www.npmjs.com/package/@ismaelsoilet/jev-harness"><img src="https://img.shields.io/npm/v/@ismaelsoilet/jev-harness.svg?color=red&logo=npm" alt="npm version"></a>
-  <a href="https://crates.io/crates/jev-harness"><img src="https://img.shields.io/badge/crates.io-v0.1.0-orange.svg" alt="crates.io"></a>
+  <a href="https://crates.io/crates/jev-harness"><img src="https://img.shields.io/crates/v/jev-harness.svg?color=orange" alt="crates.io version"></a>
   <a href="https://pypi.org/project/jev-harness/"><img src="https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-brightgreen.svg" alt="Python Versions"></a>
   <a href="https://typesafe.ai"><img src="https://img.shields.io/badge/powered%20by-TypeSafe%20Jev%20System%20One-orange.svg" alt="TypeSafe Jev"></a>
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-Compatible-purple.svg" alt="MCP Compatible"></a>
@@ -91,17 +91,25 @@ pip install jev-harness
 pipx install jev-harness
 ```
 
-### 2. Configuration (Optional)
+### 2. Configuration & Multi-Provider Support
 
-Jev Harness automatically resolves credentials in the following priority:
+Jev Harness supports multiple backend providers and auto-detects credentials:
+
+| Provider | Endpoint | Cost | Configuration |
+| :--- | :--- | :--- | :--- |
+| **OpenCode Zen (Free Tier)** | `https://opencode.ai/zen/v1/systemone` | **$0.00 / Free** | `export OPENCODE_API_KEY=zen` or auto-selected |
+| **TypeSafe AI (Direct)** | `https://api.typesafe.ai/v1/systemone` | $0.042 / 1M | `export TYPESAFE_API_KEY=your-key` |
+| **OpenRouter Adapter** | `https://openrouter.ai/api/v1/chat/completions` | By Model | `export OPENROUTER_API_KEY=your-key` |
+| **Autonomous Simulation** | Local Heuristics (< 500µs) | **$0.00** | Active by default if no key or offline |
+
+Credential resolution priority:
 1. Environment variables (`TYPESAFE_API_KEY`, `OPENCODE_API_KEY`, or `OPENROUTER_API_KEY`)
 2. Local repository `.jev.json` or `.env`
 3. Global configuration `~/.config/jev/credentials.env`
-4. **Intelligent Offline Simulation Mode** (active by default if no key is supplied)
+4. **Autonomous Simulation Fallback** (ensures your CI, agents, and scripts never crash)
 
 ```bash
-export TYPESAFE_API_KEY="your-typesafe-api-key"
-# Check status anytime
+# Check current connection & provider status anytime
 jev-harness status
 ```
 
@@ -164,6 +172,48 @@ Verify evidence against criteria with calibrated confidence:
 jev-harness verify \
   --criteria "Must export format_date function and pass all 10 unit tests" \
   --output "All 10 unit tests passed in 0.02s. format_date exported in index.ts."
+```
+
+### 5. ROI & Token Savings Telemetry (`metrics`)
+Inspect cumulative tokens saved, dollars saved, and doom loops intercepted:
+
+```bash
+# View active telemetry
+jev-harness metrics
+
+# Reset session telemetry counters
+jev-harness metrics --reset
+```
+
+**Output Example:**
+```text
+============================================================
+              JEV HARNESS TELEMETRY & ROI
+============================================================
+Total Triage Interceptions:      14 calls
+LLM Frontier Calls Skipped:      11 calls (78.6%)
+Abort Guard Stops Triggered:     2 doom loops killed
+Deterministic Routes:            6 tasks
+Estimated Tokens Saved:          380,200 tokens
+Estimated Frontier Dollars Saved: $5.24 USD
+============================================================
+```
+
+### 6. One-Command Agent Setup (`init`)
+Automatically scaffold MCP configurations for your active agent or IDE:
+
+```bash
+# Setup for Cursor
+jev-harness init --cursor
+
+# Setup for Antigravity IDE
+jev-harness init --antigravity
+
+# Setup git pre-commit hook
+jev-harness init --git
+
+# Setup all supported tools at once
+jev-harness init --all
 ```
 
 ---

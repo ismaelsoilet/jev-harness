@@ -17,7 +17,7 @@ export async function triageTestFailure(
 
   let cleanLog = failureLog.trim();
   if (cleanLog.length > 8000) {
-    cleanLog = "...[truncated]...\n" + cleanLog.slice(-7500);
+    cleanLog = cleanLog.slice(0, 2500) + "\n...[truncated]...\n" + cleanLog.slice(-5000);
   }
 
   const questions = {

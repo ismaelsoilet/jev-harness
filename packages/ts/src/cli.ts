@@ -1,4 +1,6 @@
 import * as fs from "node:fs";
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import { JevClient } from "./client.js";
 import {
   routeModelTier,
@@ -191,6 +193,6 @@ Options:
   return 2;
 }
 
-if (process.argv[1] && process.argv[1].endsWith("cli.js")) {
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
   runCli().then((code) => process.exit(code));
 }

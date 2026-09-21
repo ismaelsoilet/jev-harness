@@ -210,6 +210,10 @@ export class JevClient {
     const stateTokens = new Set(stateLower.match(/\w+/g) || []);
     const answers: Record<string, Answer> = {};
 
+    const isExplicitAssertion = /(?:assertionerror|assert\s+)/i.test(stateLower);
+    const hasHeavyKeywords = /(?:kernel|distributed|architecture|refactor|concurrency|deadlock|multi-file|consensus)/i.test(stateLower);
+    const isNegatedAbort = /\b(?:not|do\s+not|don't|não|nao|never|sem|evitar|avoid)\s+(?:\w+\s+){0,3}(?:abort|abortar|stop|parar|falhar|fail|deadlock|circular|dead\s*end)/i.test(stateLower);
+
     for (const [qid, q] of Object.entries(questions)) {
       if (q.type === "choice") {
         let bestChoice = Object.keys(q.criteria)[0];
@@ -229,7 +233,7 @@ export class JevClient {
               "nullpointerexception", "nil pointer dereference", "index out of bounds"
             ].some((k) => stateLower.includes(k))
           ) {
-            matchScore += 8;
+            matchScore += isExplicitAssertion ? 14 : 8;
           } else if (
             opt === "env_missing" &&
             [
@@ -238,7 +242,7 @@ export class JevClient {
               "can't find crate", "find crate", "e0463", "cannot find package", "no required module provides package"
             ].some((k) => stateLower.includes(k))
           ) {
-            matchScore += 7;
+            matchScore += isExplicitAssertion ? 4 : 7;
           } else if (
             opt === "flaky_transient" &&
             [
@@ -256,12 +260,17 @@ export class JevClient {
             opt === "deterministic" &&
             ["typo", "format", "black", "prettier", "eslint", "lint", "bash", "regex", "script", "renomear"].some((k) => stateLower.includes(k))
           ) {
-            matchScore += 7;
-          } else if (
-            opt === "heavy_system2" &&
-            ["refactor", "kernel", "distributed", "architecture", "concurrency", "deadlock", "multi-file"].some((k) => stateLower.includes(k))
-          ) {
-            matchScore += 7;
+            matchScore += hasHeavyKeywords ? 2 : 7;
+          } else if (opt === "heavy_system2" && hasHeavyKeywords) {
+            matchScore += 16;
+          } else if (opt === "abort_and_ask") {
+            if (!isNegatedAbort && ["repeat", "circular", "deadlock", "same", "tentar novamente", "mesma", "abort"].some((k) => stateLower.includes(k))) {
+              matchScore += 8;
+            }
+          } else if (opt === "proceed") {
+            if (isNegatedAbort || ["proceed", "unit test", "test", "verify", "verifying", "incremental", "progress", "implement", "add", "adicionar", "migration"].some((k) => stateLower.includes(k))) {
+              matchScore += 8;
+            }
           }
 
           if (matchScore > bestScore) {
@@ -287,12 +296,13 @@ export class JevClient {
         let matchedIdx = 2;
 
         if (
-          ["satisfy", "satisfaz", "atende", "passed", "passou", "sucesso", "pass", "success", "excellent", "exhaustively", "complete", "concluido"].some((w) => stateLower.includes(w))
+          isNegatedAbort ||
+          ["satisfy", "satisfaz", "atende", "passed", "passou", "sucesso", "pass", "success", "excellent", "exhaustively", "complete", "concluido", "proceed"].some((w) => stateLower.includes(w))
         ) {
           matchedIdx = nLevels;
-        } else if (["trivial", "minor", "typo", "pequeno"].some((w) => stateLower.includes(w))) {
+        } else if (["trivial", "minor", "pequeno"].some((w) => stateLower.includes(w)) && !hasHeavyKeywords) {
           matchedIdx = 1;
-        } else if (["critical", "critico", "fatal", "disaster", "destrutivo"].some((w) => stateLower.includes(w))) {
+        } else if (hasHeavyKeywords || ["critical", "critico", "fatal", "disaster", "destrutivo", "complex"].some((w) => stateLower.includes(w))) {
           matchedIdx = nLevels;
         }
 
@@ -307,20 +317,36 @@ export class JevClient {
         let prob = 0.15;
 
         const negativeSignals = ["abort", "abortar", "fail", "falha", "error", "erro", "impossible", "impossivel", "fatal", "circular", "deadlock", "broken", "unviable", "destrutivo"];
-        const positiveSignals = ["pass", "passed", "passou", "success", "sucesso", "resolved", "valid", "satisfy", "complete"];
+        const positiveSignals = ["pass", "passed", "passou", "success", "sucesso", "resolved", "valid", "satisfy", "complete", "proceed", "linear"];
 
-        if (negativeSignals.some((w) => stateLower.includes(w))) {
-          if (["abort", "dead", "fail", "urgent", "invalid", "unviable"].some((w) => inst.includes(w))) {
+        if (isNegatedAbort && ["abort", "dead", "unviable", "destructive"].some((w) => inst.includes(w))) {
+          prob = 0.08;
+        } else if (["abort", "dead", "unviable", "destructive", "dead end", "circular"].some((w) => inst.includes(w))) {
+          if (negativeSignals.some((w) => stateLower.includes(w))) {
             prob = 0.88;
+          }
+        } else if (inst.includes("deterministically") || inst.includes("skip")) {
+          if (
+            ["modulenotfounderror", "no module named", "pip install", "npm install", "cannot find module"].some((w) => stateLower.includes(w)) &&
+            !isExplicitAssertion
+          ) {
+            prob = 0.95;
+          } else if (isExplicitAssertion || stateLower.includes("assertionerror") || stateLower.includes("panicked")) {
+            prob = 0.05;
+          } else {
+            prob = 0.20;
           }
         }
         if (positiveSignals.some((w) => stateLower.includes(w))) {
           if (["pass", "valid", "satisfy", "complete"].some((w) => inst.includes(w))) {
             prob = 0.92;
+          } else if (["abort", "dead", "unviable"].some((w) => inst.includes(w))) {
+            prob = 0.08;
           }
         }
         if (
-          ["modulenotfounderror", "no module named", "pip install", "npm install", "cannot find module"].some((w) => stateLower.includes(w))
+          ["modulenotfounderror", "no module named", "pip install", "npm install", "cannot find module"].some((w) => stateLower.includes(w)) &&
+          !isExplicitAssertion
         ) {
           if (inst.includes("deterministically") || inst.includes("skip")) {
             prob = 0.95;

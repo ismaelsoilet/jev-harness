@@ -10,6 +10,13 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from .client import ChoiceQuestion, JevClient, NoulQuestion, ScoreQuestion
+from .session import (
+    detect_repeated_failure,
+    record_abort_event,
+    record_route_event,
+    record_step_attempt,
+    record_triage_event,
+)
 
 
 @dataclass
@@ -94,7 +101,7 @@ def triage_test_failure(
 
     clean_log = failure_log.strip()
     if len(clean_log) > 6000:
-        clean_log = "...[truncated]...\n" + clean_log[-5500:]
+        clean_log = clean_log[:2000] + "\n...[truncated]...\n" + clean_log[-4000:]
 
     resp = client.system_one(state=clean_log, questions=questions)
 
@@ -120,7 +127,7 @@ def triage_test_failure(
     else:
         rec = "ESCALATE: Real logic defect; dispatch to System 2 LLM with targeted context."
 
-    return TestTriageResult(
+    result = TestTriageResult(
         category=category,
         confidence=confidence,
         skip_llm=skip_llm,
@@ -130,6 +137,12 @@ def triage_test_failure(
         is_mock=resp.is_mock,
         details={"model": resp.model, "usage": resp.usage},
     )
+    try:
+        record_triage_event(result.skip_llm, result.category)
+        record_step_attempt("test-gate", error_snippet=clean_log[:200], action=rec)
+    except Exception:
+        pass
+    return result
 
 
 def should_abort_trajectory(
@@ -143,7 +156,15 @@ def should_abort_trajectory(
     """
     client = client or JevClient()
 
-    state = f"RECENT ATTEMPTS & CONTEXT:\n{recent_attempts_summary}\n\nPROPOSED NEXT STEP:\n{proposed_step}"
+    auto_history = recent_attempts_summary
+    if not auto_history:
+        try:
+            if detect_repeated_failure(proposed_step):
+                auto_history = "WARNING: Identical failure or refactor pattern repeated across recent agent turns."
+        except Exception:
+            pass
+
+    state = f"RECENT ATTEMPTS & CONTEXT:\n{auto_history}\n\nPROPOSED NEXT STEP:\n{proposed_step}"
 
     questions = {
         "dead_end": NoulQuestion(
@@ -182,7 +203,7 @@ def should_abort_trajectory(
         else f"Safe to proceed (viability={viability:.1f}, action={action})"
     )
 
-    return AbortGateResult(
+    abort_res = AbortGateResult(
         should_abort=should_abort,
         abort_probability=dead_end_prob,
         action=effective_action,
@@ -190,6 +211,12 @@ def should_abort_trajectory(
         reasoning_summary=summary,
         is_mock=resp.is_mock,
     )
+    try:
+        record_abort_event(abort_res.should_abort)
+        record_step_attempt(proposed_step, action=abort_res.action)
+    except Exception:
+        pass
+    return abort_res
 
 
 def route_model_tier(
@@ -235,7 +262,7 @@ def route_model_tier(
         model_rec = "Claude Fable 5.1 / GPT-6 Astra (~$10.00 in / $50.00 out per 1M tokens)"
         rationale = "Task requires deep architectural synthesis or multi-file reasoning."
 
-    return ModelRouteResult(
+    route_res = ModelRouteResult(
         selected_tier=tier,
         confidence=conf,
         complexity_score=comp,
@@ -243,6 +270,11 @@ def route_model_tier(
         recommended_model=model_rec,
         is_mock=resp.is_mock,
     )
+    try:
+        record_route_event(route_res.selected_tier)
+    except Exception:
+        pass
+    return route_res
 
 
 def verify_step_completion(

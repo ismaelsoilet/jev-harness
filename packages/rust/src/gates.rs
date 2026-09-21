@@ -63,7 +63,7 @@ pub async fn triage_test_failure(
     questions.insert(
         "skip_llm".to_string(),
         Question::Noul(NoulQuestion {
-            instructions: "Can this failure be addressed deterministically (e.g. pip/npm install, retry worker, fix syntax) without dispatching full context to an expensive generative LLM?".to_string(),
+            instructions: "Can this error be handled deterministically (e.g. running pip/npm/cargo install, retrying, or fixing a simple typo) without calling an expensive System 2 generative LLM?".to_string(),
         }),
     );
 

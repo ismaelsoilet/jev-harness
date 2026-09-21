@@ -72,4 +72,31 @@ describe("Jev System One (TypeScript) Decision Gates", () => {
     assert.equal(res.isVerified, true);
     assert.equal(res.needsRework, false);
   });
+
+  test("adversarial: shouldAbortTrajectory respects negated abort intent", async () => {
+    const res = await shouldAbortTrajectory(
+      "Do NOT abort, proceed with database migration steps",
+      "Previous step completed migration script",
+      client
+    );
+    assert.equal(res.shouldAbort, false, "Negated abort statement must NOT trigger abort");
+    assert.equal(res.action, "proceed");
+  });
+
+  test("adversarial: triageTestFailure classifies AssertionError containing module string as deep_logic", async () => {
+    const res = await triageTestFailure(
+      "FAILED tests/test_loader.py::test_missing - AssertionError: expected 'No module named foo' to be raised",
+      client
+    );
+    assert.equal(res.category, "deep_logic", "AssertionError must take precedence over substring module names");
+    assert.equal(res.skipLlm, false, "Logic failure must NOT skip LLM");
+  });
+
+  test("adversarial: routeModelTier prioritizes heavy kernel reasoning over typo", async () => {
+    const res = await routeModelTier(
+      "Architect enterprise distributed kernel allocator and fix typo in docstring",
+      client
+    );
+    assert.equal(res.selectedTier, "heavy_system2", "Heavy architectural keywords must override typo in routing");
+  });
 });
