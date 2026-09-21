@@ -268,6 +268,65 @@ if abort_decision.should_abort:
 
 ---
 
+## 🟦 TypeScript / JavaScript SDK & CLI
+
+For Node.js, Bun, Deno, Vite, Tauri, and Next.js applications:
+
+```bash
+# Install via npm
+npm install jev-harness
+
+# Or via bun
+bun add jev-harness
+```
+
+### Programmatic Usage
+
+```typescript
+import {
+  triageTestFailure,
+  shouldAbortTrajectory,
+  routeModelTier,
+  verifyStepCompletion,
+  JevClient,
+} from "jev-harness";
+
+// 1. Triage test failure in < 2ms locally (or sub-second remote)
+const triage = await triageTestFailure(rawErrorOutput);
+if (triage.skipLlm) {
+  console.log("Safe to fix deterministically! LLM call skipped.");
+  console.log("Recommended Action:", triage.actionRecommendation);
+}
+
+// 2. Prevent circular doom loops before spending frontier tokens
+const abortCheck = await shouldAbortTrajectory(
+  "Repeat previous refactoring step",
+  "Step failed with: TypeError: undefined is not a function"
+);
+if (abortCheck.shouldAbort) {
+  console.error("Agent trapped in dead-end loop! Aborting.");
+}
+
+// 3. Select minimal sufficient model tier
+const route = await routeModelTier("Fix typo in variable name");
+console.log("Assigned Model Tier:", route.selectedTier); // deterministic
+```
+
+### TypeScript CLI
+
+```bash
+# Run test triage via npx
+npx jev-harness triage "Cannot find module 'lodash'"
+
+# Trajectory abort check
+npx jev-harness abort-check --plan "Try identical prompt again"
+
+# Model router
+npx jev-harness route "Architect distributed consensus protocol"
+```
+
+---
+
 ## 📦 Git & CI/CD Guardrails
 
 ### Pre-commit Hook (`.pre-commit-config.yaml`)

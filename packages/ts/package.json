@@ -1,0 +1,42 @@
+{
+  "name": "jev-harness",
+  "version": "0.1.0",
+  "description": "Zero-dependency System One decision harness and token optimizer for AI coding agents (OpenCode, Cursor, Claude Code).",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "jev-harness": "./bin/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "bin",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "node --test dist/tests/*.js"
+  },
+  "keywords": [
+    "typesafe",
+    "jev",
+    "system-one",
+    "agentic-ai",
+    "token-optimizer",
+    "mcp",
+    "opencode",
+    "cursor"
+  ],
+  "author": "Ismael Hosni Soilet de Lima <soilet.ismael@gmail.com>",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

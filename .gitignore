@@ -54,3 +54,6 @@ credentials.env
 .coverage
 htmlcov/
 .pytest_cache/
+dist-test/
+packages/*/dist-test/
+node_modules/

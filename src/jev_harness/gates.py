@@ -174,6 +174,7 @@ def should_abort_trajectory(
     viability = viability_ans.score if viability_ans and hasattr(viability_ans, "score") else 3.0
 
     should_abort = dead_end_prob >= 0.70 or action == "abort_and_ask" or viability <= 1.5
+    effective_action = "abort_and_ask" if should_abort and action == "proceed" else action
 
     summary = (
         f"Abort recommended (prob={dead_end_prob:.2f})"
@@ -184,7 +185,7 @@ def should_abort_trajectory(
     return AbortGateResult(
         should_abort=should_abort,
         abort_probability=dead_end_prob,
-        action=action,
+        action=effective_action,
         viability_score=viability,
         reasoning_summary=summary,
         is_mock=resp.is_mock,
