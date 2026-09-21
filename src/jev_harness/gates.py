@@ -205,8 +205,8 @@ def route_model_tier(
             instructions="Select the minimal sufficient model tier to solve this programming task",
             criteria={
                 "deterministic": "Can be solved with bash, regex, deterministic script, or pure Jev classification",
-                "lightweight_system2": "Simple coding edit, formatting, documentation, or trivial unit test (e.g. Gemini 2.5 Flash, GPT-4o-mini)",
-                "heavy_system2": "Complex architecture, deep reasoning, multi-file refactoring, or difficult debugging (e.g. Claude 3.7 Sonnet, Gemini Pro)",
+                "lightweight_system2": "Simple coding edit, formatting, documentation, or trivial unit test (e.g. Gemini 3.8 Flash)",
+                "heavy_system2": "Complex architecture, deep reasoning, multi-file refactoring, or difficult debugging (e.g. GPT-6 Astra, Claude Fable 5.1)",
             },
         ),
         "complexity": ScoreQuestion(
@@ -228,10 +228,10 @@ def route_model_tier(
         model_rec = "Direct Python/Bash Script (0 LLM Tokens)"
         rationale = "Task does not require generative reasoning; execute mechanically."
     elif tier == "lightweight_system2":
-        model_rec = "Gemini Flash / GPT-4o-mini (~$0.15/1M tokens)"
+        model_rec = "Gemini 3.8 Flash (~$0.75 in / $3.75 out per 1M tokens)"
         rationale = "Task is bounded and straightforward; save frontier tokens."
     else:
-        model_rec = "Claude 3.7 Sonnet / Gemini Pro (~$3.00+/1M tokens)"
+        model_rec = "Claude Fable 5.1 / GPT-6 Astra (~$10.00 in / $50.00 out per 1M tokens)"
         rationale = "Task requires deep architectural synthesis or multi-file reasoning."
 
     return ModelRouteResult(

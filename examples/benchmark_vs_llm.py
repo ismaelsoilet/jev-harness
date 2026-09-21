@@ -43,17 +43,22 @@ SCENARIOS = [
     },
 ]
 
-# Pricing model (USD per 1M tokens)
-FRONTIER_INPUT_PRICE_PER_M = 3.00    # Claude 3.7 Sonnet / GPT-4o input
-FRONTIER_OUTPUT_PRICE_PER_M = 15.00  # Claude 3.7 Sonnet / GPT-4o output
-JEV_INPUT_PRICE_PER_M = 0.042        # TypeSafe Jev System One input
-JEV_OUTPUT_PRICE_PER_M = 0.00        # Free output (non-autoregressive)
+# Pricing model (USD per 1M tokens - September 2026 Frontier)
+# GPT-6 Astra / Claude Fable 5.1: $10.00 / 1M in, $50.00 / 1M out
+FRONTIER_INPUT_PRICE_PER_M = 10.00
+FRONTIER_OUTPUT_PRICE_PER_M = 50.00
+# Gemini 3.8 Flash: $0.75 / 1M in, $3.75 / 1M out
+FLASH_INPUT_PRICE_PER_M = 0.75
+FLASH_OUTPUT_PRICE_PER_M = 3.75
+# TypeSafe Jev System One: $0.042 / 1M in, $0.00 / 1M out
+JEV_INPUT_PRICE_PER_M = 0.042
+JEV_OUTPUT_PRICE_PER_M = 0.00
 
 
 def main():
     client = JevClient()
     print("=" * 90)
-    print("⚡ JEV SYSTEM ONE VS. FRONTIER LLM BENCHMARK & COST CALCULATOR")
+    print("⚡ JEV SYSTEM ONE VS. 2026 FRONTIER LLMs (GPT-6 Astra, Claude Fable 5.1)")
     print("=" * 90)
 
     total_frontier_cost = 0.0

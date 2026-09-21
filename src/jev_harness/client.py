@@ -324,12 +324,36 @@ class JevClient:
                     match_score = len(common)
                     if opt in state_lower:
                         match_score += 3
-                    if opt == "env_missing" and any(k in state_lower for k in ["modulenotfounderror", "no module named", "not found", "importerror"]):
-                        match_score += 5
-                    elif opt == "flaky_transient" and any(k in state_lower for k in ["connectionreset", "timeout", "timed out", "econnreset"]):
-                        match_score += 5
-                    elif opt == "deterministic" and any(k in state_lower for k in ["typo", "format", "black", "prettier", "eslint", "lint", "bash", "regex", "script", "renomear"]):
+                    if opt == "deep_logic" and any(k in state_lower for k in [
+                        "assertionerror", "assert ", "panicked at", "panic:", "panic",
+                        "deadlock", "goroutines are asleep", "segmentation fault",
+                        "nullpointerexception", "nil pointer dereference", "index out of bounds"
+                    ]):
+                        match_score += 8
+                    elif opt == "env_missing" and any(k in state_lower for k in [
+                        "modulenotfounderror", "no module named", "not found", "importerror",
+                        "cannot find module", "err_module_not_found", "ts2307", "cannot find crate",
+                        "can't find crate", "find crate", "e0463",
+                        "cannot find package", "no required module provides package"
+                    ]):
+                        match_score += 7
+                    elif opt == "flaky_transient" and any(k in state_lower for k in [
+                        "connectionreset", "timeout", "timed out", "econnreset", "econnrefused",
+                        "etimedout", "socket hang up", "gateway timeout", "503 service unavailable"
+                    ]):
+                        match_score += 7
+                    elif opt == "syntax_trivial" and any(k in state_lower for k in [
+                        "syntaxerror", "indentationerror", "expected ';'", "ts1005", "missing bracket"
+                    ]):
                         match_score += 6
+                    elif opt == "deterministic" and any(k in state_lower for k in [
+                        "typo", "format", "black", "prettier", "eslint", "lint", "bash", "regex", "script", "renomear"
+                    ]):
+                        match_score += 7
+                    elif opt == "heavy_system2" and any(k in state_lower for k in [
+                        "refactor", "kernel", "distributed", "architecture", "concurrency", "deadlock", "multi-file"
+                    ]):
+                        match_score += 7
 
                     if match_score > best_score:
                         best_score = match_score

@@ -100,6 +100,55 @@ class TestMCPServer(unittest.TestCase):
         self.assertIn("error", resp)
         self.assertEqual(resp["error"]["code"], -32601)
 
+    def test_mcp_malformed_json(self):
+        resp = process_message("{broken json", self.client)
+        self.assertIsNotNone(resp)
+        self.assertEqual(resp["error"]["code"], -32700)
+
+    def test_mcp_ping(self):
+        req = json.dumps({"jsonrpc": "2.0", "id": 10, "method": "ping"})
+        resp = process_message(req, self.client)
+        self.assertIsNotNone(resp)
+        self.assertEqual(resp["result"], {})
+
+    def test_mcp_notification_ignored(self):
+        req = json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"})
+        resp = process_message(req, self.client)
+        self.assertIsNone(resp)
+
+    def test_mcp_tools_call_route(self):
+        req = json.dumps({
+            "jsonrpc": "2.0",
+            "id": 11,
+            "method": "tools/call",
+            "params": {
+                "name": "jev_route_task",
+                "arguments": {"task_description": "Fix typo in docstring"},
+            },
+        })
+        resp = process_message(req, self.client)
+        self.assertIsNotNone(resp)
+        content = json.loads(resp["result"]["content"][0]["text"])
+        self.assertEqual(content["selected_tier"], "deterministic")
+
+    def test_mcp_tools_call_verify(self):
+        req = json.dumps({
+            "jsonrpc": "2.0",
+            "id": 12,
+            "method": "tools/call",
+            "params": {
+                "name": "jev_verify_completion",
+                "arguments": {
+                    "acceptance_criteria": "All unit tests pass",
+                    "produced_output": "All 35 tests passed OK with complete evidence",
+                },
+            },
+        })
+        resp = process_message(req, self.client)
+        self.assertIsNotNone(resp)
+        content = json.loads(resp["result"]["content"][0]["text"])
+        self.assertTrue(content["is_verified"])
+
 
 if __name__ == "__main__":
     unittest.main()

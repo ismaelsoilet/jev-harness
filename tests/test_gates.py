@@ -62,6 +62,13 @@ class TestSemanticGates(unittest.TestCase):
         self.assertEqual(res.selected_tier, "deterministic")
         self.assertIn("0 LLM Tokens", res.recommended_model)
 
+    def test_route_model_tier_heavy_reasoning(self):
+        task = "Refactor distributed actor supervision kernel and solve multi-file deadlock architecture"
+        res = route_model_tier(task, client=self.client)
+        self.assertIsInstance(res, ModelRouteResult)
+        self.assertEqual(res.selected_tier, "heavy_system2")
+        self.assertIn("Claude Fable 5.1 / GPT-6 Astra", res.recommended_model)
+
     def test_verify_step_completion(self):
         criteria = "Deve passar todos os 10 testes unitarios sem warnings"
         output = "10 tests passed and completed successfully with 100% pass rate"

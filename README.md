@@ -16,14 +16,14 @@
 
 ## 🎯 The Problem
 
-When an autonomous coding agent encounters a test failure or compiler error, the standard reaction is to dump 500 lines of raw traceback into a frontier reasoning model (Claude 3.7 Sonnet, GPT-4o, Gemini Pro). 
+When an autonomous coding agent encounters a test failure or compiler error, the standard reaction is to dump 500 lines of raw traceback into an expensive frontier reasoning model (GPT-6 Astra, Claude Fable 5.1). 
 
 | Failure Scenario | Without Jev Harness | With Jev Harness |
 | :--- | :--- | :--- |
-| **Missing dependency** (`ModuleNotFoundError`, `Cannot find module`) | 💸 **50,000 LLM tokens burned** (~$0.15 - $0.75) + 15s delay to output `pip install ...` | ⚡ **Jev triage in 90ms ($0.00004)** → Action: install package deterministically. **0 LLM tokens**. |
-| **Flaky transient error** (network timeout, port busy) | 💸 LLM hallucinates architectural changes to "fix" an ephemeral glitch | ⚡ **Jev detects flaky transient** → Auto-retry worker once. **0 code changes**. |
+| **Missing dependency** (`ModuleNotFoundError`, `Cannot find module`, `TS2307`, `E0463`) | 💸 **50,000 LLM tokens burned** (~$0.50 - $2.50) + 15s delay to output `pip/npm install ...` | ⚡ **Jev triage in 90ms ($0.00004)** → Action: install package deterministically. **0 LLM tokens**. |
+| **Flaky transient error** (network timeout, port busy, ECONNREFUSED) | 💸 LLM hallucinates architectural changes to "fix" an ephemeral glitch | ⚡ **Jev detects flaky transient** → Auto-retry worker once. **0 code changes**. |
 | **Circular refactoring** (Doom Loop: attempting the same fix 3+ times) | 💸 **200,000+ tokens burned** in endless circular loops | 🛑 **Jev Abort Gate triggers** (`exit 1`) → Stops loop, alerts developer. |
-| **Trivial typo / formatting** | 💸 Heavy reasoning frontier tier used for simple regex/typo | ⚡ **Jev Route** directs task to local script or lightweight tier. |
+| **Trivial typo / formatting** | 💸 Heavy reasoning frontier tier used for simple regex/typo | ⚡ **Jev Route** directs task to local script or Gemini 3.8 Flash. |
 
 ---
 
@@ -31,7 +31,7 @@ When an autonomous coding agent encounters a test failure or compiler error, the
 
 Daniel Kahneman's cognitive paradigm applied to agentic engineering:
 - **System 1 (Fast, Intuitive, Calibrated):** **Jev** makes non-autoregressive, parallel, typed decisions in **70ms to 300ms** at **$0.042 per 1M tokens** ($0 output tokens).
-- **System 2 (Slow, Deliberative, Generative):** Frontier LLMs (Claude, GPT-4, Gemini) write code and solve deep algorithmic logic.
+- **System 2 (Slow, Deliberative, Generative):** Frontier LLMs (GPT-6 Astra, Claude Fable 5.1) write code and solve deep algorithmic logic.
 
 ```
        ┌────────────────────────────────────────────────────────┐
@@ -151,7 +151,7 @@ jev-harness route --task "Fix typo in docstring and reformat with black"
 # -> TIER: DETERMINISTIC | Model: Direct Python/Bash Script (0 LLM Tokens)
 
 jev-harness route --task "Refactor distributed actor supervision tree across 14 modules"
-# -> TIER: HEAVY_SYSTEM2 | Model: Claude 3.7 Sonnet / Gemini Pro
+# -> TIER: HEAVY_SYSTEM2 | Model: Claude Fable 5.1 / GPT-6 Astra (~$10.00 in / $50.00 out)
 ```
 
 ### 4. Step Completion Verification (`verify`)
@@ -286,15 +286,15 @@ npm test 2>&1 | jev-harness test-gate || exit 1
 
 ---
 
-## 📊 Economics & Benchmarks
+## 📊 Economics & Benchmarks (September 2026 Frontier)
 
-| Metric | Frontier Reasoning Models (System Two) | TypeSafe Jev System One (`jev-harness`) |
-| :--- | :--- | :--- |
-| **Input Pricing** | $3.00 – $15.00 / 1M tokens | **$0.042 / 1M tokens (~100x cheaper)** |
-| **Output Pricing** | $15.00 – $60.00 / 1M tokens | **$0.00 (Free - Non-autoregressive)** |
-| **Latency** | 5,000ms – 30,000ms | **70ms – 300ms (~50x faster)** |
-| **Output Structure** | Free-form markdown text | **Strictly typed: Choice, Score, Noul** |
-| **Determinism** | Stochastic, hallucinations possible | **Zero-hallucination semantic bounds** |
+| Metric | 2026 Frontier Reasoning (GPT-6 Astra, Claude Fable 5.1) | Fast Agentic Tier (Gemini 3.8 Flash) | TypeSafe Jev System One (`jev-harness`) |
+| :--- | :--- | :--- | :--- |
+| **Input Pricing** | $10.00 / 1M tokens | $0.75 / 1M tokens | **$0.042 / 1M tokens (~238x cheaper)** |
+| **Output Pricing** | $50.00 / 1M tokens | $3.75 / 1M tokens | **$0.00 (Free - Non-autoregressive)** |
+| **Latency** | 10,000ms – 30,000ms | 1,500ms – 4,000ms | **70ms – 300ms (~100x faster)** |
+| **Output Structure**| Free-form prose & streaming tokens | Structured JSON tool calls | **Strictly typed: Choice, Score, Noul** |
+| **Determinism** | Stochastic reasoning | Stochastic generation | **Zero-hallucination calibrated bounds** |
 
 ---
 
