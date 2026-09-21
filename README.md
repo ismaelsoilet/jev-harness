@@ -2,11 +2,13 @@
 
 <p align="center">
   <a href="https://github.com/ismaelsoilet/jev-harness/actions/workflows/ci.yml"><img src="https://github.com/ismaelsoilet/jev-harness/actions/workflows/ci.yml/badge.svg" alt="CI Status"></a>
-  <a href="https://pypi.org/project/jev-harness/"><img src="https://img.shields.io/pypi/v/jev-harness.svg?color=blue" alt="PyPI version"></a>
-  <a href="https://www.npmjs.com/package/@ismaelsoilet/jev-harness"><img src="https://img.shields.io/npm/v/@ismaelsoilet/jev-harness.svg?color=red&logo=npm" alt="npm version"></a>
-  <a href="https://crates.io/crates/jev-harness"><img src="https://img.shields.io/crates/v/jev-harness.svg?color=orange" alt="crates.io version"></a>
-  <a href="https://pypi.org/project/jev-harness/"><img src="https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-brightgreen.svg" alt="Python Versions"></a>
-  <a href="https://github.com/ismaelsoilet/jev-harness"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License MIT"></a>
+  <a href="https://pypi.org/project/jev-harness/"><img src="https://img.shields.io/pypi/v/jev-harness.svg?color=blue&logo=pypi&logoColor=white" alt="PyPI version"></a>
+  <a href="https://www.npmjs.com/package/@ismaelsoilet/jev-harness"><img src="https://img.shields.io/npm/v/@ismaelsoilet/jev-harness.svg?color=cb3837&logo=npm&logoColor=white" alt="npm version"></a>
+  <a href="https://crates.io/crates/jev-harness"><img src="https://img.shields.io/crates/v/jev-harness.svg?color=dea584&logo=rust&logoColor=white" alt="crates.io version"></a>
+  <a href="https://docs.rs/jev-harness"><img src="https://docs.rs/jev-harness/badge.svg" alt="docs.rs"></a>
+  <a href="https://pypi.org/project/jev-harness/"><img src="https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-3776ab.svg?logo=python&logoColor=white" alt="Python Versions"></a>
+  <a href="https://search.sigstore.dev/?logIndex=2907077153"><img src="https://img.shields.io/badge/provenance-Sigstore-blue?logo=npm" alt="npm Provenance"></a>
+  <a href="https://github.com/ismaelsoilet/jev-harness/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License MIT"></a>
   <a href="https://typesafe.ai"><img src="https://img.shields.io/badge/powered%20by-TypeSafe%20Jev%20System%20One-orange.svg" alt="TypeSafe Jev"></a>
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-Compatible-purple.svg" alt="MCP Compatible"></a>
   <a href="#"><img src="https://img.shields.io/badge/dependencies-0%20(pure%20stdlib)-success.svg" alt="Zero Dependencies"></a>
@@ -87,9 +89,9 @@ Available on all three major package registries with zero external runtime depen
 
 | Ecosystem | Registry | Package / Command | Status |
 | :--- | :--- | :--- | :--- |
-| **Python** | [PyPI](https://pypi.org/project/jev-harness/) | `pip install jev-harness` | [![PyPI](https://img.shields.io/pypi/v/jev-harness.svg?color=blue)](https://pypi.org/project/jev-harness/) |
-| **TypeScript / Node** | [npm](https://www.npmjs.com/package/@ismaelsoilet/jev-harness) | `npm install @ismaelsoilet/jev-harness` | [![npm](https://img.shields.io/npm/v/@ismaelsoilet/jev-harness.svg?color=red)](https://www.npmjs.com/package/@ismaelsoilet/jev-harness) |
-| **Rust** | [crates.io](https://crates.io/crates/jev-harness) | `cargo add jev-harness` | [![crates.io](https://img.shields.io/crates/v/jev-harness.svg?color=orange)](https://crates.io/crates/jev-harness) |
+| **Python** | [PyPI](https://pypi.org/project/jev-harness/) | `pip install jev-harness` | [![PyPI](https://img.shields.io/pypi/v/jev-harness.svg?color=blue&logo=pypi&logoColor=white)](https://pypi.org/project/jev-harness/) |
+| **TypeScript / Node** | [npm](https://www.npmjs.com/package/@ismaelsoilet/jev-harness) | `npm install @ismaelsoilet/jev-harness` | [![npm](https://img.shields.io/npm/v/@ismaelsoilet/jev-harness.svg?color=cb3837&logo=npm&logoColor=white)](https://www.npmjs.com/package/@ismaelsoilet/jev-harness) |
+| **Rust** | [crates.io](https://crates.io/crates/jev-harness) | `cargo add jev-harness` | [![crates.io](https://img.shields.io/crates/v/jev-harness.svg?color=dea584&logo=rust&logoColor=white)](https://crates.io/crates/jev-harness) |
 
 ```bash
 # Python (CLI + SDK)
@@ -497,11 +499,11 @@ To update the packages and documentation across all 3 registries:
 Use the automated multi-runtime script to check, bump versions, and publish:
 
 ```bash
-# 1. Run full test battery (Python, TS, Rust - 80+ tests)
+# 1. Run full test battery (Python, TS, Rust - 82 tests)
 ./scripts/release.sh --check
 
 # 2. Synchronously bump version in pyproject.toml, package.json, and Cargo.toml
-./scripts/release.sh --bump 0.1.2
+./scripts/release.sh --bump 0.1.3
 
 # 3. Publish to a specific registry or all at once:
 ./scripts/release.sh --publish rust    # Publishes to crates.io
@@ -509,25 +511,25 @@ Use the automated multi-runtime script to check, bump versions, and publish:
 ./scripts/release.sh --publish python  # Builds wheel/sdist for PyPI
 
 # 4. Create git tag and push to GitHub
-./scripts/release.sh --git-tag 0.1.2
+./scripts/release.sh --git-tag 0.1.3
 ```
 
 ### 2. Automated GitHub Actions CD (`.github/workflows/release.yml`)
 You can also trigger releases via GitHub Actions:
-- **Automatic:** Pushing any tag matching `v*.*.*` (e.g. `git push origin v0.1.2`) triggers the `release.yml` workflow, which tests all runtimes and automatically publishes to PyPI, npm, and Crates.io.
+- **Automatic:** Pushing any tag matching `v*.*.*` (e.g. `git push origin v0.1.3`) triggers the `release.yml` workflow, which tests all runtimes and automatically publishes to PyPI, npm, and Crates.io.
 - **Manual:** Go to **GitHub Actions → Release & Publish → Run workflow**, specify the version, and click run.
 
-*(Requires `PYPI_API_TOKEN`, `NPM_TOKEN`, and `CARGO_REGISTRY_TOKEN` in your repository GitHub Secrets).*
+*(Requires `PYPI_API_TOKEN` and `CARGO_REGISTRY_TOKEN` in GitHub Repository Secrets; npm uses OpenID Connect (OIDC) Trusted Publishing with cryptographic Sigstore provenance without static tokens).*
 
 ---
 
-## 🌟 What's New in v0.1.2
+## 🌟 What's New in v0.1.3
 
-- 🛡️ **Cross-Platform Test & Runtime Hardening**: Fully resilient `HTTPError` / `URLError` exception handling across Python 3.9 through 3.13 on Linux, macOS, and Windows.
-- 🇧🇷 **Multilingual Error Heuristics**: Added Portuguese and English semantic triage rules for assertion errors, timeouts, and missing packages.
-- ⚡ **Non-Destructive Traceback Windowing**: Head (2,000 chars) + Tail (4,000 chars) preservation ensures deep stack root causes are never dropped during token truncation.
-- 🔌 **Standardized CLI & MCP Flags**: Uniform global flag resolution (`--provider`, `--mock`, `--json`) across Python, TypeScript (`@ismaelsoilet/jev-harness`), and Rust binaries.
-- 🌐 **IPv4 Fallback & Deterministic Offline Mode**: High-availability connectivity for OpenCode Zen and TypeSafe AI with instant local simulation fallback.
+- 🔐 **Zero-Token npm Trusted Publishing**: Fully migrated npm release workflow to OpenID Connect (OIDC) Trusted Publishing with Sigstore signed provenance statements. No expiring tokens required.
+- ⚡ **Cross-Runtime CLI Unification**: Standardized subcommands (`test-gate`, `triage`, `abort-check`, `abort`, `route`, `verify`, `status`) and argument parsing (positional or flags) across Python, TypeScript (`@ismaelsoilet/jev-harness`), and Rust (`jev`).
+- 🧪 **Comprehensive 82-Test Battery**: 100% test pass rate across Python (54), TypeScript (13), and Rust (15), covering adversarial inputs, Portuguese & English tracebacks, and UTF-8 truncations.
+- 📦 **Tri-Registry Synchronization**: Crates.io, npm, and PyPI synchronized with automated GitHub Actions CD release.
+- 🛡️ **Cross-Platform Test & Runtime Hardening**: Resilient HTTP/network handling across Python 3.9 through 3.13, Node 18 through 22, and Rust stable.
 
 ---
 

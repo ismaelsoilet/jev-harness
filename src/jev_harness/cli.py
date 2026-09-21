@@ -256,9 +256,10 @@ This repository is connected to the global **Jev System One Harness**.
 
 
 def cmd_test_gate(args: argparse.Namespace) -> int:
-    text = _read_input(args.log or args.sample).strip()
+    raw_input = getattr(args, "log", None) or getattr(args, "sample", None) or getattr(args, "log_pos", None)
+    text = _read_input(raw_input).strip()
     if not text:
-        print("Error: No test failure log provided. Pass --log <file_or_string> or pipe via stdin.", file=sys.stderr)
+        print("Error: No test failure log provided. Pass --log <file_or_string> or as positional argument or pipe via stdin.", file=sys.stderr)
         return 2
 
     force_mock = getattr(args, "mock", False)
@@ -287,7 +288,7 @@ def cmd_test_gate(args: argparse.Namespace) -> int:
         print(f"Category:        {res.category.upper()}")
         print(f"Confidence:      {res.confidence * 100:.1f}%")
         print(f"Skip LLM Call:   {'YES (Save Tokens!)' if res.skip_llm else 'NO (Dispatch to System 2)'}")
-        print(f"Skip Probability: {res.skip_llm_prob * 100:.1f}%")
+        print(f"Skip Prob:       {res.skip_llm_prob * 100:.1f}%")
         print(f"Severity Score:  {res.severity_score:.1f} / 4.0")
         print(f"Recommendation:  {res.action_recommendation}")
         if res.is_mock:
@@ -300,10 +301,11 @@ def cmd_test_gate(args: argparse.Namespace) -> int:
 
 
 def cmd_abort_check(args: argparse.Namespace) -> int:
-    plan = _read_input(args.plan).strip()
+    raw_plan = getattr(args, "plan", None) or getattr(args, "plan_pos", None)
+    plan = _read_input(raw_plan).strip()
     history = _read_input(args.history).strip()
     if not plan:
-        print("Error: No plan provided. Pass --plan <text_or_path>.", file=sys.stderr)
+        print("Error: No plan provided. Pass --plan <text_or_path> or as positional argument.", file=sys.stderr)
         return 2
 
     force_mock = getattr(args, "mock", False)
@@ -343,9 +345,10 @@ def cmd_abort_check(args: argparse.Namespace) -> int:
 
 
 def cmd_route(args: argparse.Namespace) -> int:
-    task = _read_input(args.task).strip()
+    raw_task = getattr(args, "task", None) or getattr(args, "task_pos", None)
+    task = _read_input(raw_task).strip()
     if not task:
-        print("Error: No task provided. Pass --task <text_or_path>.", file=sys.stderr)
+        print("Error: No task provided. Pass --task <text_or_path> or as positional argument.", file=sys.stderr)
         return 2
 
     force_mock = getattr(args, "mock", False)
@@ -473,21 +476,24 @@ def main() -> None:
     p_metrics.add_argument("--reset", action="store_true", help="Reset saved telemetry counters")
     p_metrics.set_defaults(func=cmd_metrics)
 
-    # test-gate
-    p_test = subparsers.add_parser("test-gate", parents=[common_parser], help="Triage test failures and avoid unnecessary LLM calls")
+    # test-gate (alias: triage)
+    p_test = subparsers.add_parser("test-gate", aliases=["triage"], parents=[common_parser], help="Triage test failures and avoid unnecessary LLM calls")
+    p_test.add_argument("log_pos", nargs="?", default=None, help="Direct error string or path to error log file")
     p_test.add_argument("--log", "-l", help="Path to error log or raw log string")
     p_test.add_argument("--sample", help="Sample error string (alias for --log)")
     p_test.set_defaults(func=cmd_test_gate)
 
-    # abort-check
-    p_abort = subparsers.add_parser("abort-check", parents=[common_parser], help="Check if agent trajectory or plan leads to a dead end")
-    p_abort.add_argument("--plan", "-p", required=True, help="Proposed plan or next step")
+    # abort-check (alias: abort)
+    p_abort = subparsers.add_parser("abort-check", aliases=["abort"], parents=[common_parser], help="Check if agent trajectory or plan leads to a dead end")
+    p_abort.add_argument("plan_pos", nargs="?", default=None, help="Proposed plan or next step")
+    p_abort.add_argument("--plan", "-p", default=None, help="Proposed plan or next step")
     p_abort.add_argument("--history", "-H", default="", help="Previous attempts summary or context")
     p_abort.set_defaults(func=cmd_abort_check)
 
     # route
     p_route = subparsers.add_parser("route", parents=[common_parser], help="Route task to minimal sufficient model tier")
-    p_route.add_argument("--task", "-t", required=True, help="Task description or prompt")
+    p_route.add_argument("task_pos", nargs="?", default=None, help="Task description or prompt")
+    p_route.add_argument("--task", "-t", default=None, help="Task description or prompt")
     p_route.set_defaults(func=cmd_route)
 
     # verify

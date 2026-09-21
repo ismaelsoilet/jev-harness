@@ -23,9 +23,9 @@ usage() {
     echo ""
     echo "Examples:"
     echo "  $0 --check"
-    echo "  $0 --bump 0.1.2"
+    echo "  $0 --bump 0.1.3"
     echo "  $0 --publish rust"
-    echo "  $0 --git-tag 0.1.2"
+    echo "  $0 --git-tag 0.1.3"
     exit 1
 }
 
@@ -57,14 +57,14 @@ run_checks() {
     cargo test --quiet
 
     echo ""
-    echo "✅ ALL 75+ TESTS PASSED ACROSS PYTHON, TYPESCRIPT, AND RUST!"
+    echo "✅ ALL 82 TESTS PASSED ACROSS PYTHON, TYPESCRIPT, AND RUST!"
     echo "================================================================="
 }
 
 bump_version() {
     local new_ver="$1"
     if [[ -z "${new_ver}" ]]; then
-        echo "Error: Version string required (e.g. 0.1.2)"
+        echo "Error: Version string required (e.g. 0.1.3)"
         exit 1
     fi
 
@@ -137,7 +137,7 @@ publish_target() {
 git_tag_release() {
     local ver="$1"
     if [[ -z "${ver}" ]]; then
-        echo "Error: Version string required (e.g. 0.1.2)"
+        echo "Error: Version string required (e.g. 0.1.3)"
         exit 1
     fi
 

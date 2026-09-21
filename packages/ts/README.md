@@ -4,9 +4,11 @@
 
 <p align="center">
   <a href="https://github.com/ismaelsoilet/jev-harness/actions/workflows/ci.yml"><img src="https://github.com/ismaelsoilet/jev-harness/actions/workflows/ci.yml/badge.svg" alt="CI Status"></a>
-  <a href="https://www.npmjs.com/package/@ismaelsoilet/jev-harness"><img src="https://img.shields.io/npm/v/@ismaelsoilet/jev-harness.svg?color=red&logo=npm" alt="npm version"></a>
-  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License MIT"></a>
-  <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-5.x-blue.svg" alt="TypeScript"></a>
+  <a href="https://www.npmjs.com/package/@ismaelsoilet/jev-harness"><img src="https://img.shields.io/npm/v/@ismaelsoilet/jev-harness.svg?color=cb3837&logo=npm&logoColor=white" alt="npm version"></a>
+  <a href="https://search.sigstore.dev/?logIndex=2907077153"><img src="https://img.shields.io/badge/provenance-Sigstore-blue?logo=npm" alt="npm Provenance"></a>
+  <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-5.x-blue.svg?logo=typescript&logoColor=white" alt="TypeScript"></a>
+  <a href="https://github.com/ismaelsoilet/jev-harness/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License MIT"></a>
+  <a href="https://typesafe.ai"><img src="https://img.shields.io/badge/powered%20by-TypeSafe%20Jev%20System%20One-orange.svg" alt="TypeSafe Jev"></a>
   <a href="https://github.com/ismaelsoilet/jev-harness"><img src="https://img.shields.io/badge/dependencies-0-success.svg" alt="Zero Dependencies"></a>
 </p>
 
@@ -77,14 +79,14 @@ const testOutput = `
 src/app.ts:2:24 - error TS2307: Cannot find module '@tanstack/vue-query' or its corresponding type declarations.
 `;
 
-const decision = triageTestFailure(testOutput);
+const decision = await triageTestFailure(testOutput);
 
 if (decision.skipLlm) {
-  console.log(`[ACTION] ${decision.action}`);
-  console.log(`[RESOLVE] Run: npm install ${decision.suggestedFix}`);
+  console.log(`[ACTION] ${decision.actionRecommendation}`);
+  console.log(`[CATEGORY] ${decision.category} (Confidence: ${(decision.confidence * 100).toFixed(1)}%)`);
 } else {
   // Delegate to LLM with distilled traceback
-  console.log(`[FORWARD] Deep bug detected. Route to model:`, decision.action);
+  console.log(`[FORWARD] Deep bug detected. Route to frontier LLM.`);
 }
 ```
 
@@ -93,15 +95,12 @@ if (decision.skipLlm) {
 ```typescript
 import { shouldAbortTrajectory } from '@ismaelsoilet/jev-harness';
 
-const failureHistory = [
-  'TypeError: Cannot read properties of undefined (reading "id")',
-  'TypeError: Cannot read properties of undefined (reading "id")',
-  'TypeError: Cannot read properties of undefined (reading "id")',
-];
+const plan = 'Repeat identical refactoring step without changes';
+const failureHistory = 'Attempt 1 failed with TypeError\nAttempt 2 failed with TypeError';
 
-const check = shouldAbortTrajectory(failureHistory);
-if (check.abort) {
-  console.error(`[KILL AGENT] ${check.reason}`);
+const check = await shouldAbortTrajectory(plan, failureHistory);
+if (check.shouldAbort) {
+  console.error(`[KILL AGENT] ${check.reasoningSummary} (Action: ${check.action})`);
 }
 ```
 
@@ -111,23 +110,40 @@ if (check.abort) {
 import { routeModelTier } from '@ismaelsoilet/jev-harness';
 
 const task = "Fix typo in variable name in src/utils/format.ts";
-const routing = routeModelTier(task);
+const routing = await routeModelTier(task);
 
-console.log(`Recommended Tier: ${routing.tier}`); // 'deterministic'
-console.log(`Model: ${routing.model}`);           // 'gemini-3.8-flash' or local
+console.log(`Recommended Tier: ${routing.selectedTier}`);   // 'deterministic'
+console.log(`Model: ${routing.recommendedModel}`);          // 'Direct Python/Bash Script (0 LLM Tokens)'
 ```
 
-### 4. CLI Usage
+### 4. Calibrated Criteria Verification
+
+```typescript
+import { verifyStepCompletion } from '@ismaelsoilet/jev-harness';
+
+const criteria = "Must export format_date function and pass all unit tests";
+const output = "All 10 unit tests passed in 0.02s. format_date exported in index.ts.";
+
+const result = await verifyStepCompletion(criteria, output);
+console.log(`Verified: ${result.isVerified ? 'PASS' : 'REWORK NEEDED'}`);
+```
+
+### 5. CLI Usage
 
 ```bash
 # Run triage on a test failure
+npx @ismaelsoilet/jev-harness test-gate "Cannot find module 'lodash'"
+# or alias
 npx @ismaelsoilet/jev-harness triage "Cannot find module 'lodash'"
 
-# Check loop abort
-npx @ismaelsoilet/jev-harness abort-check "fail 1" "fail 1" "fail 1"
+# Check trajectory loop abort
+npx @ismaelsoilet/jev-harness abort-check --plan "Try identical prompt again" --history "Attempt 1 failed"
 
-# Route a task
-npx @ismaelsoilet/jev-harness route "Refactor full authentication kernel to WebCrypto"
+# Route a task to appropriate model tier
+npx @ismaelsoilet/jev-harness route --task "Refactor full authentication kernel to WebCrypto"
+
+# System status & provider inspection
+npx @ismaelsoilet/jev-harness status
 ```
 
 ---
