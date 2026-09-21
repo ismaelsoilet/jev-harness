@@ -10,6 +10,23 @@
 
 ---
 
+## 🌐 Multi-Provider Support & OpenCode Zen (Free Tier)
+
+Configure your preferred provider via environment variables or `.env`:
+
+```bash
+# Option A: OpenCode Zen Free Tier (No API key required!)
+export JEV_PROVIDER="opencode"
+
+# Option B: TypeSafe Direct API
+export TYPESAFE_API_KEY="your-typesafe-api-key"
+
+# Option C: OpenRouter
+export OPENROUTER_API_KEY="your-openrouter-key"
+```
+
+---
+
 ## ⚡ Key Capabilities
 
 1. **Test & Process Failure Triage (`triage_test_failure`)**:

@@ -17,6 +17,7 @@ import type {
 export const TYPESAFE_API_URL = "https://api.typesafe.ai/v1/systemone";
 export const OPENCODE_API_URL = "https://opencode.ai/zen/v1/systemone";
 export const DEFAULT_MODEL = "jev-latest";
+export const DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.1.0; +https://github.com/ismaelsoilet/jev-harness)";
 
 export class JevClient {
   public apiKey?: string;
@@ -52,7 +53,9 @@ export class JevClient {
   }
 
   public get isLive(): boolean {
-    return Boolean(this.apiKey) && !this.forceMock;
+    if (this.forceMock) return false;
+    if (this.provider === "opencode") return true;
+    return Boolean(this.apiKey);
   }
 
   private resolveCredentials(explicitKey?: string): { key?: string; provider: string } {
@@ -60,6 +63,7 @@ export class JevClient {
 
     // 1. Environment variables
     if (typeof process !== "undefined" && process.env) {
+      if (process.env.JEV_PROVIDER === "opencode") return { key: process.env.OPENCODE_API_KEY, provider: "opencode" };
       if (process.env.TYPESAFE_API_KEY) return { key: process.env.TYPESAFE_API_KEY, provider: "typesafe" };
       if (process.env.OPENCODE_API_KEY) return { key: process.env.OPENCODE_API_KEY, provider: "opencode" };
       if (process.env.OPENROUTER_API_KEY) return { key: process.env.OPENROUTER_API_KEY, provider: "openrouter" };
@@ -71,7 +75,7 @@ export class JevClient {
           const jevJson = path.join(current, ".jev.json");
           if (fs.existsSync(jevJson)) {
             const data = JSON.parse(fs.readFileSync(jevJson, "utf-8"));
-            if (data.api_key) return { key: data.api_key, provider: data.provider || "typesafe" };
+            if (data.api_key || data.provider === "opencode") return { key: data.api_key, provider: data.provider || "typesafe" };
           }
 
           const dotenv = path.join(current, ".env");
@@ -79,6 +83,7 @@ export class JevClient {
             const lines = fs.readFileSync(dotenv, "utf-8").split("\n");
             for (const raw of lines) {
               const line = raw.trim();
+              if (line.startsWith("JEV_PROVIDER=") && line.split("=", 2)[1].replace(/['"]/g, "").trim() === "opencode") return { key: undefined, provider: "opencode" };
               if (line.startsWith("TYPESAFE_API_KEY=")) return { key: line.split("=", 2)[1].replace(/['"]/g, "").trim(), provider: "typesafe" };
               if (line.startsWith("OPENCODE_API_KEY=")) return { key: line.split("=", 2)[1].replace(/['"]/g, "").trim(), provider: "opencode" };
               if (line.startsWith("OPENROUTER_API_KEY=")) return { key: line.split("=", 2)[1].replace(/['"]/g, "").trim(), provider: "openrouter" };
@@ -100,6 +105,7 @@ export class JevClient {
           const lines = fs.readFileSync(globalCreds, "utf-8").split("\n");
           for (const raw of lines) {
             const line = raw.trim();
+            if (line.startsWith("JEV_PROVIDER=") && line.split("=", 2)[1].replace(/['"]/g, "").trim() === "opencode") return { key: undefined, provider: "opencode" };
             if (line.startsWith("TYPESAFE_API_KEY=")) return { key: line.split("=", 2)[1].replace(/['"]/g, "").trim(), provider: "typesafe" };
             if (line.startsWith("OPENCODE_API_KEY=")) return { key: line.split("=", 2)[1].replace(/['"]/g, "").trim(), provider: "opencode" };
             if (line.startsWith("OPENROUTER_API_KEY=")) return { key: line.split("=", 2)[1].replace(/['"]/g, "").trim(), provider: "openrouter" };
@@ -135,27 +141,33 @@ export class JevClient {
     const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
 
     try {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        "User-Agent": DEFAULT_USER_AGENT,
+      };
+      if (this.apiKey) {
+        headers["Authorization"] = `Bearer ${this.apiKey}`;
+      }
+
       const resp = await fetch(this.baseUrl, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${this.apiKey}`,
-          "User-Agent": "JevHarness-TS/0.1.0",
-        },
+        headers,
         body: JSON.stringify(payload),
         signal: controller.signal,
       });
 
       if (!resp.ok) {
         const errText = await resp.text();
-        throw new Error(`TypeSafe API HTTP ${resp.status}: ${errText}`);
+        const providerName = this.provider === "opencode" ? "OpenCode Zen" : "TypeSafe";
+        throw new Error(`${providerName} API HTTP ${resp.status}: ${errText}`);
       }
 
       const data = await resp.json();
       return this.parseResponse(data, chosenModel, false);
     } catch (err: any) {
       if (err.name === "AbortError") {
-        throw new Error(`TypeSafe API request timed out after ${this.timeoutMs}ms`);
+        const providerName = this.provider === "opencode" ? "OpenCode Zen" : "TypeSafe";
+        throw new Error(`${providerName} API request timed out after ${this.timeoutMs}ms`);
       }
       throw err;
     } finally {

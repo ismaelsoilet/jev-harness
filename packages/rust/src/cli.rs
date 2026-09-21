@@ -23,6 +23,9 @@ pub struct Cli {
     #[arg(long, global = true, help = "Output results in machine-readable JSON")]
     pub json: bool,
 
+    #[arg(long, global = true, help = "Override backend provider (typesafe, opencode, openrouter)")]
+    pub provider: Option<String>,
+
     #[command(subcommand)]
     pub command: Commands,
 }
@@ -98,21 +101,39 @@ fn read_input(arg_pos: Option<String>, arg_flag: Option<String>) -> io::Result<S
 
 pub async fn run_cli() {
     let cli = Cli::parse();
-    let client = JevClient::new(None, None, None, None, cli.mock);
+    let mut client = JevClient::new(None, None, None, None, cli.mock);
+    if let Some(ref p) = cli.provider {
+        client.provider = p.clone();
+        if p == "opencode" {
+            client.base_url = "https://opencode.ai/zen/v1/systemone".to_string();
+            client.model = "jev-1.13-free".to_string();
+        }
+    }
 
     match cli.command {
         Commands::Status => {
             println!("\n=== JEV HARNESS (RUST) STATUS ===");
-            if let Some(ref key) = client.api_key {
-                let masked = if key.len() > 10 {
-                    format!("{}...{}", &key[..6], &key[key.len() - 4..])
+            let is_live = !client.force_mock && (client.provider == "opencode" || client.api_key.is_some());
+            if is_live {
+                if client.provider == "opencode" {
+                    println!("Provider:    OPENCODE ZEN (Free Tier)");
+                    println!("Endpoint:    {}", client.base_url);
+                    println!("Engine Mode: LIVE (OpenCode Zen Free Community Model)");
                 } else {
-                    "***".to_string()
-                };
-                println!("API Key:     Configured ({})", masked);
-                println!("Provider:    {}", client.provider.to_uppercase());
-                println!("Endpoint:    {}", client.base_url);
-                println!("Engine Mode: LIVE");
+                    let masked = if let Some(ref key) = client.api_key {
+                        if key.len() > 10 {
+                            format!("{}...{}", &key[..6], &key[key.len() - 4..])
+                        } else {
+                            "***".to_string()
+                        }
+                    } else {
+                        "***".to_string()
+                    };
+                    println!("API Key:     Configured ({})", masked);
+                    println!("Provider:    {}", client.provider.to_uppercase());
+                    println!("Endpoint:    {}", client.base_url);
+                    println!("Engine Mode: LIVE");
+                }
             } else {
                 println!("API Key:     NOT DETECTED");
                 println!("Engine Mode: SIMULATION / MOCK (Heuristic offline mode active)");

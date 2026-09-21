@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import re
+import socket
 from typing import Any, Dict, List, Optional, Union
 import urllib.error
 import urllib.request
@@ -19,6 +20,26 @@ TYPESAFE_API_URL = "https://api.typesafe.ai/v1/systemone"
 OPENCODE_API_URL = "https://opencode.ai/zen/v1/systemone"
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 DEFAULT_MODEL = "jev-latest"
+DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.1.0; +https://github.com/ismaelsoilet/jev-harness)"
+
+
+def _urlopen_with_ipv4_fallback(req: urllib.request.Request, timeout: float):
+    """Attempts normal urlopen, falling back to IPv4 socket resolution if IPv6 network is unreachable."""
+    try:
+        return urllib.request.urlopen(req, timeout=timeout)
+    except urllib.error.URLError as e:
+        orig_getaddrinfo = socket.getaddrinfo
+
+        def ipv4_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+            return orig_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
+
+        try:
+            socket.getaddrinfo = ipv4_getaddrinfo
+            return urllib.request.urlopen(req, timeout=timeout)
+        except Exception:
+            raise e
+        finally:
+            socket.getaddrinfo = orig_getaddrinfo
 
 
 @dataclass
@@ -153,6 +174,8 @@ class JevClient:
     def _resolve_credentials() -> tuple[Optional[str], str]:
         """Resolves API key and provider using hierarchical cascade."""
         # 1. Environment variables
+        if os.getenv("JEV_PROVIDER") == "opencode":
+            return os.getenv("OPENCODE_API_KEY"), "opencode"
         if os.getenv("TYPESAFE_API_KEY"):
             return os.getenv("TYPESAFE_API_KEY"), "typesafe"
         if os.getenv("OPENCODE_API_KEY"):
@@ -170,8 +193,8 @@ class JevClient:
                     try:
                         data = json.loads(jev_json.read_text(encoding="utf-8"))
                         provider = data.get("provider", "typesafe")
-                        if data.get("api_key"):
-                            return data["api_key"], provider
+                        if provider == "opencode" or data.get("api_key"):
+                            return data.get("api_key"), provider
                     except Exception:
                         pass
 
@@ -181,6 +204,8 @@ class JevClient:
                         content = dotenv_file.read_text(encoding="utf-8")
                         for line in content.splitlines():
                             line = line.strip()
+                            if line.startswith("JEV_PROVIDER=") and line.split("=", 1)[1].strip(" '\"") == "opencode":
+                                return None, "opencode"
                             if line.startswith("TYPESAFE_API_KEY="):
                                 return line.split("=", 1)[1].strip(" '\""), "typesafe"
                             if line.startswith("OPENCODE_API_KEY="):
@@ -249,7 +274,7 @@ class JevClient:
 
         headers = {
             "Content-Type": "application/json",
-            "User-Agent": "JevHarness/0.1.0",
+            "User-Agent": DEFAULT_USER_AGENT,
         }
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
@@ -258,18 +283,17 @@ class JevClient:
         req = urllib.request.Request(self.base_url, data=req_data, headers=headers, method="POST")
 
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            with _urlopen_with_ipv4_fallback(req, timeout=self.timeout) as resp:
                 resp_data = json.loads(resp.read().decode("utf-8"))
                 return self._parse_response(resp_data, chosen_model, is_mock=False)
         except urllib.error.HTTPError as e:
-            if self.provider == "opencode":
-                return self._simulate_system_one(state_str, questions, chosen_model)
             err_body = e.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"TypeSafe API returned HTTP {e.code}: {err_body}") from e
+            provider_label = "OpenCode Zen" if self.provider == "opencode" else "TypeSafe"
+            raise RuntimeError(f"{provider_label} API returned HTTP {e.code}: {err_body}") from e
         except (urllib.error.URLError, TimeoutError) as e:
-            if self.provider == "opencode":
-                return self._simulate_system_one(state_str, questions, chosen_model)
-            raise RuntimeError(f"Failed to connect to TypeSafe API ({self.base_url}): {e.reason if hasattr(e, 'reason') else e}") from e
+            provider_label = "OpenCode Zen" if self.provider == "opencode" else "TypeSafe"
+            reason = e.reason if hasattr(e, "reason") else e
+            raise RuntimeError(f"Failed to connect to {provider_label} API ({self.base_url}): {reason}") from e
 
     def _call_openrouter(
         self, state_str: str, questions: Dict[str, QuestionType], model: str
@@ -301,6 +325,7 @@ class JevClient:
         }
         headers = {
             "Content-Type": "application/json",
+            "User-Agent": DEFAULT_USER_AGENT,
             "Authorization": f"Bearer {self.api_key}",
             "HTTP-Referer": "https://github.com/ismaelsoilet/jev-harness",
             "X-Title": "Jev Harness",
@@ -308,7 +333,7 @@ class JevClient:
         req_data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(self.base_url, data=req_data, headers=headers, method="POST")
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            with _urlopen_with_ipv4_fallback(req, timeout=self.timeout) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 content = data["choices"][0]["message"]["content"]
                 parsed_json = json.loads(content)

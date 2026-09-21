@@ -469,6 +469,41 @@ python -m unittest discover -s tests
 
 ---
 
+## 🚀 Multi-Registry Release & Synchronization (PyPI, npm, Crates.io)
+
+### Do Registries Automatically Update on `git push`?
+**No.** PyPI, npm, and Crates.io are immutable, independently versioned package registries. Pushing commits to GitHub updates only the Git repository, not the registry packages or their online documentation.
+
+To update the packages and documentation across all 3 registries:
+
+### 1. Unified Local Release Script (`scripts/release.sh`)
+Use the automated multi-runtime script to check, bump versions, and publish:
+
+```bash
+# 1. Run full test battery (Python, TS, Rust - 75+ tests)
+./scripts/release.sh --check
+
+# 2. Synchronously bump version in pyproject.toml, package.json, and Cargo.toml
+./scripts/release.sh --bump 0.1.1
+
+# 3. Publish to a specific registry or all at once:
+./scripts/release.sh --publish rust    # Publishes to crates.io
+./scripts/release.sh --publish npm     # Publishes to npm (@ismaelsoilet/jev-harness)
+./scripts/release.sh --publish python  # Builds wheel/sdist for PyPI
+
+# 4. Create git tag and push to GitHub
+./scripts/release.sh --git-tag 0.1.1
+```
+
+### 2. Automated GitHub Actions CD (`.github/workflows/release.yml`)
+You can also trigger releases via GitHub Actions:
+- **Automatic:** Pushing any tag matching `v*.*.*` (e.g. `git push origin v0.1.1`) triggers the `release.yml` workflow, which tests all runtimes and automatically publishes to PyPI, npm, and Crates.io.
+- **Manual:** Go to **GitHub Actions → Release & Publish → Run workflow**, specify the version, and click run.
+
+*(Requires `PYPI_API_TOKEN`, `NPM_TOKEN`, and `CARGO_REGISTRY_TOKEN` in your repository GitHub Secrets).*
+
+---
+
 ## 📄 License
 
 Distributed under the **MIT License**. See [`LICENSE`](LICENSE) for more information.

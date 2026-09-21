@@ -9,6 +9,10 @@ use std::time::Duration;
 
 pub const DEFAULT_MODEL: &str = "jev-latest";
 pub const DEFAULT_TIMEOUT_MS: u64 = 10000;
+pub const TYPESAFE_API_URL: &str = "https://api.typesafe.ai/v1/systemone";
+pub const OPENCODE_API_URL: &str = "https://opencode.ai/zen/v1/systemone";
+pub const OPENROUTER_API_URL: &str = "https://openrouter.ai/api/v1/chat/completions";
+pub const DEFAULT_USER_AGENT: &str = "Mozilla/5.0 (compatible; JevHarness/0.1.0; +https://github.com/ismaelsoilet/jev-harness)";
 
 #[derive(Debug, Clone)]
 pub struct JevClient {
@@ -37,11 +41,18 @@ impl JevClient {
     ) -> Self {
         let (resolved_key, resolved_provider, resolved_url) = Self::resolve_credentials(api_key);
         let final_url = base_url.unwrap_or(resolved_url);
-        let final_model = model.unwrap_or_else(|| DEFAULT_MODEL.to_string());
+        let final_model = model.unwrap_or_else(|| {
+            if resolved_provider == "opencode" {
+                "jev-1.13-free".to_string()
+            } else {
+                DEFAULT_MODEL.to_string()
+            }
+        });
         let final_timeout = timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS);
 
         let http_client = reqwest::Client::builder()
             .timeout(Duration::from_millis(final_timeout))
+            .user_agent(DEFAULT_USER_AGENT)
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
 
@@ -68,18 +79,25 @@ impl JevClient {
                 return (
                     Some(key),
                     "typesafe".to_string(),
-                    "https://api.typesafe.ai/v1/systemone".to_string(),
+                    TYPESAFE_API_URL.to_string(),
                 );
             }
         }
 
         // 1. Check environment variables
+        if let Ok(p) = env::var("JEV_PROVIDER") {
+            if p.trim() == "opencode" {
+                let key = env::var("OPENCODE_API_KEY").ok();
+                return (key, "opencode".to_string(), OPENCODE_API_URL.to_string());
+            }
+        }
+
         if let Ok(key) = env::var("TYPESAFE_API_KEY") {
             if !key.trim().is_empty() {
                 return (
                     Some(key),
                     "typesafe".to_string(),
-                    "https://api.typesafe.ai/v1/systemone".to_string(),
+                    TYPESAFE_API_URL.to_string(),
                 );
             }
         }
@@ -89,7 +107,7 @@ impl JevClient {
                 return (
                     Some(key),
                     "opencode".to_string(),
-                    "https://api.opencode.ai/v1/system-one".to_string(),
+                    OPENCODE_API_URL.to_string(),
                 );
             }
         }
@@ -99,7 +117,7 @@ impl JevClient {
                 return (
                     Some(key),
                     "openrouter".to_string(),
-                    "https://openrouter.ai/api/v1/chat/completions".to_string(),
+                    OPENROUTER_API_URL.to_string(),
                 );
             }
         }
@@ -107,12 +125,17 @@ impl JevClient {
         // 2. Check local repository .jev.json
         if let Ok(content) = fs::read_to_string(".jev.json") {
             if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                let prov = val.get("provider").and_then(|v| v.as_str()).unwrap_or("typesafe");
+                if prov == "opencode" {
+                    let k = val.get("api_key").and_then(|v| v.as_str()).map(|s| s.to_string());
+                    return (k, "opencode".to_string(), OPENCODE_API_URL.to_string());
+                }
                 if let Some(k) = val.get("api_key").and_then(|v| v.as_str()) {
                     if !k.trim().is_empty() {
                         return (
                             Some(k.to_string()),
                             "typesafe".to_string(),
-                            "https://api.typesafe.ai/v1/systemone".to_string(),
+                            TYPESAFE_API_URL.to_string(),
                         );
                     }
                 }
@@ -125,13 +148,26 @@ impl JevClient {
             if let Ok(content) = fs::read_to_string(p) {
                 for line in content.lines() {
                     let trimmed = line.trim();
+                    if trimmed.starts_with("JEV_PROVIDER=") && trimmed.contains("opencode") {
+                        return (None, "opencode".to_string(), OPENCODE_API_URL.to_string());
+                    }
+                    if trimmed.starts_with("OPENCODE_API_KEY=") {
+                        let k = trimmed.trim_start_matches("OPENCODE_API_KEY=").trim_matches('"');
+                        if !k.is_empty() {
+                            return (
+                                Some(k.to_string()),
+                                "opencode".to_string(),
+                                OPENCODE_API_URL.to_string(),
+                            );
+                        }
+                    }
                     if trimmed.starts_with("TYPESAFE_API_KEY=") {
                         let k = trimmed.trim_start_matches("TYPESAFE_API_KEY=").trim_matches('"');
                         if !k.is_empty() {
                             return (
                                 Some(k.to_string()),
                                 "typesafe".to_string(),
-                                "https://api.typesafe.ai/v1/systemone".to_string(),
+                                TYPESAFE_API_URL.to_string(),
                             );
                         }
                     }
@@ -142,7 +178,7 @@ impl JevClient {
         (
             None,
             "mock".to_string(),
-            "https://api.typesafe.ai/v1/systemone".to_string(),
+            TYPESAFE_API_URL.to_string(),
         )
     }
 
@@ -151,11 +187,10 @@ impl JevClient {
         state: &str,
         questions: HashMap<String, Question>,
     ) -> Result<JevResponse, JevError> {
-        if self.force_mock || self.api_key.is_none() {
+        let is_live = !self.force_mock && (self.provider == "opencode" || self.api_key.is_some());
+        if !is_live {
             return Ok(self.simulate_system_one(state, &questions, &self.model));
         }
-
-        let key = self.api_key.as_ref().unwrap();
 
         let payload = serde_json::json!({
             "model": self.model,
@@ -163,14 +198,16 @@ impl JevClient {
             "questions": questions
         });
 
-        let resp_result = self
+        let mut req = self
             .http_client
             .post(&self.base_url)
-            .header("Authorization", format!("Bearer {}", key))
-            .header("Content-Type", "application/json")
-            .json(&payload)
-            .send()
-            .await;
+            .header("Content-Type", "application/json");
+
+        if let Some(ref key) = self.api_key {
+            req = req.header("Authorization", format!("Bearer {}", key));
+        }
+
+        let resp_result = req.json(&payload).send().await;
 
         match resp_result {
             Ok(resp) => {

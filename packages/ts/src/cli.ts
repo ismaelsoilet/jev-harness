@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { JevClient } from "./client.js";
+import { JevClient, OPENCODE_API_URL } from "./client.js";
 import {
   routeModelTier,
   shouldAbortTrajectory,
@@ -26,9 +26,18 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
   const args = argv;
   const isMock = args.includes("--mock");
   const isJson = args.includes("--json");
+  const providerIdx = args.findIndex((a) => a === "--provider");
+  const providerVal = providerIdx !== -1 ? args[providerIdx + 1] : undefined;
   const command = args.find((a) => !a.startsWith("-"));
 
   const client = new JevClient({ forceMock: isMock });
+  if (providerVal) {
+    client.provider = providerVal;
+    if (providerVal === "opencode") {
+      client.baseUrl = OPENCODE_API_URL;
+      client.model = "jev-1.13-free";
+    }
+  }
 
   if (!command || command === "help" || args.includes("-h") || args.includes("--help")) {
     console.log(`
@@ -44,18 +53,25 @@ Commands:
 Options:
   --mock                                 Force offline heuristic simulation
   --json                                 Output machine-readable JSON
+  --provider <typesafe|opencode|...>     Override backend provider
 `);
     return 0;
   }
 
   if (command === "status") {
     console.log("\n=== JEV HARNESS (TS) STATUS ===");
-    if (client.apiKey) {
-      const masked = client.apiKey.length > 10 ? client.apiKey.slice(0, 6) + "..." + client.apiKey.slice(-4) : "***";
-      console.log(`API Key:     Configured (${masked})`);
-      console.log(`Provider:    ${client.provider.toUpperCase()}`);
-      console.log(`Endpoint:    ${client.baseUrl}`);
-      console.log(`Engine Mode: LIVE`);
+    if (client.isLive) {
+      if (client.provider === "opencode") {
+        console.log("Provider:    OPENCODE ZEN (Free Tier)");
+        console.log(`Endpoint:    ${client.baseUrl}`);
+        console.log("Engine Mode: LIVE (OpenCode Zen Free Community Model)");
+      } else {
+        const masked = client.apiKey && client.apiKey.length > 10 ? client.apiKey.slice(0, 6) + "..." + client.apiKey.slice(-4) : "***";
+        console.log(`API Key:     Configured (${masked})`);
+        console.log(`Provider:    ${client.provider.toUpperCase()}`);
+        console.log(`Endpoint:    ${client.baseUrl}`);
+        console.log("Engine Mode: LIVE");
+      }
     } else {
       console.log("API Key:     NOT DETECTED");
       console.log("Engine Mode: SIMULATION / MOCK (Heuristic offline mode active)");

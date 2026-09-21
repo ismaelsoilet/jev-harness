@@ -44,21 +44,26 @@ def _read_input(val_or_path: Optional[str]) -> str:
 
 
 def cmd_status(args: argparse.Namespace) -> int:
-    client = JevClient()
+    client = JevClient(provider=getattr(args, "provider", None))
     key = client.api_key
     print("\n=== JEV HARNESS STATUS ===")
-    if key:
-        masked = key[:6] + "..." + key[-4:] if len(key) > 10 else "***"
-        print(f"API Key:     Configured ({masked})")
-        print(f"Provider:    {client.provider.upper()}")
-        print(f"Endpoint:    {client.base_url}")
-        print(f"Engine Mode: LIVE")
+    if client.is_live:
+        if client.provider == "opencode":
+            print("Provider:    OPENCODE ZEN (Free Tier)")
+            print(f"Endpoint:    {client.base_url}")
+            print("Engine Mode: LIVE (OpenCode Zen Free Community Model)")
+        else:
+            masked = key[:6] + "..." + key[-4:] if key and len(key) > 10 else "***"
+            print(f"API Key:     Configured ({masked})")
+            print(f"Provider:    {client.provider.upper()}")
+            print(f"Endpoint:    {client.base_url}")
+            print("Engine Mode: LIVE")
     else:
         print("API Key:     NOT DETECTED")
         print("Engine Mode: SIMULATION / MOCK (Heuristic offline mode active)")
         print("\nPara ativar o modo LIVE com seu provedor escolhido:")
+        print("  - OpenCode Zen Free: export OPENCODE_API_KEY=zen (ou jev-harness --provider opencode)")
         print("  - TypeSafe Oficial:  export TYPESAFE_API_KEY='sua_chave'")
-        print("  - OpenCode Zen Free: export OPENCODE_API_KEY='sua_chave'")
         print("  - OpenRouter:        export OPENROUTER_API_KEY='sua_chave'")
         print("  (ou salve no .env do repo ou em ~/.config/jev/credentials.env)")
     print(f"Model:       {client.model}")
@@ -251,7 +256,7 @@ def cmd_test_gate(args: argparse.Namespace) -> int:
         print("Error: No test failure log provided. Pass --log <file_or_string> or pipe via stdin.", file=sys.stderr)
         return 2
 
-    client = JevClient(force_mock=args.mock)
+    client = JevClient(force_mock=args.mock, provider=getattr(args, "provider", None))
     res = triage_test_failure(text, client=client)
 
     if args.json:
@@ -279,6 +284,8 @@ def cmd_test_gate(args: argparse.Namespace) -> int:
         print(f"Recommendation:  {res.action_recommendation}")
         if res.is_mock:
             print("Mode:            [SIMULATION/MOCK]")
+        else:
+            print(f"Mode:            [LIVE: {client.provider.upper()}]")
         print("--------------------------------\n")
 
     return 0 if res.skip_llm else 1
@@ -291,7 +298,7 @@ def cmd_abort_check(args: argparse.Namespace) -> int:
         print("Error: No plan provided. Pass --plan <text_or_path>.", file=sys.stderr)
         return 2
 
-    client = JevClient(force_mock=args.mock)
+    client = JevClient(force_mock=args.mock, provider=getattr(args, "provider", None))
     res = should_abort_trajectory(plan, recent_attempts_summary=history, client=client)
 
     if args.json:
@@ -317,6 +324,8 @@ def cmd_abort_check(args: argparse.Namespace) -> int:
         print(f"Summary:           {res.reasoning_summary}")
         if res.is_mock:
             print("Mode:              [SIMULATION/MOCK]")
+        else:
+            print(f"Mode:              [LIVE: {client.provider.upper()}]")
         print("------------------------------\n")
 
     return 1 if res.should_abort else 0
@@ -328,7 +337,7 @@ def cmd_route(args: argparse.Namespace) -> int:
         print("Error: No task description provided. Pass --task <text_or_path>.", file=sys.stderr)
         return 2
 
-    client = JevClient(force_mock=args.mock)
+    client = JevClient(force_mock=args.mock, provider=getattr(args, "provider", None))
     res = route_model_tier(task, client=client)
 
     if args.json:
@@ -354,6 +363,8 @@ def cmd_route(args: argparse.Namespace) -> int:
         print(f"Rationale:         {res.rationale}")
         if res.is_mock:
             print("Mode:              [SIMULATION/MOCK]")
+        else:
+            print(f"Mode:              [LIVE: {client.provider.upper()}]")
         print("-------------------------------\n")
 
     return 0
@@ -366,7 +377,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
         print("Error: Both --criteria and --output must be provided.", file=sys.stderr)
         return 2
 
-    client = JevClient(force_mock=args.mock)
+    client = JevClient(force_mock=args.mock, provider=getattr(args, "provider", None))
     res = verify_step_completion(criteria, output, client=client)
 
     if args.json:
@@ -389,8 +400,11 @@ def cmd_verify(args: argparse.Namespace) -> int:
         print(f"Satisfaction Prob:  {res.satisfaction_probability * 100:.1f}%")
         print(f"Rigor Score:        {res.rigor_score:.1f} / 4.0")
         print(f"Confidence:         {res.confidence * 100:.1f}%")
+        print(f"Needs Rework:       {'YES' if res.needs_rework else 'NO'}")
         if res.is_mock:
             print("Mode:               [SIMULATION/MOCK]")
+        else:
+            print(f"Mode:               [LIVE: {client.provider.upper()}]")
         print("--------------------------------\n")
 
     return 0 if res.is_verified else 1
@@ -398,7 +412,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
 
 def cmd_mcp(args: argparse.Namespace) -> int:
     from .mcp_server import run_mcp_server
-    client = JevClient(force_mock=args.mock)
+    client = JevClient(force_mock=args.mock, provider=getattr(args, "provider", None))
     run_mcp_server(client=client)
     return 0
 
@@ -408,6 +422,7 @@ def main() -> None:
     common_parser = argparse.ArgumentParser(add_help=False)
     common_parser.add_argument("--mock", action="store_true", help="Force local simulation mode even if key is present")
     common_parser.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+    common_parser.add_argument("--provider", choices=["typesafe", "opencode", "openrouter"], help="Override backend provider")
 
     parser = argparse.ArgumentParser(
         prog="jev-harness",

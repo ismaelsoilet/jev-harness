@@ -2,11 +2,29 @@
 
 > **Zero-dependency System One decision harness & token optimizer for AI coding agents (Node.js, Bun, Deno, Vite, Tauri, Next.js).**
 
+[![npm version](https://img.shields.io/npm/v/@ismaelsoilet/jev-harness.svg?color=red&logo=npm)](https://www.npmjs.com/package/@ismaelsoilet/jev-harness)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg)](https://www.typescriptlang.org/)
 [![Zero Dependencies](https://img.shields.io/badge/dependencies-0-success.svg)](https://github.com/ismaelsoilet/jev-harness)
 
 `jev-harness` wraps [TypeSafe Jev System One](https://typesafe.ai) micro-decisions with local fast heuristics (1-5ms) and remote sub-second inference (70-300ms). It prevents catastrophic token waste ($10-$50/M frontier reasoning calls) by detecting dependency errors, circular failure loops, and deterministic routing locally.
+
+---
+
+## 🌐 Multi-Provider Support & OpenCode Zen (Free Tier)
+
+Configure your preferred provider via environment variables or `.env`:
+
+```bash
+# Option A: OpenCode Zen Free Tier (No API key required!)
+export JEV_PROVIDER="opencode"
+
+# Option B: TypeSafe Direct API
+export TYPESAFE_API_KEY="your-typesafe-api-key"
+
+# Option C: OpenRouter
+export OPENROUTER_API_KEY="your-openrouter-key"
+```
 
 ---
 

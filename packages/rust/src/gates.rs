@@ -7,6 +7,35 @@ use crate::client::JevClient;
 use crate::types::*;
 use std::collections::HashMap;
 
+/// Truncates a log string preserving the head and tail while guaranteeing valid UTF-8 char boundaries.
+pub fn safe_truncate_head_tail(s: &str, max_head: usize, max_tail: usize) -> String {
+    if s.len() <= max_head + max_tail {
+        return s.to_string();
+    }
+
+    let mut head_end = max_head;
+    while head_end > 0 && !s.is_char_boundary(head_end) {
+        head_end -= 1;
+    }
+
+    let mut tail_start = s.len().saturating_sub(max_tail);
+    while tail_start < s.len() && !s.is_char_boundary(tail_start) {
+        tail_start += 1;
+    }
+
+    if head_end >= tail_start {
+        return s.to_string();
+    }
+
+    let truncated_bytes = tail_start - head_end;
+    format!(
+        "{}\n\n... [TRUNCATED {} BYTES BY JEV HARNESS] ...\n\n{}",
+        &s[..head_end],
+        truncated_bytes,
+        &s[tail_start..]
+    )
+}
+
 /// Triages an execution or test failure log.
 /// Returns whether expensive frontier LLM calls can be skipped.
 pub async fn triage_test_failure(
@@ -17,13 +46,7 @@ pub async fn triage_test_failure(
     let active_client = client.unwrap_or(&default_client);
 
     let truncated_log = if raw_error_log.len() > 3000 {
-        let half = 1400;
-        format!(
-            "{}\n\n... [TRUNCATED {} BYTES BY JEV HARNESS] ...\n\n{}",
-            &raw_error_log[..half],
-            raw_error_log.len() - (half * 2),
-            &raw_error_log[raw_error_log.len() - half..]
-        )
+        safe_truncate_head_tail(raw_error_log, 1400, 1400)
     } else {
         raw_error_log.to_string()
     };

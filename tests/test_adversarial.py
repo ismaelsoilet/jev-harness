@@ -107,6 +107,32 @@ class TestAdversarialAndTelemetry(unittest.TestCase):
         self.assertTrue(opencode_client.is_live, "OpenCode Zen provider must be live without API key")
         self.assertIn("zen/v1/systemone", opencode_client.base_url)
 
+    def test_adversarial_utf8_truncation_emojis(self):
+        # Build 8000-char string packed with UTF-8 accents and 4-byte emojis
+        chunk = "⚡ Erro de compilação em módulo de produção: 'não foi possível carregar' 🦀 🔥\n"
+        log = chunk * 100
+        res = triage_test_failure(failure_log=log, client=self.client)
+        self.assertIsNotNone(res.category)
+        self.assertTrue(res.is_mock)
+
+    def test_opencode_zen_no_silent_fallback_on_network_error(self):
+        from unittest.mock import patch
+        import urllib.error
+        from jev_harness.client import NoulQuestion
+
+        client = JevClient(provider="opencode")
+        http_err = urllib.error.HTTPError(
+            url="https://opencode.ai/zen/v1/systemone",
+            code=500,
+            msg="Internal Server Error",
+            hdrs={},
+            fp=None,
+        )
+        with patch("jev_harness.client._urlopen_with_ipv4_fallback", side_effect=http_err):
+            with self.assertRaises(RuntimeError) as ctx:
+                client.system_one("test state", {"q": NoulQuestion("is valid?")})
+            self.assertIn("OpenCode Zen API returned HTTP 500", str(ctx.exception))
+
 
 if __name__ == "__main__":
     unittest.main()

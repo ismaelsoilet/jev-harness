@@ -184,3 +184,23 @@ async fn test_adversarial_heavy_priority_over_typo() {
 
     assert_eq!(res.selected_tier, "heavy_system2", "Heavy architectural keywords must override typo in routing");
 }
+
+#[tokio::test]
+async fn test_safe_utf8_truncation() {
+    use jev_harness::gates::safe_truncate_head_tail;
+
+    // Construct a string where byte 1400 lands right in the middle of 4-byte emoji 🦀
+    let mut s = String::new();
+    s.push_str(&"a".repeat(1398));
+    s.push_str("🦀🔥⚡");
+    s.push_str(&"b".repeat(3000));
+
+    let truncated = safe_truncate_head_tail(&s, 1400, 1400);
+    assert!(truncated.contains("... [TRUNCATED"));
+    assert!(!truncated.is_empty());
+
+    // Also verify via triage_test_failure
+    let client = JevClient::with_mock();
+    let triage_res = triage_test_failure(&s, Some(&client)).await;
+    assert!(triage_res.is_ok(), "triage_test_failure must never panic on multi-byte UTF-8 boundaries");
+}
