@@ -1,0 +1,302 @@
+"""
+Model Context Protocol (MCP) Server for Jev System One.
+Enables native tool-calling for Cursor, Claude Desktop, Antigravity IDE, Windsurf, Zed,
+OpenCode, Command Code, and any MCP-compliant AI agent over stdio (JSON-RPC 2.0).
+
+Zero external dependencies (pure Python standard library).
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+from typing import Any, Dict, List, Optional
+
+from .client import JevClient
+from .gates import (
+    route_model_tier,
+    should_abort_trajectory,
+    triage_test_failure,
+    verify_step_completion,
+)
+
+PROTOCOL_VERSION = "2024-11-05"
+SERVER_NAME = "jev-harness"
+SERVER_VERSION = "0.1.0"
+
+
+TOOLS_MANIFEST: List[Dict[str, Any]] = [
+    {
+        "name": "jev_triage_test_failure",
+        "description": (
+            "Triages test traceback, compile error, or runtime failure using Jev System One (70-300ms, zero-generation). "
+            "Returns root cause category, skip_llm flag (true if resolvable deterministically without frontier LLM), "
+            "and immediate action recommendation."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "failure_log": {
+                    "type": "string",
+                    "description": "Raw test failure output, stack trace, or compiler error log.",
+                }
+            },
+            "required": ["failure_log"],
+        },
+    },
+    {
+        "name": "jev_abort_check",
+        "description": (
+            "Guards against doom loops, dead-ends, circular retries, and destructive refactors. "
+            "Evaluates proposed plan against recent attempt history before burning tokens."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "proposed_step": {
+                    "type": "string",
+                    "description": "The next proposed plan, code modification, or architectural direction.",
+                },
+                "recent_attempts_summary": {
+                    "type": "string",
+                    "description": "Summary of previous failed attempts, errors encountered, or circular patterns.",
+                },
+            },
+            "required": ["proposed_step"],
+        },
+    },
+    {
+        "name": "jev_route_task",
+        "description": (
+            "Routes programming task to the minimal sufficient model tier (deterministic script, "
+            "lightweight fast flash model, or heavy frontier reasoning model) to optimize cost and latency."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task_description": {
+                    "type": "string",
+                    "description": "Clear description of the task, bug to fix, or feature to implement.",
+                }
+            },
+            "required": ["task_description"],
+        },
+    },
+    {
+        "name": "jev_verify_completion",
+        "description": (
+            "Calibrates step completion against acceptance criteria using typed rubric scoring. "
+            "Checks if evidence is sufficient to declare done without launching expensive extra review loops."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "acceptance_criteria": {
+                    "type": "string",
+                    "description": "Explicit requirements, constraints, or definition of done.",
+                },
+                "produced_output": {
+                    "type": "string",
+                    "description": "The evidence, test results, code diff, or output produced.",
+                },
+            },
+            "required": ["acceptance_criteria", "produced_output"],
+        },
+    },
+]
+
+
+def handle_initialize(req_id: Any, params: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "jsonrpc": "2.0",
+        "id": req_id,
+        "result": {
+            "protocolVersion": PROTOCOL_VERSION,
+            "serverInfo": {
+                "name": SERVER_NAME,
+                "version": SERVER_VERSION,
+            },
+            "capabilities": {
+                "tools": {
+                    "listChanged": False,
+                }
+            },
+        },
+    }
+
+
+def handle_tools_list(req_id: Any) -> Dict[str, Any]:
+    return {
+        "jsonrpc": "2.0",
+        "id": req_id,
+        "result": {
+            "tools": TOOLS_MANIFEST,
+        },
+    }
+
+
+def handle_tools_call(req_id: Any, params: Dict[str, Any], client: JevClient) -> Dict[str, Any]:
+    tool_name = params.get("name", "")
+    args = params.get("arguments", {})
+
+    try:
+        if tool_name == "jev_triage_test_failure":
+            log_text = args.get("failure_log", "")
+            res = triage_test_failure(log_text, client=client)
+            text_content = json.dumps(
+                {
+                    "category": res.category,
+                    "confidence": res.confidence,
+                    "skip_llm": res.skip_llm,
+                    "skip_llm_prob": res.skip_llm_prob,
+                    "severity_score": res.severity_score,
+                    "recommendation": res.action_recommendation,
+                    "is_mock": res.is_mock,
+                },
+                indent=2,
+            )
+
+        elif tool_name == "jev_abort_check":
+            step = args.get("proposed_step", "")
+            hist = args.get("recent_attempts_summary", "")
+            res = should_abort_trajectory(step, recent_attempts_summary=hist, client=client)
+            text_content = json.dumps(
+                {
+                    "should_abort": res.should_abort,
+                    "abort_probability": res.abort_probability,
+                    "action": res.action,
+                    "viability_score": res.viability_score,
+                    "reasoning_summary": res.reasoning_summary,
+                    "is_mock": res.is_mock,
+                },
+                indent=2,
+            )
+
+        elif tool_name == "jev_route_task":
+            task = args.get("task_description", "")
+            res = route_model_tier(task, client=client)
+            text_content = json.dumps(
+                {
+                    "selected_tier": res.selected_tier,
+                    "confidence": res.confidence,
+                    "complexity_score": res.complexity_score,
+                    "recommended_model": res.recommended_model,
+                    "rationale": res.rationale,
+                    "is_mock": res.is_mock,
+                },
+                indent=2,
+            )
+
+        elif tool_name == "jev_verify_completion":
+            crit = args.get("acceptance_criteria", "")
+            out = args.get("produced_output", "")
+            res = verify_step_completion(crit, out, client=client)
+            text_content = json.dumps(
+                {
+                    "is_verified": res.is_verified,
+                    "satisfaction_probability": res.satisfaction_probability,
+                    "rigor_score": res.rigor_score,
+                    "confidence": res.confidence,
+                    "needs_rework": res.needs_rework,
+                    "is_mock": res.is_mock,
+                },
+                indent=2,
+            )
+        else:
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "error": {
+                    "code": -32601,
+                    "message": f"Unknown tool: {tool_name}",
+                },
+            }
+
+        return {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "result": {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": text_content,
+                    }
+                ],
+                "isError": False,
+            },
+        }
+    except Exception as exc:
+        return {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "result": {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": f"Error executing {tool_name}: {exc}",
+                    }
+                ],
+                "isError": True,
+            },
+        }
+
+
+def process_message(line: str, client: JevClient) -> Optional[Dict[str, Any]]:
+    line = line.strip()
+    if not line:
+        return None
+
+    try:
+        msg = json.loads(line)
+    except json.JSONDecodeError:
+        return {
+            "jsonrpc": "2.0",
+            "id": None,
+            "error": {"code": -32700, "message": "Parse error"},
+        }
+
+    method = msg.get("method")
+    req_id = msg.get("id")
+    params = msg.get("params", {})
+
+    # Handle notifications (no id)
+    if method == "notifications/initialized":
+        return None
+    if method == "ping":
+        return {"jsonrpc": "2.0", "id": req_id, "result": {}}
+
+    if method == "initialize":
+        return handle_initialize(req_id, params)
+    elif method == "tools/list":
+        return handle_tools_list(req_id)
+    elif method == "tools/call":
+        return handle_tools_call(req_id, params, client)
+    else:
+        if req_id is not None:
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "error": {
+                    "code": -32601,
+                    "message": f"Method not found: {method}",
+                },
+            }
+        return None
+
+
+def run_mcp_server(client: Optional[JevClient] = None) -> None:
+    """Runs the stdio MCP server loop until stdin closes."""
+    active_client = client or JevClient()
+    for raw_line in sys.stdin:
+        response = process_message(raw_line, active_client)
+        if response is not None:
+            sys.stdout.write(json.dumps(response) + "\n")
+            sys.stdout.flush()
+
+
+def main() -> None:
+    run_mcp_server()
+
+
+if __name__ == "__main__":
+    main()

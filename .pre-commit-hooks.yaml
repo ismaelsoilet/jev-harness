@@ -1,0 +1,14 @@
+- id: jev-test-gate
+  name: Jev Test Failure Gate
+  description: Triages test errors and blocks doomed commits with Jev System One
+  entry: jev-harness test-gate
+  language: python
+  types: [text]
+  pass_filenames: false
+
+- id: jev-abort-check
+  name: Jev Abort & Dead-End Check
+  description: Detects circular refactors and unviable trajectories
+  entry: jev-harness abort-check
+  language: python
+  pass_filenames: false

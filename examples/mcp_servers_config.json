@@ -1,0 +1,68 @@
+{
+  "_comment": "Ready-to-use MCP configuration snippets for major AI coding assistants",
+  "cursor": {
+    "file": ".cursor/mcp.json or ~/.cursor/mcp.json",
+    "config": {
+      "mcpServers": {
+        "jev-harness": {
+          "command": "jev-mcp",
+          "args": []
+        }
+      }
+    }
+  },
+  "claude_desktop": {
+    "file": "~/Library/Application Support/Claude/claude_desktop_config.json (Mac) or %APPDATA%/Claude/claude_desktop_config.json (Win)",
+    "config": {
+      "mcpServers": {
+        "jev-harness": {
+          "command": "jev-mcp",
+          "args": []
+        }
+      }
+    }
+  },
+  "antigravity_ide": {
+    "file": "~/.gemini/config/mcp_config.json or .gemini/config/mcp_config.json",
+    "config": {
+      "mcpServers": {
+        "jev-harness": {
+          "command": "jev-mcp",
+          "args": []
+        }
+      }
+    }
+  },
+  "windsurf": {
+    "file": "~/.codeium/windsurf/mcp_config.json",
+    "config": {
+      "mcpServers": {
+        "jev-harness": {
+          "command": "jev-mcp",
+          "args": []
+        }
+      }
+    }
+  },
+  "zed": {
+    "file": "~/.config/zed/settings.json",
+    "config": {
+      "experimental": {
+        "context_servers": {
+          "jev-harness": {
+            "command": {
+              "path": "jev-mcp",
+              "args": []
+            }
+          }
+        }
+      }
+    }
+  },
+  "opencode": {
+    "file": ".opencode/config.json or agent instruction",
+    "config": {
+      "system_prompt_addition": "When tests fail, invoke jev_triage_test_failure before reasoning. If skip_llm is true, resolve deterministically."
+    }
+  }
+}
