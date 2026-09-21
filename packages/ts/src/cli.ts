@@ -39,6 +39,11 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
     }
   }
 
+  if (args.includes("--version") || args.includes("-v") || args.includes("-V")) {
+    console.log("@ismaelsoilet/jev-harness 0.1.1");
+    return 0;
+  }
+
   if (!command || command === "help" || args.includes("-h") || args.includes("--help")) {
     console.log(`
 Usage: jev-harness <command> [options]

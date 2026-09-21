@@ -14,6 +14,7 @@ import sys
 from typing import Any, Dict, List, Optional
 
 try:
+    from . import __version__
     from .client import JevClient
     from .gates import (
         route_model_tier,
@@ -23,6 +24,7 @@ try:
     )
 except (ImportError, ValueError):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from jev_harness import __version__
     from jev_harness.client import JevClient
     from jev_harness.gates import (
         route_model_tier,
@@ -33,7 +35,7 @@ except (ImportError, ValueError):
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "jev-harness"
-SERVER_VERSION = "0.1.0"
+SERVER_VERSION = __version__
 
 
 TOOLS_MANIFEST: List[Dict[str, Any]] = [

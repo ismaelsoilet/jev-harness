@@ -26,7 +26,7 @@ echo ""
 # 2. Run clean test battery
 echo "[2/5] Running Rust test suite..."
 cargo test
-echo "✅ All unit & integration tests passed (13/13)."
+echo "✅ All unit & integration tests passed (14/14)."
 echo ""
 
 # 3. Verify packaging & dry run

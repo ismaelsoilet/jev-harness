@@ -13,6 +13,7 @@ import sys
 from typing import Optional
 
 try:
+    from . import __version__
     from .client import JevClient
     from .gates import (
         route_model_tier,
@@ -22,6 +23,7 @@ try:
     )
 except (ImportError, ValueError):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from jev_harness import __version__
     from jev_harness.client import JevClient
     from jev_harness.gates import (
         route_model_tier,
@@ -444,6 +446,12 @@ def main() -> None:
         prog="jev-harness",
         description="TypeSafe Jev System One Decision Harness & Token Optimizer",
         parents=[common_parser],
+    )
+    parser.add_argument(
+        "--version",
+        "-V",
+        action="version",
+        version=f"%(prog)s {__version__}",
     )
 
     subparsers = parser.add_subparsers(dest="command", required=True)

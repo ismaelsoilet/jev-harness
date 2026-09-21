@@ -81,6 +81,21 @@ class TestCLI(unittest.TestCase):
                 self.assertEqual(cm.exception.code, 0)
                 self.assertIn("OPENCODE ZEN", out.getvalue())
 
+    def test_cli_missing_args(self):
+        with patch.object(sys, "argv", ["jev-harness", "test-gate"]):
+            with patch("sys.stderr", new_callable=StringIO):
+                with self.assertRaises(SystemExit) as cm:
+                    main()
+                self.assertEqual(cm.exception.code, 2)
+
+    def test_cli_version(self):
+        with patch.object(sys, "argv", ["jev-harness", "--version"]):
+            with patch("sys.stdout", new_callable=StringIO) as out:
+                with self.assertRaises(SystemExit) as cm:
+                    main()
+                self.assertEqual(cm.exception.code, 0)
+                self.assertIn("0.1.1", out.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -12,7 +12,11 @@ pub const DEFAULT_TIMEOUT_MS: u64 = 10000;
 pub const TYPESAFE_API_URL: &str = "https://api.typesafe.ai/v1/systemone";
 pub const OPENCODE_API_URL: &str = "https://opencode.ai/zen/v1/systemone";
 pub const OPENROUTER_API_URL: &str = "https://openrouter.ai/api/v1/chat/completions";
-pub const DEFAULT_USER_AGENT: &str = "Mozilla/5.0 (compatible; JevHarness/0.1.0; +https://github.com/ismaelsoilet/jev-harness)";
+pub const DEFAULT_USER_AGENT: &str = concat!(
+    "Mozilla/5.0 (compatible; JevHarness/",
+    env!("CARGO_PKG_VERSION"),
+    "; +https://github.com/ismaelsoilet/jev-harness)"
+);
 
 #[derive(Debug, Clone)]
 pub struct JevClient {

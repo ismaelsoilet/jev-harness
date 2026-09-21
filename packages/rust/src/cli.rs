@@ -12,7 +12,7 @@ use std::process;
 #[command(
     name = "jev",
     author = "ISMAEL HOSNI SOILET DE LIMA <soilet.ismael@gmail.com>",
-    version = "0.1.0",
+    version = env!("CARGO_PKG_VERSION"),
     about = "Zero-overhead System One decision harness and token optimizer for AI coding agents",
     long_about = None
 )]

@@ -68,25 +68,30 @@ bump_version() {
         exit 1
     fi
 
-    echo "Bumping all manifests to v${new_ver}..."
+    echo "Bumping all manifests and source files to v${new_ver}..."
 
-    # 1. Update pyproject.toml
+    # 1. Update pyproject.toml and Python source
     sed -i -E "s/^version = \"[^\"]+\"/version = \"${new_ver}\"/" "${PYPROJECT}"
+    sed -i -E "s/^__version__ = \"[^\"]+\"/__version__ = \"${new_ver}\"/" "${REPO_ROOT}/src/jev_harness/__init__.py"
+    sed -i -E "s/JevHarness\/[0-9]+\.[0-9]+\.[0-9]+/JevHarness\/${new_ver}/" "${REPO_ROOT}/src/jev_harness/client.py"
 
-    # 2. Update package.json
+    # 2. Update TypeScript package.json, lockfile, and client
     sed -i -E "s/\"version\": \"[^\"]+\"/\"version\": \"${new_ver}\"/" "${PACKAGE_JSON}"
-
-    # 3. Update Cargo.toml
-    sed -i -E "s/^version = \"[^\"]+\"/version = \"${new_ver}\"/" "${CARGO_TOML}"
-
-    # Also update package-lock if present
+    sed -i -E "s/JevHarness\/[0-9]+\.[0-9]+\.[0-9]+/JevHarness\/${new_ver}/" "${REPO_ROOT}/packages/ts/src/client.ts"
     if [[ -f "${REPO_ROOT}/packages/ts/package-lock.json" ]]; then
         cd "${REPO_ROOT}/packages/ts"
         npm version "${new_ver}" --no-git-tag-version --allow-same-version || true
     fi
 
+    # 3. Update Cargo.toml and Cargo.lock
+    sed -i -E "s/^version = \"[^\"]+\"/version = \"${new_ver}\"/" "${CARGO_TOML}"
+    (cd "${REPO_ROOT}/packages/rust" && cargo check --quiet || true)
+
+    # 4. Update README.md pre-commit hook rev
+    sed -i -E "s/rev: v[0-9]+\.[0-9]+\.[0-9]+/rev: v${new_ver}/" "${REPO_ROOT}/README.md"
+
     show_versions
-    echo "✅ Version bump complete."
+    echo "✅ Version bump complete across all manifests, code, and docs."
 }
 
 publish_target() {
@@ -138,7 +143,7 @@ git_tag_release() {
 
     echo "Committing release v${ver} and tagging..."
     cd "${REPO_ROOT}"
-    git add pyproject.toml packages/ts/package.json packages/rust/Cargo.toml
+    git add pyproject.toml packages/ts/package.json packages/ts/package-lock.json packages/rust/Cargo.toml packages/rust/Cargo.lock src/jev_harness/__init__.py src/jev_harness/client.py packages/ts/src/client.ts README.md
     git commit -m "release: v${ver} across Python, TypeScript, and Rust" || true
     git tag -a "v${ver}" -m "Release v${ver}"
     git push origin main --tags

@@ -17,7 +17,7 @@ import type {
 export const TYPESAFE_API_URL = "https://api.typesafe.ai/v1/systemone";
 export const OPENCODE_API_URL = "https://opencode.ai/zen/v1/systemone";
 export const DEFAULT_MODEL = "jev-latest";
-export const DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.1.0; +https://github.com/ismaelsoilet/jev-harness)";
+export const DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.1.1; +https://github.com/ismaelsoilet/jev-harness)";
 
 export class JevClient {
   public apiKey?: string;
