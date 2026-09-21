@@ -100,6 +100,22 @@ class TestMCPServer(unittest.TestCase):
         self.assertIn("error", resp)
         self.assertEqual(resp["error"]["code"], -32601)
 
+    def test_mcp_missing_required_arguments(self):
+        req = json.dumps({
+            "jsonrpc": "2.0",
+            "id": 6,
+            "method": "tools/call",
+            "params": {
+                "name": "jev_triage_test_failure",
+                "arguments": {},
+            },
+        })
+        resp = process_message(req, self.client)
+        self.assertIsNotNone(resp)
+        self.assertIn("error", resp)
+        self.assertEqual(resp["error"]["code"], -32602)
+        self.assertIn("required", resp["error"]["message"])
+
     def test_mcp_malformed_json(self):
         resp = process_message("{broken json", self.client)
         self.assertIsNotNone(resp)

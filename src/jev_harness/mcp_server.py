@@ -155,7 +155,16 @@ def handle_tools_call(req_id: Any, params: Dict[str, Any], client: JevClient) ->
     try:
         if tool_name == "jev_triage_test_failure":
             log_text = args.get("failure_log", "")
-            res = triage_test_failure(log_text, client=client)
+            if not log_text or not str(log_text).strip():
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "error": {
+                        "code": -32602,
+                        "message": "Invalid params: 'failure_log' is required and cannot be empty.",
+                    },
+                }
+            res = triage_test_failure(str(log_text), client=client)
             text_content = json.dumps(
                 {
                     "category": res.category,
@@ -171,8 +180,17 @@ def handle_tools_call(req_id: Any, params: Dict[str, Any], client: JevClient) ->
 
         elif tool_name == "jev_abort_check":
             step = args.get("proposed_step", "")
+            if not step or not str(step).strip():
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "error": {
+                        "code": -32602,
+                        "message": "Invalid params: 'proposed_step' is required and cannot be empty.",
+                    },
+                }
             hist = args.get("recent_attempts_summary", "")
-            res = should_abort_trajectory(step, recent_attempts_summary=hist, client=client)
+            res = should_abort_trajectory(str(step), recent_attempts_summary=str(hist), client=client)
             text_content = json.dumps(
                 {
                     "should_abort": res.should_abort,
@@ -187,7 +205,16 @@ def handle_tools_call(req_id: Any, params: Dict[str, Any], client: JevClient) ->
 
         elif tool_name == "jev_route_task":
             task = args.get("task_description", "")
-            res = route_model_tier(task, client=client)
+            if not task or not str(task).strip():
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "error": {
+                        "code": -32602,
+                        "message": "Invalid params: 'task_description' is required and cannot be empty.",
+                    },
+                }
+            res = route_model_tier(str(task), client=client)
             text_content = json.dumps(
                 {
                     "selected_tier": res.selected_tier,
@@ -203,7 +230,16 @@ def handle_tools_call(req_id: Any, params: Dict[str, Any], client: JevClient) ->
         elif tool_name == "jev_verify_completion":
             crit = args.get("acceptance_criteria", "")
             out = args.get("produced_output", "")
-            res = verify_step_completion(crit, out, client=client)
+            if not crit or not str(crit).strip() or not out or not str(out).strip():
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "error": {
+                        "code": -32602,
+                        "message": "Invalid params: 'acceptance_criteria' and 'produced_output' are both required.",
+                    },
+                }
+            res = verify_step_completion(str(crit), str(out), client=client)
             text_content = json.dumps(
                 {
                     "is_verified": res.is_verified,

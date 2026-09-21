@@ -204,3 +204,26 @@ async fn test_safe_utf8_truncation() {
     let triage_res = triage_test_failure(&s, Some(&client)).await;
     assert!(triage_res.is_ok(), "triage_test_failure must never panic on multi-byte UTF-8 boundaries");
 }
+
+#[tokio::test]
+async fn test_adversarial_portuguese_and_safe_fallback() {
+    let client = JevClient::with_mock();
+
+    let res_assert = triage_test_failure("Falha de asserção: esperava 10 mas obteve 20", Some(&client))
+        .await
+        .expect("Triage failed");
+    assert_eq!(res_assert.category, "deep_logic");
+    assert!(!res_assert.skip_llm);
+
+    let res_mod = triage_test_failure("Módulo não encontrado: pandas", Some(&client))
+        .await
+        .expect("Triage failed");
+    assert_eq!(res_mod.category, "env_missing");
+    assert!(res_mod.skip_llm);
+
+    let res_fallback = triage_test_failure("xyz123 uninformative random text with no keywords", Some(&client))
+        .await
+        .expect("Triage failed");
+    assert_eq!(res_fallback.category, "deep_logic");
+    assert!(!res_fallback.skip_llm);
+}

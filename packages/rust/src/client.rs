@@ -227,10 +227,7 @@ impl JevClient {
                 let parsed: serde_json::Value = resp.json().await?;
                 self.parse_api_response(&parsed)
             }
-            Err(_e) => {
-                // If network failure occurs in agentic run, fall back gracefully to simulation
-                Ok(self.simulate_system_one(state, &questions, &format!("{}-offline-fallback", self.model)))
-            }
+            Err(e) => Err(JevError::Http(e)),
         }
     }
 
@@ -309,8 +306,16 @@ impl JevClient {
         for (qid, q) in questions {
             match q {
                 Question::Choice(cq) => {
-                    let mut best_choice = cq.criteria.keys().next().cloned().unwrap_or_default();
-                    let mut best_score: i32 = -1;
+                    let mut best_choice = if cq.criteria.contains_key("deep_logic") {
+                        "deep_logic".to_string()
+                    } else if cq.criteria.contains_key("lightweight_system2") {
+                        "lightweight_system2".to_string()
+                    } else if cq.criteria.contains_key("proceed") {
+                        "proceed".to_string()
+                    } else {
+                        cq.criteria.keys().next().cloned().unwrap_or_default()
+                    };
+                    let mut best_score: i32 = 0;
 
                     for (opt, desc) in &cq.criteria {
                         let opt_text = format!("{} {}", opt, desc).to_lowercase();
@@ -334,6 +339,7 @@ impl JevClient {
                                 "assertionerror", "assert ", "panicked at", "panic:", "panic",
                                 "deadlock", "goroutines are asleep", "segmentation fault",
                                 "nullpointerexception", "nil pointer dereference", "index out of bounds",
+                                "falha de asserção", "asserção", "erro de lógica",
                             ];
                             if triggers.iter().any(|t| state_lower.contains(t)) {
                                 score += 8;
@@ -347,6 +353,7 @@ impl JevClient {
                                 "cannot find module", "err_module_not_found", "ts2307", "cannot find crate",
                                 "can't find crate", "find crate", "e0463", "cannot find package",
                                 "no required module provides package",
+                                "módulo não encontrado", "nenhum módulo chamado", "pacote não encontrado",
                             ];
                             if triggers.iter().any(|t| state_lower.contains(t)) {
                                 score += if is_explicit_assertion { 4 } else { 7 };
@@ -355,12 +362,16 @@ impl JevClient {
                             let triggers = [
                                 "connectionreset", "timeout", "timed out", "econnreset", "econnrefused",
                                 "etimedout", "socket hang up", "gateway timeout", "503 service unavailable",
+                                "tempo limite", "tempo limite esgotado", "conexão recusada",
                             ];
                             if triggers.iter().any(|t| state_lower.contains(t)) {
                                 score += 7;
                             }
                         } else if opt == "syntax_trivial" {
-                            let triggers = ["syntaxerror", "indentationerror", "expected ';'", "ts1005", "missing bracket"];
+                            let triggers = [
+                                "syntaxerror", "indentationerror", "expected ';'", "ts1005", "missing bracket",
+                                "erro de sintaxe", "sintaxe inválida", "indentação inesperada",
+                            ];
                             if triggers.iter().any(|t| state_lower.contains(t)) {
                                 score += 6;
                             }

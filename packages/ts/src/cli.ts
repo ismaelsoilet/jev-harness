@@ -22,13 +22,64 @@ function readInput(valOrPath?: string): string {
   return "";
 }
 
+function getPackageVersion(): string {
+  try {
+    const pkgPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../package.json");
+    if (fs.existsSync(pkgPath)) {
+      const data = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
+      if (data.version) return data.version;
+    }
+  } catch {
+    // fallback
+  }
+  return "0.1.2";
+}
+
 export async function runCli(argv: string[] = process.argv.slice(2)): Promise<number> {
   const args = argv;
   const isMock = args.includes("--mock");
   const isJson = args.includes("--json");
-  const providerIdx = args.findIndex((a) => a === "--provider");
-  const providerVal = providerIdx !== -1 ? args[providerIdx + 1] : undefined;
-  const command = args.find((a) => !a.startsWith("-"));
+
+  let providerVal: string | undefined;
+  const providerEq = args.find((a) => a.startsWith("--provider="));
+  if (providerEq) {
+    providerVal = providerEq.split("=")[1];
+  } else {
+    const pIdx = args.findIndex((a) => a === "--provider");
+    if (pIdx !== -1) {
+      providerVal = args[pIdx + 1];
+    }
+  }
+
+  // Filter out flags and their argument values to find the subcommand
+  const nonCommandIndices = new Set<number>();
+  for (let i = 0; i < args.length; i++) {
+    if (args[i].startsWith("-")) {
+      nonCommandIndices.add(i);
+      if (
+        (args[i] === "--provider" ||
+          args[i] === "--log" ||
+          args[i] === "-l" ||
+          args[i] === "--sample" ||
+          args[i] === "--plan" ||
+          args[i] === "-p" ||
+          args[i] === "--history" ||
+          args[i] === "-H" ||
+          args[i] === "--task" ||
+          args[i] === "-t" ||
+          args[i] === "--criteria" ||
+          args[i] === "-c" ||
+          args[i] === "--output" ||
+          args[i] === "-o") &&
+        i + 1 < args.length &&
+        !args[i + 1].startsWith("-")
+      ) {
+        nonCommandIndices.add(i + 1);
+        i++;
+      }
+    }
+  }
+  const command = args.find((_, idx) => !nonCommandIndices.has(idx));
 
   const client = new JevClient({ forceMock: isMock });
   if (providerVal) {
@@ -40,7 +91,7 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
   }
 
   if (args.includes("--version") || args.includes("-v") || args.includes("-V")) {
-    console.log("@ismaelsoilet/jev-harness 0.1.1");
+    console.log(`@ismaelsoilet/jev-harness ${getPackageVersion()}`);
     return 0;
   }
 
@@ -96,7 +147,7 @@ Options:
         logVal = args[cmdIdx + 1];
       }
     }
-    const text = readInput(logVal);
+    const text = readInput(logVal).trim();
 
     if (!text) {
       console.error("Error: No test failure log provided. Pass --log <file_or_string> or pipe via stdin.");
@@ -131,13 +182,14 @@ Options:
       }
     }
     const history = histIdx !== -1 ? args[histIdx + 1] : "";
+    const cleanPlan = (plan ? readInput(plan) : "").trim();
 
-    if (!plan) {
+    if (!cleanPlan) {
       console.error("Error: No plan provided. Pass --plan <text>.");
       return 2;
     }
 
-    const res = await shouldAbortTrajectory(plan, history, client);
+    const res = await shouldAbortTrajectory(cleanPlan, history, client);
 
     if (isJson) {
       console.log(JSON.stringify(res, null, 2));
@@ -162,13 +214,14 @@ Options:
         task = args[cmdIdx + 1];
       }
     }
+    const cleanTask = (task ? readInput(task) : "").trim();
 
-    if (!task) {
+    if (!cleanTask) {
       console.error("Error: No task description provided. Pass --task <text>.");
       return 2;
     }
 
-    const res = await routeModelTier(task, client);
+    const res = await routeModelTier(cleanTask, client);
 
     if (isJson) {
       console.log(JSON.stringify(res, null, 2));
@@ -189,13 +242,15 @@ Options:
     const outIdx = args.findIndex((a) => a === "--output" || a === "-o");
     const criteria = critIdx !== -1 ? args[critIdx + 1] : undefined;
     const output = outIdx !== -1 ? args[outIdx + 1] : undefined;
+    const cleanCrit = (criteria ? readInput(criteria) : "").trim();
+    const cleanOut = (output ? readInput(output) : "").trim();
 
-    if (!criteria || !output) {
+    if (!cleanCrit || !cleanOut) {
       console.error("Error: Both --criteria and --output must be provided.");
       return 2;
     }
 
-    const res = await verifyStepCompletion(criteria, output, client);
+    const res = await verifyStepCompletion(cleanCrit, cleanOut, client);
 
     if (isJson) {
       console.log(JSON.stringify(res, null, 2));

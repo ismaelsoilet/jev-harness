@@ -256,7 +256,7 @@ This repository is connected to the global **Jev System One Harness**.
 
 
 def cmd_test_gate(args: argparse.Namespace) -> int:
-    text = _read_input(args.log or args.sample)
+    text = _read_input(args.log or args.sample).strip()
     if not text:
         print("Error: No test failure log provided. Pass --log <file_or_string> or pipe via stdin.", file=sys.stderr)
         return 2
@@ -300,8 +300,8 @@ def cmd_test_gate(args: argparse.Namespace) -> int:
 
 
 def cmd_abort_check(args: argparse.Namespace) -> int:
-    plan = _read_input(args.plan)
-    history = _read_input(args.history)
+    plan = _read_input(args.plan).strip()
+    history = _read_input(args.history).strip()
     if not plan:
         print("Error: No plan provided. Pass --plan <text_or_path>.", file=sys.stderr)
         return 2
@@ -320,7 +320,7 @@ def cmd_abort_check(args: argparse.Namespace) -> int:
                     "abort_probability": res.abort_probability,
                     "action": res.action,
                     "viability_score": res.viability_score,
-                    "reasoning_summary": res.reasoning_summary,
+                    "summary": res.reasoning_summary,
                     "is_mock": res.is_mock,
                 },
                 indent=2,
@@ -330,22 +330,22 @@ def cmd_abort_check(args: argparse.Namespace) -> int:
         print("\n--- JEV ABORT GATE VERDICT ---")
         print(f"Should Abort:     {'YES - STOP & RECONSIDER' if res.should_abort else 'NO - PROCEED'}")
         print(f"Abort Probability: {res.abort_probability * 100:.1f}%")
-        print(f"Recommended Action: {res.action}")
-        print(f"Viability Score:   {res.viability_score:.1f} / 4.0")
-        print(f"Summary:           {res.reasoning_summary}")
+        print(f"Action:           {res.action.upper()}")
+        print(f"Viability Score:  {res.viability_score:.1f} / 4.0")
+        print(f"Summary:          {res.reasoning_summary}")
         if res.is_mock:
-            print("Mode:              [SIMULATION/MOCK]")
+            print("Mode:             [SIMULATION/MOCK]")
         else:
-            print(f"Mode:              [LIVE: {client.provider.upper()}]")
+            print(f"Mode:             [LIVE: {client.provider.upper()}]")
         print("------------------------------\n")
 
     return 1 if res.should_abort else 0
 
 
 def cmd_route(args: argparse.Namespace) -> int:
-    task = _read_input(args.task)
+    task = _read_input(args.task).strip()
     if not task:
-        print("Error: No task description provided. Pass --task <text_or_path>.", file=sys.stderr)
+        print("Error: No task provided. Pass --task <text_or_path>.", file=sys.stderr)
         return 2
 
     force_mock = getattr(args, "mock", False)
@@ -385,8 +385,8 @@ def cmd_route(args: argparse.Namespace) -> int:
 
 
 def cmd_verify(args: argparse.Namespace) -> int:
-    criteria = _read_input(args.criteria)
-    output = _read_input(args.output)
+    criteria = _read_input(args.criteria).strip()
+    output = _read_input(args.output).strip()
     if not criteria or not output:
         print("Error: Both --criteria and --output must be provided.", file=sys.stderr)
         return 2

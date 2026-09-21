@@ -13,6 +13,7 @@ _PKG_ROOT = str(Path(__file__).resolve().parents[1] / "src")
 if _PKG_ROOT not in sys.path:
     sys.path.insert(0, _PKG_ROOT)
 
+from jev_harness import __version__
 from jev_harness.cli import main
 
 
@@ -94,7 +95,7 @@ class TestCLI(unittest.TestCase):
                 with self.assertRaises(SystemExit) as cm:
                     main()
                 self.assertEqual(cm.exception.code, 0)
-                self.assertIn("0.1.1", out.getvalue())
+                self.assertIn(__version__, out.getvalue())
 
 
 if __name__ == "__main__":

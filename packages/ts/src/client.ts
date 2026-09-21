@@ -17,7 +17,7 @@ import type {
 export const TYPESAFE_API_URL = "https://api.typesafe.ai/v1/systemone";
 export const OPENCODE_API_URL = "https://opencode.ai/zen/v1/systemone";
 export const DEFAULT_MODEL = "jev-latest";
-export const DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.1.1; +https://github.com/ismaelsoilet/jev-harness)";
+export const DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.1.2; +https://github.com/ismaelsoilet/jev-harness)";
 
 export class JevClient {
   public apiKey?: string;
@@ -228,8 +228,14 @@ export class JevClient {
 
     for (const [qid, q] of Object.entries(questions)) {
       if (q.type === "choice") {
-        let bestChoice = Object.keys(q.criteria)[0];
-        let bestScore = -1;
+        let bestChoice = "deep_logic" in q.criteria
+          ? "deep_logic"
+          : "lightweight_system2" in q.criteria
+          ? "lightweight_system2"
+          : "proceed" in q.criteria
+          ? "proceed"
+          : Object.keys(q.criteria)[0];
+        let bestScore = 0;
 
         for (const [opt, desc] of Object.entries(q.criteria)) {
           const optTokens = (opt + " " + desc).toLowerCase().match(/\w+/g) || [];
@@ -242,7 +248,8 @@ export class JevClient {
             [
               "assertionerror", "assert ", "panicked at", "panic:", "panic",
               "deadlock", "goroutines are asleep", "segmentation fault",
-              "nullpointerexception", "nil pointer dereference", "index out of bounds"
+              "nullpointerexception", "nil pointer dereference", "index out of bounds",
+              "falha de asserção", "asserção", "erro de lógica"
             ].some((k) => stateLower.includes(k))
           ) {
             matchScore += isExplicitAssertion ? 14 : 8;
@@ -251,7 +258,8 @@ export class JevClient {
             [
               "modulenotfounderror", "no module named", "not found", "importerror",
               "cannot find module", "err_module_not_found", "ts2307", "cannot find crate",
-              "can't find crate", "find crate", "e0463", "cannot find package", "no required module provides package"
+              "can't find crate", "find crate", "e0463", "cannot find package", "no required module provides package",
+              "módulo não encontrado", "nenhum módulo chamado", "pacote não encontrado"
             ].some((k) => stateLower.includes(k))
           ) {
             matchScore += isExplicitAssertion ? 4 : 7;
@@ -259,13 +267,17 @@ export class JevClient {
             opt === "flaky_transient" &&
             [
               "connectionreset", "timeout", "timed out", "econnreset", "econnrefused",
-              "etimedout", "socket hang up", "gateway timeout", "503 service unavailable"
+              "etimedout", "socket hang up", "gateway timeout", "503 service unavailable",
+              "tempo limite", "tempo limite esgotado", "conexão recusada"
             ].some((k) => stateLower.includes(k))
           ) {
             matchScore += 7;
           } else if (
             opt === "syntax_trivial" &&
-            ["syntaxerror", "indentationerror", "expected ';'", "ts1005", "missing bracket"].some((k) => stateLower.includes(k))
+            [
+              "syntaxerror", "indentationerror", "expected ';'", "ts1005", "missing bracket",
+              "erro de sintaxe", "sintaxe inválida", "indentação inesperada"
+            ].some((k) => stateLower.includes(k))
           ) {
             matchScore += 6;
           } else if (

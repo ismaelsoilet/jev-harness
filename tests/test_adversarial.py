@@ -133,6 +133,27 @@ class TestAdversarialAndTelemetry(unittest.TestCase):
                 client.system_one("test state", {"q": NoulQuestion("is valid?")})
             self.assertIn("OpenCode Zen API returned HTTP 500", str(ctx.exception))
 
+    def test_adversarial_portuguese_tracebacks(self):
+        res_assert = triage_test_failure("Falha de asserção: esperava 10 mas obteve 20", client=self.client)
+        self.assertEqual(res_assert.category, "deep_logic")
+        self.assertFalse(res_assert.skip_llm)
+
+        res_mod = triage_test_failure("Módulo não encontrado: pandas", client=self.client)
+        self.assertEqual(res_mod.category, "env_missing")
+        self.assertTrue(res_mod.skip_llm)
+
+        res_timeout = triage_test_failure("Tempo limite esgotado ao conectar", client=self.client)
+        self.assertEqual(res_timeout.category, "flaky_transient")
+        self.assertTrue(res_timeout.skip_llm)
+
+        res_syn = triage_test_failure("Erro de sintaxe: parêntese não fechado", client=self.client)
+        self.assertEqual(res_syn.category, "syntax_trivial")
+
+    def test_adversarial_uninformative_fallback_deep_logic(self):
+        res = triage_test_failure("xyz123 random uninformative text with no keywords", client=self.client)
+        self.assertEqual(res.category, "deep_logic")
+        self.assertFalse(res.skip_llm)
+
 
 if __name__ == "__main__":
     unittest.main()

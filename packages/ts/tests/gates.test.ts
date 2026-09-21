@@ -99,4 +99,18 @@ describe("Jev System One (TypeScript) Decision Gates", () => {
     );
     assert.equal(res.selectedTier, "heavy_system2", "Heavy architectural keywords must override typo in routing");
   });
+
+  test("adversarial: Portuguese tracebacks and safe uninformative fallback", async () => {
+    const resAssert = await triageTestFailure("Falha de asserção: esperava 10 mas obteve 20", client);
+    assert.equal(resAssert.category, "deep_logic");
+    assert.equal(resAssert.skipLlm, false);
+
+    const resMod = await triageTestFailure("Módulo não encontrado: lodash", client);
+    assert.equal(resMod.category, "env_missing");
+    assert.equal(resMod.skipLlm, true);
+
+    const resFallback = await triageTestFailure("xyz123 uninformative random text with no keywords", client);
+    assert.equal(resFallback.category, "deep_logic");
+    assert.equal(resFallback.skipLlm, false);
+  });
 });

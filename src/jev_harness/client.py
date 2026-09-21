@@ -20,7 +20,7 @@ TYPESAFE_API_URL = "https://api.typesafe.ai/v1/systemone"
 OPENCODE_API_URL = "https://opencode.ai/zen/v1/systemone"
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 DEFAULT_MODEL = "jev-latest"
-DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.1.1; +https://github.com/ismaelsoilet/jev-harness)"
+DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.1.2; +https://github.com/ismaelsoilet/jev-harness)"
 
 
 def _urlopen_with_ipv4_fallback(req: urllib.request.Request, timeout: float):
@@ -411,8 +411,15 @@ class JevClient:
 
         for qid, q in questions.items():
             if isinstance(q, ChoiceQuestion):
-                best_choice = list(q.criteria.keys())[0]
-                best_score = -1
+                if "deep_logic" in q.criteria:
+                    best_choice = "deep_logic"
+                elif "lightweight_system2" in q.criteria:
+                    best_choice = "lightweight_system2"
+                elif "proceed" in q.criteria:
+                    best_choice = "proceed"
+                else:
+                    best_choice = list(q.criteria.keys())[0]
+                best_score = 0
                 for opt, desc in q.criteria.items():
                     opt_tokens = set(re.findall(r"\w+", f"{opt} {desc}".lower()))
                     common = opt_tokens.intersection(state_tokens)
@@ -423,7 +430,8 @@ class JevClient:
                         if any(k in state_lower for k in [
                             "assertionerror", "assert ", "panicked at", "panic:", "panic",
                             "deadlock", "goroutines are asleep", "segmentation fault",
-                            "nullpointerexception", "nil pointer dereference", "index out of bounds"
+                            "nullpointerexception", "nil pointer dereference", "index out of bounds",
+                            "falha de asserção", "asserção", "erro de lógica"
                         ]):
                             match_score += 8
                         if is_explicit_assertion:
@@ -432,17 +440,20 @@ class JevClient:
                         "modulenotfounderror", "no module named", "not found", "importerror",
                         "cannot find module", "err_module_not_found", "ts2307", "cannot find crate",
                         "can't find crate", "find crate", "e0463",
-                        "cannot find package", "no required module provides package"
+                        "cannot find package", "no required module provides package",
+                        "módulo não encontrado", "nenhum módulo chamado", "pacote não encontrado"
                     ]):
                         # If it's just an AssertionError testing module strings, don't over-boost
                         match_score += 4 if is_explicit_assertion else 7
                     elif opt == "flaky_transient" and any(k in state_lower for k in [
                         "connectionreset", "timeout", "timed out", "econnreset", "econnrefused",
-                        "etimedout", "socket hang up", "gateway timeout", "503 service unavailable"
+                        "etimedout", "socket hang up", "gateway timeout", "503 service unavailable",
+                        "tempo limite", "tempo limite esgotado", "conexão recusada"
                     ]):
                         match_score += 7
                     elif opt == "syntax_trivial" and any(k in state_lower for k in [
-                        "syntaxerror", "indentationerror", "expected ';'", "ts1005", "missing bracket"
+                        "syntaxerror", "indentationerror", "expected ';'", "ts1005", "missing bracket",
+                        "erro de sintaxe", "sintaxe inválida", "indentação inesperada"
                     ]):
                         match_score += 6
                     elif opt == "deterministic" and any(k in state_lower for k in [

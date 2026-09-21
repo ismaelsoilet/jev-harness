@@ -430,7 +430,7 @@ jev route --task "Architect enterprise distributed consensus"
 ```yaml
 repos:
   - repo: https://github.com/ismaelsoilet/jev-harness
-    rev: v0.1.1
+    rev: v0.1.2
     hooks:
       - id: jev-test-gate
 ```
