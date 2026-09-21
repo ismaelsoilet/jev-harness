@@ -31,16 +31,16 @@
 
 ```bash
 # npm
-npm install jev-harness
+npm install @ismaelsoilet/jev-harness
 
 # pnpm
-pnpm add jev-harness
+pnpm add @ismaelsoilet/jev-harness
 
 # yarn
-yarn add jev-harness
+yarn add @ismaelsoilet/jev-harness
 
 # bun
-bun add jev-harness
+bun add @ismaelsoilet/jev-harness
 ```
 
 ---
@@ -100,13 +100,13 @@ console.log(`Model: ${routing.model}`);           // 'gemini-3.8-flash' or local
 
 ```bash
 # Run triage on a test failure
-npx jev-harness triage "Cannot find module 'lodash'"
+npx @ismaelsoilet/jev-harness triage "Cannot find module 'lodash'"
 
 # Check loop abort
-npx jev-harness abort-check "fail 1" "fail 1" "fail 1"
+npx @ismaelsoilet/jev-harness abort-check "fail 1" "fail 1" "fail 1"
 
 # Route a task
-npx jev-harness route "Refactor full authentication kernel to WebCrypto"
+npx @ismaelsoilet/jev-harness route "Refactor full authentication kernel to WebCrypto"
 ```
 
 ---

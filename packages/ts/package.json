@@ -1,5 +1,5 @@
 {
-  "name": "jev-harness",
+  "name": "@ismaelsoilet/jev-harness",
   "version": "0.1.0",
   "description": "Zero-dependency System One decision harness and token optimizer for AI coding agents (OpenCode, Cursor, Claude Code).",
   "type": "module",
