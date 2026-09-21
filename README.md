@@ -403,7 +403,7 @@ Ultra-low latency (< 500µs local, zero-overhead) for systems programming, Tauri
 
 ```toml
 [dependencies]
-jev-harness = "0.1.2"
+jev-harness = "0.1.3"
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -447,7 +447,7 @@ jev route --task "Architect enterprise distributed consensus"
 ```yaml
 repos:
   - repo: https://github.com/ismaelsoilet/jev-harness
-    rev: v0.1.2
+    rev: v0.1.3
     hooks:
       - id: jev-test-gate
 ```

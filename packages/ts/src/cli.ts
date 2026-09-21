@@ -32,7 +32,7 @@ function getPackageVersion(): string {
   } catch {
     // fallback
   }
-  return "0.1.2";
+  return "0.1.3";
 }
 
 export async function runCli(argv: string[] = process.argv.slice(2)): Promise<number> {
