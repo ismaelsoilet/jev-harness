@@ -287,7 +287,10 @@ class JevClient:
                 resp_data = json.loads(resp.read().decode("utf-8"))
                 return self._parse_response(resp_data, chosen_model, is_mock=False)
         except urllib.error.HTTPError as e:
-            err_body = e.read().decode("utf-8", errors="replace")
+            try:
+                err_body = e.read().decode("utf-8", errors="replace") if getattr(e, "fp", None) is not None else str(e)
+            except Exception:
+                err_body = str(e)
             provider_label = "OpenCode Zen" if self.provider == "opencode" else "TypeSafe"
             raise RuntimeError(f"{provider_label} API returned HTTP {e.code}: {err_body}") from e
         except (urllib.error.URLError, TimeoutError) as e:

@@ -120,13 +120,14 @@ class TestAdversarialAndTelemetry(unittest.TestCase):
         import urllib.error
         from jev_harness.client import NoulQuestion
 
+        import io
         client = JevClient(provider="opencode")
         http_err = urllib.error.HTTPError(
             url="https://opencode.ai/zen/v1/systemone",
             code=500,
             msg="Internal Server Error",
             hdrs={},
-            fp=None,
+            fp=io.BytesIO(b"Internal Server Error"),
         )
         with patch("jev_harness.client._urlopen_with_ipv4_fallback", side_effect=http_err):
             with self.assertRaises(RuntimeError) as ctx:
