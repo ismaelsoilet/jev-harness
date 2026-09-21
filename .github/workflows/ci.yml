@@ -66,3 +66,25 @@ jobs:
           node bin/cli.js status
           node bin/cli.js route "Fix typo in docstrings"
           node bin/cli.js triage "Cannot find module 'lodash'"
+
+  test-rust:
+    name: Rust (stable)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run Rust tests
+        working-directory: packages/rust
+        run: |
+          cargo check --all-targets
+          cargo test --verbose
+
+      - name: Test compiled CLI binaries
+        working-directory: packages/rust
+        run: |
+          cargo run --bin jev -- status
+          cargo run --bin jev -- route --task "Fix typo in variable"
+          echo "ModuleNotFoundError: torch" | cargo run --bin jev -- test-gate

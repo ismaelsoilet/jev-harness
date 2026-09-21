@@ -57,3 +57,5 @@ htmlcov/
 dist-test/
 packages/*/dist-test/
 node_modules/
+target/
+packages/*/target/

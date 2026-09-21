@@ -4,6 +4,7 @@
   <a href="https://github.com/ismaelsoilet/jev-harness"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License MIT"></a>
   <a href="https://pypi.org/project/jev-harness/"><img src="https://img.shields.io/pypi/v/jev-harness.svg?color=blue" alt="PyPI version"></a>
   <a href="https://www.npmjs.com/package/@ismaelsoilet/jev-harness"><img src="https://img.shields.io/npm/v/@ismaelsoilet/jev-harness.svg?color=red&logo=npm" alt="npm version"></a>
+  <a href="https://crates.io/crates/jev-harness"><img src="https://img.shields.io/badge/crates.io-v0.1.0-orange.svg" alt="crates.io"></a>
   <a href="https://pypi.org/project/jev-harness/"><img src="https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-brightgreen.svg" alt="Python Versions"></a>
   <a href="https://typesafe.ai"><img src="https://img.shields.io/badge/powered%20by-TypeSafe%20Jev%20System%20One-orange.svg" alt="TypeSafe Jev"></a>
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-Compatible-purple.svg" alt="MCP Compatible"></a>
@@ -318,13 +319,57 @@ console.log("Assigned Model Tier:", route.selectedTier); // deterministic
 
 ```bash
 # Run test triage via npx
-npx jev-harness triage "Cannot find module 'lodash'"
+npx @ismaelsoilet/jev-harness triage "Cannot find module 'lodash'"
 
 # Trajectory abort check
-npx jev-harness abort-check --plan "Try identical prompt again"
+npx @ismaelsoilet/jev-harness abort-check --plan "Try identical prompt again"
 
 # Model router
-npx jev-harness route "Architect distributed consensus protocol"
+npx @ismaelsoilet/jev-harness route "Architect distributed consensus protocol"
+```
+
+---
+
+## 🦀 Rust Crate & Standalone CLI
+
+Ultra-low latency (< 500µs local, zero-overhead) for systems programming, Tauri backends, and terminal tools without Python or Node.js dependencies:
+
+```toml
+[dependencies]
+jev-harness = "0.1"
+tokio = { version = "1", features = ["full"] }
+```
+
+### Programmatic Usage
+
+```rust
+use jev_harness::gates::{triage_test_failure, should_abort_trajectory, route_model_tier};
+
+#[tokio::main]
+async fn main() {
+    // 1. Triage test traceback in < 500µs
+    let triage = triage_test_failure("error[E0463]: can't find crate for 'serde'", None).await.unwrap();
+    if triage.skip_llm {
+        println!("Safe to fix deterministically: {}", triage.action_recommendation);
+    }
+
+    // 2. Trajectory guard against dead ends
+    let abort = should_abort_trajectory("Repeat same step", "Attempt 1 failed", None).await.unwrap();
+    if abort.should_abort {
+        eprintln!("Doomed loop detected: {}", abort.reasoning_summary);
+    }
+}
+```
+
+### Standalone CLI Binary (`jev` / `jev-harness`)
+
+```bash
+# Install via Cargo
+cargo install jev-harness
+
+# Or use directly in shell pipelines
+cargo test 2>&1 | jev test-gate
+jev route --task "Architect enterprise distributed consensus"
 ```
 
 ---
