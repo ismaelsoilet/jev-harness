@@ -12,13 +12,23 @@ from pathlib import Path
 import sys
 from typing import Optional
 
-from .client import JevClient
-from .gates import (
-    route_model_tier,
-    should_abort_trajectory,
-    triage_test_failure,
-    verify_step_completion,
-)
+try:
+    from .client import JevClient
+    from .gates import (
+        route_model_tier,
+        should_abort_trajectory,
+        triage_test_failure,
+        verify_step_completion,
+    )
+except (ImportError, ValueError):
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from jev_harness.client import JevClient
+    from jev_harness.gates import (
+        route_model_tier,
+        should_abort_trajectory,
+        triage_test_failure,
+        verify_step_completion,
+    )
 
 
 def _read_input(val_or_path: Optional[str]) -> str:

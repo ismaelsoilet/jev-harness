@@ -21,8 +21,13 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc",
-    "test": "node --test dist/tests/*.js"
+    "build": "tsc -p tsconfig.json",
+    "build:test": "tsc -p tsconfig.test.json",
+    "test": "tsc -p tsconfig.json && tsc -p tsconfig.test.json && node --test dist-test/tests/*.js"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.0",
+    "typescript": "^5.6.0"
   },
   "keywords": [
     "typesafe",

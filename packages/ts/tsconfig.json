@@ -10,10 +10,7 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "typeRoots": [
-      "/home/ismaelsoilet/tauri-app/node_modules/@types"
-    ]
+    "forceConsistentCasingInFileNames": true
   },
   "include": ["src/**/*"]
 }

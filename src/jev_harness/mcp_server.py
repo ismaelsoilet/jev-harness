@@ -9,16 +9,25 @@ Zero external dependencies (pure Python standard library).
 from __future__ import annotations
 
 import json
-import sys
-from typing import Any, Dict, List, Optional
+from pathlib import Path
 
-from .client import JevClient
-from .gates import (
-    route_model_tier,
-    should_abort_trajectory,
-    triage_test_failure,
-    verify_step_completion,
-)
+try:
+    from .client import JevClient
+    from .gates import (
+        route_model_tier,
+        should_abort_trajectory,
+        triage_test_failure,
+        verify_step_completion,
+    )
+except (ImportError, ValueError):
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from jev_harness.client import JevClient
+    from jev_harness.gates import (
+        route_model_tier,
+        should_abort_trajectory,
+        triage_test_failure,
+        verify_step_completion,
+    )
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "jev-harness"
