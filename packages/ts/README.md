@@ -68,7 +68,7 @@ bun add @ismaelsoilet/jev-harness
 ### 1. Test Failure Triage
 
 ```typescript
-import { triageTestFailure } from 'jev-harness';
+import { triageTestFailure } from '@ismaelsoilet/jev-harness';
 
 const testOutput = `
 src/app.ts:2:24 - error TS2307: Cannot find module '@tanstack/vue-query' or its corresponding type declarations.
@@ -88,7 +88,7 @@ if (decision.skipLlm) {
 ### 2. Trajectory Loop Abort Guard
 
 ```typescript
-import { shouldAbortTrajectory } from 'jev-harness';
+import { shouldAbortTrajectory } from '@ismaelsoilet/jev-harness';
 
 const failureHistory = [
   'TypeError: Cannot read properties of undefined (reading "id")',
@@ -105,7 +105,7 @@ if (check.abort) {
 ### 3. Smart Model Router
 
 ```typescript
-import { routeModelTier } from 'jev-harness';
+import { routeModelTier } from '@ismaelsoilet/jev-harness';
 
 const task = "Fix typo in variable name in src/utils/format.ts";
 const routing = routeModelTier(task);

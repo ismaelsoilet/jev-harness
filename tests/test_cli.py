@@ -64,12 +64,22 @@ class TestCLI(unittest.TestCase):
                     main()
                 self.assertEqual(cm.exception.code, 1)
 
-    def test_cli_missing_args(self):
-        with patch.object(sys, "argv", ["jev-harness", "test-gate"]):
-            with patch("sys.stderr", new_callable=StringIO):
+    def test_cli_global_flags_before_and_after(self):
+        # Flags before subcommand
+        with patch.object(sys, "argv", ["jev-harness", "--provider", "opencode", "status"]):
+            with patch("sys.stdout", new_callable=StringIO) as out:
                 with self.assertRaises(SystemExit) as cm:
                     main()
-                self.assertEqual(cm.exception.code, 2)
+                self.assertEqual(cm.exception.code, 0)
+                self.assertIn("OPENCODE ZEN", out.getvalue())
+
+        # Flags after subcommand
+        with patch.object(sys, "argv", ["jev-harness", "status", "--provider", "opencode"]):
+            with patch("sys.stdout", new_callable=StringIO) as out:
+                with self.assertRaises(SystemExit) as cm:
+                    main()
+                self.assertEqual(cm.exception.code, 0)
+                self.assertIn("OPENCODE ZEN", out.getvalue())
 
 
 if __name__ == "__main__":

@@ -44,7 +44,10 @@ def _read_input(val_or_path: Optional[str]) -> str:
 
 
 def cmd_status(args: argparse.Namespace) -> int:
-    client = JevClient(provider=getattr(args, "provider", None))
+    client = JevClient(
+        provider=getattr(args, "provider", None),
+        force_mock=getattr(args, "mock", False),
+    )
     key = client.api_key
     print("\n=== JEV HARNESS STATUS ===")
     if client.is_live:
@@ -73,13 +76,13 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 def cmd_metrics(args: argparse.Namespace) -> int:
     from .session import load_session, reset_metrics
-    if args.reset:
+    if getattr(args, "reset", False):
         reset_metrics()
         print("\n[OK] Jev Harness metrics reset successfully.\n")
         return 0
 
     s = load_session()
-    if args.json:
+    if getattr(args, "json", False):
         print(
             json.dumps(
                 {
@@ -256,10 +259,13 @@ def cmd_test_gate(args: argparse.Namespace) -> int:
         print("Error: No test failure log provided. Pass --log <file_or_string> or pipe via stdin.", file=sys.stderr)
         return 2
 
-    client = JevClient(force_mock=args.mock, provider=getattr(args, "provider", None))
+    force_mock = getattr(args, "mock", False)
+    provider = getattr(args, "provider", None)
+    is_json = getattr(args, "json", False)
+    client = JevClient(force_mock=force_mock, provider=provider)
     res = triage_test_failure(text, client=client)
 
-    if args.json:
+    if is_json:
         print(
             json.dumps(
                 {
@@ -298,10 +304,13 @@ def cmd_abort_check(args: argparse.Namespace) -> int:
         print("Error: No plan provided. Pass --plan <text_or_path>.", file=sys.stderr)
         return 2
 
-    client = JevClient(force_mock=args.mock, provider=getattr(args, "provider", None))
+    force_mock = getattr(args, "mock", False)
+    provider = getattr(args, "provider", None)
+    is_json = getattr(args, "json", False)
+    client = JevClient(force_mock=force_mock, provider=provider)
     res = should_abort_trajectory(plan, recent_attempts_summary=history, client=client)
 
-    if args.json:
+    if is_json:
         print(
             json.dumps(
                 {
@@ -337,10 +346,13 @@ def cmd_route(args: argparse.Namespace) -> int:
         print("Error: No task description provided. Pass --task <text_or_path>.", file=sys.stderr)
         return 2
 
-    client = JevClient(force_mock=args.mock, provider=getattr(args, "provider", None))
+    force_mock = getattr(args, "mock", False)
+    provider = getattr(args, "provider", None)
+    is_json = getattr(args, "json", False)
+    client = JevClient(force_mock=force_mock, provider=provider)
     res = route_model_tier(task, client=client)
 
-    if args.json:
+    if is_json:
         print(
             json.dumps(
                 {
@@ -377,10 +389,13 @@ def cmd_verify(args: argparse.Namespace) -> int:
         print("Error: Both --criteria and --output must be provided.", file=sys.stderr)
         return 2
 
-    client = JevClient(force_mock=args.mock, provider=getattr(args, "provider", None))
+    force_mock = getattr(args, "mock", False)
+    provider = getattr(args, "provider", None)
+    is_json = getattr(args, "json", False)
+    client = JevClient(force_mock=force_mock, provider=provider)
     res = verify_step_completion(criteria, output, client=client)
 
-    if args.json:
+    if is_json:
         print(
             json.dumps(
                 {
@@ -411,8 +426,9 @@ def cmd_verify(args: argparse.Namespace) -> int:
 
 
 def cmd_mcp(args: argparse.Namespace) -> int:
-    from .mcp_server import run_mcp_server
-    client = JevClient(force_mock=args.mock, provider=getattr(args, "provider", None))
+    force_mock = getattr(args, "mock", False)
+    provider = getattr(args, "provider", None)
+    client = JevClient(force_mock=force_mock, provider=provider)
     run_mcp_server(client=client)
     return 0
 
@@ -420,9 +436,9 @@ def cmd_mcp(args: argparse.Namespace) -> int:
 def main() -> None:
     # Common flags shared between root and all subparsers
     common_parser = argparse.ArgumentParser(add_help=False)
-    common_parser.add_argument("--mock", action="store_true", help="Force local simulation mode even if key is present")
-    common_parser.add_argument("--json", action="store_true", help="Output machine-readable JSON")
-    common_parser.add_argument("--provider", choices=["typesafe", "opencode", "openrouter"], help="Override backend provider")
+    common_parser.add_argument("--mock", action="store_true", default=argparse.SUPPRESS, help="Force local simulation mode even if key is present")
+    common_parser.add_argument("--json", action="store_true", default=argparse.SUPPRESS, help="Output machine-readable JSON")
+    common_parser.add_argument("--provider", choices=["typesafe", "opencode", "openrouter"], default=argparse.SUPPRESS, help="Override backend provider")
 
     parser = argparse.ArgumentParser(
         prog="jev-harness",

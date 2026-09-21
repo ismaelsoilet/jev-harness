@@ -327,10 +327,10 @@ For Node.js, Bun, Deno, Vite, Tauri, and Next.js applications:
 
 ```bash
 # Install via npm
-npm install jev-harness
+npm install @ismaelsoilet/jev-harness
 
 # Or via bun
-bun add jev-harness
+bun add @ismaelsoilet/jev-harness
 ```
 
 ### Programmatic Usage
@@ -342,7 +342,7 @@ import {
   routeModelTier,
   verifyStepCompletion,
   JevClient,
-} from "jev-harness";
+} from "@ismaelsoilet/jev-harness";
 
 // 1. Triage test failure in < 2ms locally (or sub-second remote)
 const triage = await triageTestFailure(rawErrorOutput);
