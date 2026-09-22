@@ -14,6 +14,7 @@ from .session import (
     detect_repeated_failure,
     record_abort_event,
     record_abort_step,
+    record_nudge_event,
     record_reasoning_effort_event,
     record_route_event,
     record_step_attempt,
@@ -83,6 +84,18 @@ class ReasoningEffortResult:
     is_reasoning_supported: bool = True
     cache_safe_recommendation: str = ""
     lease_steps: int = 1
+    is_mock: bool = False
+
+
+@dataclass
+class NudgeGateResult:
+    should_nudge: bool
+    nudge_probability: float
+    waiting_probability: float
+    progress_probability: float
+    sureforge_phase: str  # 'research', 'ask', 'plan', 'execute', 'verify', 'complete'
+    suggested_nudge_prompt: str
+    rationale: str
     is_mock: bool = False
 
 
@@ -650,3 +663,125 @@ def modulate_reasoning_effort(
             pass
 
     return result
+
+
+def should_nudge_continuation(
+    transcript_tail: str,
+    previous_nudge_summary: str = "",
+    threshold: float = 0.5,
+    client: Optional[JevClient] = None,
+    record_session: bool = False,
+) -> NudgeGateResult:
+    """
+    6th Semantic Decision Gate (inspired by CommandCodeAI/cmd-mod-jev-nudge + SureForge + Fable-Judge):
+    Evaluates whether an autonomous agent paused prematurely with unfinished work or unverified changes,
+    and determines if a continuation nudge should be injected without interrupting the user.
+    """
+    client = client or JevClient()
+
+    has_prev_nudge = bool(previous_nudge_summary and previous_nudge_summary.strip())
+    state_parts = [f"Transcript Tail:\n{transcript_tail.strip()}"]
+    if has_prev_nudge:
+        state_parts.append(f"Previous Nudge Summary:\n{previous_nudge_summary.strip()}")
+    clean_state = "\n\n".join(state_parts)
+    if len(clean_state) > 4000:
+        clean_state = clean_state[:1500] + "\n...[truncated]...\n" + clean_state[-2500:]
+
+    questions: Dict[str, Any] = {
+        "sureforge_phase": ChoiceQuestion(
+            instructions="Identify the active SureForge workflow phase based on the agent's recent transcript.",
+            criteria={
+                "research": "Investigating codebase, gathering context, or discovering dependencies before planning.",
+                "ask": "Blocked on ambiguous requirements or waiting on user clarification/permission.",
+                "plan": "Structuring implementation strategy, test strategy, or architecture before coding.",
+                "execute": "Actively implementing changes or paused mid-implementation with unfinished edits/todos.",
+                "verify": "Code written or modified, but verification (unit tests, build, linter) has not yet been executed or completed.",
+                "complete": "All requested work and verification gates are completely satisfied.",
+            },
+        ),
+        "nudge": NoulQuestion(
+            instructions="Would a gentle nudge help the agent advance useful work within the user's existing request right now?"
+        ),
+        "waiting": NoulQuestion(
+            instructions="Is the agent waiting on the user (for permission, missing info, or a choice)?"
+        ),
+    }
+
+    if has_prev_nudge:
+        questions["progress"] = NoulQuestion(instructions="Did the last nudge produce real progress?")
+
+    resp = client.system_one(state=clean_state, questions=questions)
+
+    phase_ans = resp.answers.get("sureforge_phase")
+    nudge_ans = resp.answers.get("nudge")
+    waiting_ans = resp.answers.get("waiting")
+    progress_ans = resp.answers.get("progress")
+
+    phase = phase_ans.choice if phase_ans and hasattr(phase_ans, "choice") else "complete"
+    if phase not in ("research", "ask", "plan", "execute", "verify", "complete"):
+        phase = "complete"
+
+    nudge_prob = nudge_ans.noul if nudge_ans and hasattr(nudge_ans, "noul") else 0.0
+    waiting_prob = waiting_ans.noul if waiting_ans and hasattr(waiting_ans, "noul") else 0.0
+    progress_prob = (
+        progress_ans.noul
+        if (has_prev_nudge and progress_ans and hasattr(progress_ans, "noul"))
+        else 1.0
+    )
+
+    is_waiting = waiting_prob >= threshold or phase == "ask"
+    made_progress = (not has_prev_nudge) or (progress_prob >= threshold)
+    is_complete = phase == "complete"
+
+    should_nudge = (
+        (nudge_prob >= threshold)
+        and (not is_waiting)
+        and made_progress
+        and (not is_complete)
+    )
+
+    if should_nudge:
+        if phase == "verify":
+            suggested_prompt = (
+                "Continue with the SureForge Verify phase: run the test suite and build verification "
+                "to confirm your changes before concluding."
+            )
+            rationale = (
+                f"Agent paused during SureForge 'verify' phase without running verification "
+                f"(nudge={nudge_prob:.2f}, waiting={waiting_prob:.2f})."
+            )
+        else:
+            suggested_prompt = (
+                "Continue executing the remaining steps in the user's request and verify your changes before stopping."
+            )
+            rationale = (
+                f"Unfinished work detected in SureForge '{phase}' phase "
+                f"(nudge={nudge_prob:.2f}, waiting={waiting_prob:.2f}, progress={progress_prob:.2f})."
+            )
+    else:
+        suggested_prompt = ""
+        if is_waiting:
+            rationale = f"Nudge vetoed: agent is waiting on user input or permission (waiting={waiting_prob:.2f}, phase='{phase}')."
+        elif not made_progress:
+            rationale = f"Nudge vetoed: previous nudge did not produce real progress (progress={progress_prob:.2f} < {threshold:.2f})."
+        elif is_complete:
+            rationale = f"No nudge needed: SureForge workflow is complete (phase='complete', nudge={nudge_prob:.2f})."
+        else:
+            rationale = f"No nudge needed: nudge probability ({nudge_prob:.2f}) below threshold ({threshold:.2f})."
+
+    if record_session:
+        try:
+            record_nudge_event(should_nudge)
+        except Exception:
+            pass
+
+    return NudgeGateResult(
+        should_nudge=should_nudge,
+        nudge_probability=nudge_prob,
+        waiting_probability=waiting_prob,
+        progress_probability=progress_prob,
+        sureforge_phase=phase,
+        suggested_nudge_prompt=suggested_prompt,
+        rationale=rationale,
+        is_mock=resp.is_mock,
+    )

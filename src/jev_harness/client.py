@@ -660,24 +660,32 @@ class JevClient:
                     probs = {k: (0.88 if k == best_choice else 0.12 / max(1, len(q.criteria) - 1)) for k in q.criteria}
 
                 elif qid == "sureforge_phase" or ("execute" in q.criteria and "complete" in q.criteria):
-                    is_waiting_user = any(k in state_lower for k in [
-                        "waiting for your", "wait for my go-ahead", "please confirm", "which option",
-                        "do you approve", "need your api key", "aguardando sua aprovação",
-                        "qual opção você prefere", "preciso que você confirme", "need clarification"
+                    is_waiting_user = "?" in state_lower or any(k in state_lower for k in [
+                        "waiting for your", "waiting on user", "wait for my go-ahead", "please confirm", "which option",
+                        "do you approve", "would you like me to", "do you want me to", "need your api key", "aguardando sua aprovação",
+                        "qual opção você prefere", "preciso que você confirme", "need clarification", "need permission"
+                    ])
+                    is_unverified = any(k in state_lower for k in [
+                        "without running tests", "tests not run", "unverified", "haven't run pytest",
+                        "todo: run tests", "falta rodar os testes", "sem testar", "need to verify",
+                        "to verify", "run pytest", "run cargo test", "run npm test", "need to run"
                     ])
                     is_unfinished = any(k in state_lower for k in [
                         "next i'll", "next i will", "1 of 5", "2 of 5", "3 of 5", "4 of 5",
                         "step 1 done", "unfinished", "a seguir vou", "próximo passo farei",
-                        "falta implementar", "todo:", "remaining steps", "continuarei", "now i will"
+                        "falta implementar", "todo:", "remaining steps", "continuarei", "now i will", "next step"
                     ])
                     is_done = any(k in state_lower for k in [
                         "all done", "100% passing", "all criteria satisfied", "tudo concluído",
-                        "todas as etapas concluídas", "task complete", "konnichiwa! all done"
+                        "todas as etapas concluídas", "task complete", "konnichiwa! all done",
+                        "all tests passed", "tests passed (0 failed)", "completed and verified"
                     ])
                     if is_waiting_user and "ask" in q.criteria:
                         best_choice = "ask"
                     elif is_done and "complete" in q.criteria:
                         best_choice = "complete"
+                    elif is_unverified and "verify" in q.criteria:
+                        best_choice = "verify"
                     elif is_unfinished and "execute" in q.criteria:
                         best_choice = "execute"
                     elif any(k in state_lower for k in ["verify", "test", "fable-judge", "verificar", "testar"]) and "verify" in q.criteria:
@@ -736,20 +744,24 @@ class JevClient:
                 is_fatal_deadlock = any(k in state_lower for k in ["impossible", "impossivel", "imposible", "circular", "deadlock", "dead end", "inviavel", "inviable", "hopeless", "fatal"])
 
                 if qid == "nudge" or "gentle nudge" in inst or "advance useful work" in inst:
-                    is_waiting_user = any(k in state_lower for k in [
-                        "waiting for your", "wait for my go-ahead", "please confirm", "which option",
-                        "do you approve", "need your api key", "aguardando sua aprovação",
-                        "qual opção você prefere", "preciso que você confirme", "need clarification"
+                    is_waiting_user = "?" in state_lower or any(k in state_lower for k in [
+                        "waiting for your", "waiting on user", "wait for my go-ahead", "please confirm", "which option",
+                        "do you approve", "would you like me to", "do you want me to", "need your api key", "aguardando sua aprovação",
+                        "qual opção você prefere", "preciso que você confirme", "need clarification", "need permission"
                     ])
                     is_done = any(k in state_lower for k in [
                         "all done", "100% passing", "all criteria satisfied", "tudo concluído",
-                        "todas as etapas concluídas", "task complete", "konnichiwa! all done"
+                        "todas as etapas concluídas", "task complete", "konnichiwa! all done",
+                        "all tests passed", "tests passed (0 failed)", "completed and verified"
                     ])
                     is_unfinished = any(k in state_lower for k in [
                         "next i'll", "next i will", "1 of 5", "2 of 5", "3 of 5", "4 of 5",
                         "step 1 done", "unfinished", "a seguir vou", "próximo passo farei",
                         "falta implementar", "todo:", "remaining", "continuarei", "now i will",
-                        "partial", "parcial"
+                        "partial", "parcial", "without running tests", "tests not run", "unverified",
+                        "haven't run pytest", "todo: run tests", "falta rodar os testes", "sem testar",
+                        "need to verify", "to verify", "run pytest", "run cargo test", "run npm test",
+                        "need to run", "next step"
                     ])
                     if is_waiting_user or is_done:
                         prob = 0.06
@@ -758,10 +770,10 @@ class JevClient:
                     else:
                         prob = 0.20
                 elif qid == "waiting" or "waiting on the user" in inst:
-                    is_waiting_user = any(k in state_lower for k in [
-                        "waiting for your", "wait for my go-ahead", "please confirm", "which option",
-                        "do you approve", "need your api key", "aguardando sua aprovação",
-                        "qual opção você prefere", "preciso que você confirme", "need clarification"
+                    is_waiting_user = "?" in state_lower or any(k in state_lower for k in [
+                        "waiting for your", "waiting on user", "wait for my go-ahead", "please confirm", "which option",
+                        "do you approve", "would you like me to", "do you want me to", "need your api key", "aguardando sua aprovação",
+                        "qual opção você prefere", "preciso que você confirme", "need clarification", "need permission"
                     ])
                     prob = 0.88 if is_waiting_user else 0.08
                 elif qid == "progress" or "last nudge produce" in inst:

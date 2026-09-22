@@ -3,7 +3,7 @@ use jev_harness::{
     gates::{
         build_provider_params, modulate_reasoning_effort, modulate_reasoning_effort_full,
         modulate_reasoning_effort_with_tokens, route_model_tier, should_abort_trajectory,
-        triage_test_failure, verify_step_completion,
+        should_nudge_continuation, triage_test_failure, verify_step_completion,
     },
 };
 
@@ -766,5 +766,68 @@ async fn test_red_team_vector_4_3_prompt_injection_in_untrusted_state() {
     assert!(!redacted.contains("vck_secret987654"));
     assert!(redacted.contains("[REDACTED]"));
 }
+
+#[tokio::test]
+async fn test_commandcode_provider_and_nudge_gate() {
+    let cc_client = JevClient::with_provider("commandcode", Some("cmd-secret-123".to_string()));
+    assert_eq!(
+        cc_client.base_url,
+        "https://api.commandcode.ai/provider/v1/systemone"
+    );
+    assert_eq!(cc_client.model, "typesafe/jev");
+
+    let client = JevClient::with_mock();
+
+    // 1. Unverified edits -> should_nudge = true, phase = verify
+    let res_verify = should_nudge_continuation(
+        "Assistant: Edited src/auth.rs. Next step: run cargo test to verify.",
+        "",
+        0.5,
+        Some(&client),
+    )
+    .await
+    .expect("Nudge gate failed");
+    assert!(res_verify.should_nudge);
+    assert_eq!(res_verify.sureforge_phase, "verify");
+    assert!(res_verify.suggested_nudge_prompt.contains("SureForge Verify"));
+
+    // 2. Waiting on user -> should_nudge = false, phase = ask
+    let res_wait = should_nudge_continuation(
+        "Assistant: Which region should I deploy to? Would you like me to proceed?",
+        "",
+        0.5,
+        Some(&client),
+    )
+    .await
+    .expect("Nudge gate failed");
+    assert!(!res_wait.should_nudge);
+    assert_eq!(res_wait.sureforge_phase, "ask");
+    assert!(res_wait.rationale.contains("waiting on user"));
+
+    // 3. Last nudge had no progress -> should_nudge = false
+    let res_no_prog = should_nudge_continuation(
+        "Assistant: No progress after previous nudge, stuck in loop.",
+        "Previous nudge: run cargo test",
+        0.5,
+        Some(&client),
+    )
+    .await
+    .expect("Nudge gate failed");
+    assert!(!res_no_prog.should_nudge);
+    assert!(res_no_prog.rationale.contains("did not produce real progress"));
+
+    // 4. Verified complete -> should_nudge = false, phase = complete
+    let res_done = should_nudge_continuation(
+        "Assistant: All 122 tests passed (0 failed), task completed and verified.",
+        "",
+        0.5,
+        Some(&client),
+    )
+    .await
+    .expect("Nudge gate failed");
+    assert!(!res_done.should_nudge);
+    assert_eq!(res_done.sureforge_phase, "complete");
+}
+
 
 

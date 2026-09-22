@@ -19,6 +19,7 @@ try:
         modulate_reasoning_effort,
         route_model_tier,
         should_abort_trajectory,
+        should_nudge_continuation,
         triage_test_failure,
         verify_step_completion,
     )
@@ -30,6 +31,7 @@ except (ImportError, ValueError):
         modulate_reasoning_effort,
         route_model_tier,
         should_abort_trajectory,
+        should_nudge_continuation,
         triage_test_failure,
         verify_step_completion,
     )
@@ -59,6 +61,12 @@ def cmd_status(args: argparse.Namespace) -> int:
             print("Provider:    OPENCODE ZEN (Free Tier)")
             print(f"Endpoint:    {client.base_url}")
             print("Engine Mode: LIVE (OpenCode Zen Free Community Model)")
+        elif client.provider == "commandcode":
+            masked = key[:6] + "..." + key[-4:] if key and len(key) > 10 else "***"
+            print(f"API Key:     Configured ({masked})")
+            print("Provider:    COMMAND CODE (Free $0.00/M Deal - typesafe/jev)")
+            print(f"Endpoint:    {client.base_url}")
+            print("Engine Mode: LIVE")
         else:
             masked = key[:6] + "..." + key[-4:] if key and len(key) > 10 else "***"
             print(f"API Key:     Configured ({masked})")
@@ -69,6 +77,7 @@ def cmd_status(args: argparse.Namespace) -> int:
         print("API Key:     NOT DETECTED")
         print("Engine Mode: SIMULATION / MOCK (Heuristic offline mode active)")
         print("\nPara ativar o modo LIVE com seu provedor escolhido:")
+        print("  - Command Code Free: export CMD_API_KEY='sua_chave' (ou cmd login -> ~/.commandcode/auth.json)")
         print("  - OpenCode Zen Free: export OPENCODE_API_KEY=zen (ou jev-harness --provider opencode)")
         print("  - TypeSafe Oficial:  export TYPESAFE_API_KEY='sua_chave'")
         print("  - OpenRouter:        export OPENROUTER_API_KEY='sua_chave'")
@@ -95,6 +104,7 @@ def cmd_metrics(args: argparse.Namespace) -> int:
                     "abort_guards_triggered": s.abort_guards_triggered,
                     "deterministic_routes": s.deterministic_routes,
                     "effort_modulations": s.effort_modulations,
+                    "nudge_continuations": s.nudge_continuations,
                     "estimated_tokens_saved": s.estimated_tokens_saved,
                     "estimated_cost_saved_usd": round(s.estimated_cost_saved_usd, 2),
                 },
@@ -108,6 +118,7 @@ def cmd_metrics(args: argparse.Namespace) -> int:
         print(f"Doom Loops Aborted:      {s.abort_guards_triggered}")
         print(f"Deterministic Routes:    {s.deterministic_routes}")
         print(f"Effort Modulations:      {s.effort_modulations} (Astra-Jev per-generation)")
+        print(f"Continuation Nudges:     {s.nudge_continuations} (SureForge + Jev Nudge)")
         print(f"Estimated Tokens Saved:  ⚡ {s.estimated_tokens_saved:,} tokens")
         print(f"Estimated API Cost Saved: 💸 ${s.estimated_cost_saved_usd:.2f} USD")
         print("=======================================\n")
@@ -501,7 +512,68 @@ def cmd_reasoning_effort(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_nudge_gate(args: argparse.Namespace) -> int:
+    raw_transcript = getattr(args, "transcript_pos", None) or getattr(args, "transcript", None)
+    transcript = _read_input(raw_transcript, allow_stdin=True).strip()
+    if not transcript:
+        print(
+            "Error: No transcript tail provided. Pass --transcript <text_or_path>, positional arg, or pipe via stdin.",
+            file=sys.stderr,
+        )
+        return 2
+
+    prev_nudge = _read_input(getattr(args, "previous_nudge", ""), allow_stdin=False).strip()
+    threshold = float(getattr(args, "threshold", 0.5))
+    force_mock = getattr(args, "mock", False)
+    provider = getattr(args, "provider", None)
+    is_json = getattr(args, "json", False)
+
+    client = JevClient(force_mock=force_mock, provider=provider)
+    res = should_nudge_continuation(
+        transcript_tail=transcript,
+        previous_nudge_summary=prev_nudge,
+        threshold=threshold,
+        client=client,
+        record_session=True,
+    )
+
+    if is_json:
+        print(
+            json.dumps(
+                {
+                    "should_nudge": res.should_nudge,
+                    "nudge_probability": res.nudge_probability,
+                    "waiting_probability": res.waiting_probability,
+                    "progress_probability": res.progress_probability,
+                    "sureforge_phase": res.sureforge_phase,
+                    "suggested_nudge_prompt": res.suggested_nudge_prompt,
+                    "rationale": res.rationale,
+                    "is_mock": res.is_mock,
+                },
+                indent=2,
+            )
+        )
+    else:
+        print("\n=== JEV CONTINUATION NUDGE GATE (SureForge) ===")
+        print(f"Should Nudge:      {'YES (Inject Continuation)' if res.should_nudge else 'NO (Stop & Yield to User)'}")
+        print(f"SureForge Phase:   {res.sureforge_phase.upper()}")
+        print(f"Nudge Prob:        {res.nudge_probability * 100:.1f}%")
+        print(f"Waiting Prob:      {res.waiting_probability * 100:.1f}%")
+        print(f"Progress Prob:     {res.progress_probability * 100:.1f}%")
+        print(f"Rationale:         {res.rationale}")
+        if res.suggested_nudge_prompt:
+            print(f"Suggested Prompt:  {res.suggested_nudge_prompt}")
+        if res.is_mock:
+            print("Engine Mode:       [SIMULATION / MOCK]")
+        else:
+            print(f"Engine Mode:       [LIVE: {client.provider.upper()}]")
+        print("===============================================\n")
+
+    return 0 if res.should_nudge else 1
+
+
 def cmd_mcp(args: argparse.Namespace) -> int:
+    from .mcp_server import run_mcp_server
     force_mock = getattr(args, "mock", False)
     provider = getattr(args, "provider", None)
     client = JevClient(force_mock=force_mock, provider=provider)
@@ -514,7 +586,12 @@ def main() -> None:
     common_parser = argparse.ArgumentParser(add_help=False)
     common_parser.add_argument("--mock", action="store_true", default=argparse.SUPPRESS, help="Force local simulation mode even if key is present")
     common_parser.add_argument("--json", action="store_true", default=argparse.SUPPRESS, help="Output machine-readable JSON")
-    common_parser.add_argument("--provider", choices=["typesafe", "opencode", "openrouter", "vercel"], default=argparse.SUPPRESS, help="Override backend provider")
+    common_parser.add_argument(
+        "--provider",
+        choices=["typesafe", "commandcode", "opencode", "openrouter", "vercel"],
+        default=argparse.SUPPRESS,
+        help="Override backend provider",
+    )
 
     parser = argparse.ArgumentParser(
         prog="jev-harness",
@@ -611,6 +688,19 @@ def main() -> None:
     p_verify.add_argument("--criteria", "-c", required=True, help="Acceptance criteria")
     p_verify.add_argument("--output", "-o", required=True, help="Produced evidence / output")
     p_verify.set_defaults(func=cmd_verify)
+
+    # nudge-gate (aliases: nudge, sureforge)
+    p_nudge = subparsers.add_parser(
+        "nudge-gate",
+        aliases=["nudge", "sureforge"],
+        parents=[common_parser],
+        help="Evaluate if agent stopped prematurely with unfinished work or unverified changes (SureForge + Jev Nudge)",
+    )
+    p_nudge.add_argument("transcript_pos", nargs="?", default=None, help="Recent agent transcript tail or path to transcript file")
+    p_nudge.add_argument("--transcript", "-t", default=None, help="Recent agent transcript tail or path to transcript file")
+    p_nudge.add_argument("--previous-nudge", "-P", default="", help="Summary of the previous nudge to verify progress")
+    p_nudge.add_argument("--threshold", type=float, default=0.5, help="Probability threshold for nudge/waiting/progress (default: 0.5)")
+    p_nudge.set_defaults(func=cmd_nudge_gate)
 
     # mcp
     p_mcp = subparsers.add_parser("mcp", parents=[common_parser], help="Run stdio MCP server for Cursor, Claude, Antigravity, OpenCode")

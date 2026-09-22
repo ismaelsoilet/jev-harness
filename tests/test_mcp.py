@@ -217,6 +217,25 @@ class TestMCPServer(unittest.TestCase):
             output = mock_out.getvalue().strip()
             self.assertIn('"id": 99', output)
 
+    def test_mcp_tools_call_nudge_continuation(self):
+        req = json.dumps({
+            "jsonrpc": "2.0",
+            "id": 15,
+            "method": "tools/call",
+            "params": {
+                "name": "jev_should_nudge_continuation",
+                "arguments": {
+                    "transcript_tail": "Modified client.py without running tests. Need to verify.",
+                },
+            },
+        })
+        resp = process_message(req, self.client)
+        self.assertIsNotNone(resp)
+        self.assertFalse(resp["result"]["isError"])
+        content = json.loads(resp["result"]["content"][0]["text"])
+        self.assertTrue(content["should_nudge"])
+        self.assertEqual(content["sureforge_phase"], "verify")
+
 
 if __name__ == "__main__":
     unittest.main()

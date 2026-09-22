@@ -106,6 +106,19 @@ export interface ReasoningEffortResult {
   isMock: boolean;
 }
 
+export type SureForgePhase = "research" | "ask" | "plan" | "execute" | "verify" | "complete" | string;
+
+export interface NudgeGateResult {
+  shouldNudge: boolean;
+  nudgeProbability: number;
+  waitingProbability: number;
+  progressProbability: number;
+  sureforgePhase: SureForgePhase;
+  suggestedNudgePrompt: string;
+  rationale: string;
+  isMock: boolean;
+}
+
 export type AbortCheckResult = AbortGateResult;
 export type StepVerificationResult = VerificationResult;
 

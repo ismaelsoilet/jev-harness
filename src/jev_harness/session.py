@@ -34,6 +34,7 @@ class SessionState:
     abort_guards_triggered: int = 0
     deterministic_routes: int = 0
     effort_modulations: int = 0
+    nudge_continuations: int = 0
     estimated_tokens_saved: int = 0
     estimated_cost_saved_usd: float = 0.0
 
@@ -70,6 +71,7 @@ def load_session() -> SessionState:
                 abort_guards_triggered=data.get("abort_guards_triggered", 0),
                 deterministic_routes=data.get("deterministic_routes", 0),
                 effort_modulations=data.get("effort_modulations", 0),
+                nudge_continuations=data.get("nudge_continuations", 0),
                 estimated_tokens_saved=data.get("estimated_tokens_saved", 0),
                 estimated_cost_saved_usd=data.get("estimated_cost_saved_usd", 0.0),
             )
@@ -88,6 +90,7 @@ def save_session(session: SessionState) -> None:
             "abort_guards_triggered": session.abort_guards_triggered,
             "deterministic_routes": session.deterministic_routes,
             "effort_modulations": session.effort_modulations,
+            "nudge_continuations": session.nudge_continuations,
             "estimated_tokens_saved": session.estimated_tokens_saved,
             "estimated_cost_saved_usd": session.estimated_cost_saved_usd,
             "last_updated": time.time(),
@@ -143,6 +146,13 @@ def record_reasoning_effort_event(effort: str, provider: str = "openai") -> None
         cost = 0.21
         session.estimated_tokens_saved += tokens
         session.estimated_cost_saved_usd += cost
+    save_session(session)
+
+
+def record_nudge_event(should_nudge: bool) -> None:
+    session = load_session()
+    if should_nudge:
+        session.nudge_continuations += 1
     save_session(session)
 
 

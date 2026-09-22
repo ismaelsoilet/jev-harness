@@ -15,11 +15,12 @@ import type {
 } from "./types.js";
 
 export const TYPESAFE_API_URL = "https://api.typesafe.ai/v1/systemone";
+export const COMMANDCODE_API_URL = "https://api.commandcode.ai/provider/v1/systemone";
 export const OPENCODE_API_URL = "https://opencode.ai/zen/v1/systemone";
 export const OPENROUTER_API_URL = "https://openrouter.ai/api/alpha/decisions";
 export const VERCEL_API_URL = "https://ai-gateway.vercel.sh/v1/evaluate";
 export const DEFAULT_MODEL = "jev-latest";
-export const DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.1.8; +https://github.com/ismaelsoilet/jev-harness)";
+export const DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.1.9; +https://github.com/ismaelsoilet/jev-harness)";
 
 export class JevClient {
   public apiKey?: string;
@@ -39,6 +40,8 @@ export class JevClient {
 
     if (options.baseUrl) {
       this.baseUrl = options.baseUrl;
+    } else if (this.provider === "commandcode") {
+      this.baseUrl = COMMANDCODE_API_URL;
     } else if (this.provider === "opencode") {
       this.baseUrl = OPENCODE_API_URL;
     } else if (this.provider === "openrouter") {
@@ -51,6 +54,8 @@ export class JevClient {
 
     if (options.model) {
       this.model = options.model;
+    } else if (this.provider === "commandcode") {
+      this.model = "typesafe/jev";
     } else if (this.provider === "opencode") {
       this.model = "jev-1.13-free";
     } else if (this.provider === "openrouter") {
@@ -73,8 +78,14 @@ export class JevClient {
 
     // 1. Environment variables
     if (typeof process !== "undefined" && process.env) {
+      if (process.env.JEV_PROVIDER === "commandcode") {
+        const cmdKey = process.env.CMD_API_KEY || process.env.COMMAND_CODE_API_KEY;
+        if (cmdKey) return { key: cmdKey, provider: "commandcode" };
+      }
       if (process.env.JEV_PROVIDER === "opencode") return { key: process.env.OPENCODE_API_KEY, provider: "opencode" };
       if (process.env.TYPESAFE_API_KEY) return { key: process.env.TYPESAFE_API_KEY, provider: "typesafe" };
+      if (process.env.CMD_API_KEY) return { key: process.env.CMD_API_KEY, provider: "commandcode" };
+      if (process.env.COMMAND_CODE_API_KEY) return { key: process.env.COMMAND_CODE_API_KEY, provider: "commandcode" };
       if (process.env.VERCEL_AI_GATEWAY_API_KEY) return { key: process.env.VERCEL_AI_GATEWAY_API_KEY, provider: "vercel" };
       if (process.env.VERCEL_API_KEY) return { key: process.env.VERCEL_API_KEY, provider: "vercel" };
       if (process.env.AI_GATEWAY_API_KEY) return { key: process.env.AI_GATEWAY_API_KEY, provider: "vercel" };
@@ -98,6 +109,8 @@ export class JevClient {
               const line = raw.trim();
               if (line.startsWith("JEV_PROVIDER=") && line.split("=", 2)[1].replace(/['"]/g, "").trim() === "opencode") return { key: undefined, provider: "opencode" };
               if (line.startsWith("TYPESAFE_API_KEY=")) return { key: line.split("=", 2)[1].replace(/['"]/g, "").trim(), provider: "typesafe" };
+              if (line.startsWith("CMD_API_KEY=")) return { key: line.split("=", 2)[1].replace(/['"]/g, "").trim(), provider: "commandcode" };
+              if (line.startsWith("COMMAND_CODE_API_KEY=")) return { key: line.split("=", 2)[1].replace(/['"]/g, "").trim(), provider: "commandcode" };
               if (line.startsWith("VERCEL_AI_GATEWAY_API_KEY=")) return { key: line.split("=", 2)[1].replace(/['"]/g, "").trim(), provider: "vercel" };
               if (line.startsWith("VERCEL_API_KEY=")) return { key: line.split("=", 2)[1].replace(/['"]/g, "").trim(), provider: "vercel" };
               if (line.startsWith("AI_GATEWAY_API_KEY=")) return { key: line.split("=", 2)[1].replace(/['"]/g, "").trim(), provider: "vercel" };
@@ -113,7 +126,7 @@ export class JevClient {
         // Fallback gracefully
       }
 
-      // 3. User global config (~/.config/jev/credentials.env)
+      // 3. User global config (~/.config/jev/credentials.env and ~/.commandcode/auth.json)
       try {
         const home = os.homedir();
         const globalCreds = path.join(home, ".config", "jev", "credentials.env");
@@ -123,11 +136,20 @@ export class JevClient {
             const line = raw.trim();
             if (line.startsWith("JEV_PROVIDER=") && line.split("=", 2)[1].replace(/['"]/g, "").trim() === "opencode") return { key: undefined, provider: "opencode" };
             if (line.startsWith("TYPESAFE_API_KEY=")) return { key: line.split("=", 2)[1].replace(/['"]/g, "").trim(), provider: "typesafe" };
+            if (line.startsWith("CMD_API_KEY=")) return { key: line.split("=", 2)[1].replace(/['"]/g, "").trim(), provider: "commandcode" };
+            if (line.startsWith("COMMAND_CODE_API_KEY=")) return { key: line.split("=", 2)[1].replace(/['"]/g, "").trim(), provider: "commandcode" };
             if (line.startsWith("VERCEL_AI_GATEWAY_API_KEY=")) return { key: line.split("=", 2)[1].replace(/['"]/g, "").trim(), provider: "vercel" };
             if (line.startsWith("VERCEL_API_KEY=")) return { key: line.split("=", 2)[1].replace(/['"]/g, "").trim(), provider: "vercel" };
             if (line.startsWith("AI_GATEWAY_API_KEY=")) return { key: line.split("=", 2)[1].replace(/['"]/g, "").trim(), provider: "vercel" };
             if (line.startsWith("OPENCODE_API_KEY=")) return { key: line.split("=", 2)[1].replace(/['"]/g, "").trim(), provider: "opencode" };
             if (line.startsWith("OPENROUTER_API_KEY=")) return { key: line.split("=", 2)[1].replace(/['"]/g, "").trim(), provider: "openrouter" };
+          }
+        }
+        const cmdAuth = path.join(home, ".commandcode", "auth.json");
+        if (fs.existsSync(cmdAuth)) {
+          const authData = JSON.parse(fs.readFileSync(cmdAuth, "utf-8"));
+          if (authData && typeof authData.apiKey === "string" && authData.apiKey.trim()) {
+            return { key: authData.apiKey.trim(), provider: "commandcode" };
           }
         }
       } catch {
@@ -187,6 +209,7 @@ export class JevClient {
       if (!resp.ok) {
         const errText = JevClient.redactSecrets(await resp.text(), this.apiKey);
         const providerMap: Record<string, string> = {
+          commandcode: "Command Code",
           opencode: "OpenCode Zen",
           openrouter: "OpenRouter",
           vercel: "Vercel AI Gateway",
@@ -200,6 +223,7 @@ export class JevClient {
     } catch (err: any) {
       if (err.name === "AbortError") {
         const providerMap: Record<string, string> = {
+          commandcode: "Command Code",
           opencode: "OpenCode Zen",
           openrouter: "OpenRouter",
           vercel: "Vercel AI Gateway",
@@ -437,6 +461,41 @@ export class JevClient {
               bestChoice = Object.keys(q.criteria)[0];
             }
           }
+        } else if (qid === "sureforge_phase" || ("execute" in q.criteria && "verify" in q.criteria)) {
+          const isWaitingQ = stateLower.includes("?") || [
+            "waiting on user", "need permission", "please clarify", "which option",
+            "would you like me to", "do you want me to", "aguardando usuário",
+            "preciso de permissão", "qual opção"
+          ].some((w) => stateLower.includes(w));
+          const isUnverified = [
+            "without running tests", "tests not run", "unverified", "haven't run pytest",
+            "todo: run tests", "falta rodar os testes", "sem testar", "need to verify",
+            "to verify", "run pytest", "run cargo test", "run npm test", "need to run"
+          ].some((w) => stateLower.includes(w));
+          const isUnfinished = [
+            "todo", "remaining", "next step", "unfinished", "partial", "in progress",
+            "falta implementar", "pendente", "continuarei", "step 1 of"
+          ].some((w) => stateLower.includes(w));
+          const isComplete = [
+            "all tests passed", "tests passed (0 failed)", "completed and verified", "100% passing", "completed all", "task complete",
+            "concluído com sucesso", "todos os testes passaram"
+          ].some((w) => stateLower.includes(w));
+
+          if (isWaitingQ && "ask" in q.criteria) {
+            bestChoice = "ask";
+          } else if (isUnverified && "verify" in q.criteria) {
+            bestChoice = "verify";
+          } else if (isUnfinished && "execute" in q.criteria) {
+            bestChoice = "execute";
+          } else if (isComplete && "complete" in q.criteria) {
+            bestChoice = "complete";
+          } else if (["plan", "architecture", "design", "planejamento"].some((w) => stateLower.includes(w)) && "plan" in q.criteria) {
+            bestChoice = "plan";
+          } else if (["research", "investigat", "search", "pesquisando"].some((w) => stateLower.includes(w)) && "research" in q.criteria) {
+            bestChoice = "research";
+          } else {
+            bestChoice = "complete" in q.criteria ? "complete" : Object.keys(q.criteria)[0];
+          }
         } else if (qid === "lease" || ("1" in q.criteria && ["2", "5", "10"].some((x) => x in q.criteria))) {
           // Astra-Ares multi-generation lease question
           if (["error", "fail", "erro", "falha", "deadlock", "panic", "exception"].some((k) => stateLower.includes(k))) {
@@ -545,6 +604,37 @@ export class JevClient {
         ) {
           if (inst.includes("deterministically") || inst.includes("skip")) {
             prob = 0.95;
+          }
+        }
+
+        // CommandCode Jev Nudge + SureForge continuation heuristics
+        const isWaitingOnUser = stateLower.includes("?") || [
+          "waiting on user", "need permission", "please clarify", "which option",
+          "would you like me to", "do you want me to", "aguardando usuário",
+          "preciso de permissão", "qual opção"
+        ].some((w) => stateLower.includes(w));
+        const hasUnfinishedWork = [
+          "todo", "remaining", "next step", "unfinished", "partial", "in progress",
+          "without running tests", "tests not run", "unverified", "haven't run pytest",
+          "falta implementar", "pendente", "falta rodar os testes", "sem testar", "need to verify", "step 1 of",
+          "to verify", "run pytest", "run cargo test", "run npm test", "need to run"
+        ].some((w) => stateLower.includes(w));
+        const hasNoProgress = [
+          "no progress", "stuck", "same output", "unchanged", "repeated without change",
+          "sem progresso", "mesma saída"
+        ].some((w) => stateLower.includes(w));
+
+        if (qid === "waiting" || inst.includes("waiting on the user")) {
+          prob = isWaitingOnUser ? 0.88 : 0.08;
+        } else if (qid === "progress" || inst.includes("last nudge produce real progress")) {
+          prob = hasNoProgress ? 0.12 : 0.86;
+        } else if (qid === "nudge" || inst.includes("gentle nudge")) {
+          if (isWaitingOnUser || hasNoProgress) {
+            prob = 0.10;
+          } else if (hasUnfinishedWork) {
+            prob = 0.89;
+          } else {
+            prob = 0.14;
           }
         }
 

@@ -10,16 +10,18 @@ _PKG_ROOT = str(Path(__file__).resolve().parents[1] / "src")
 if _PKG_ROOT not in sys.path:
     sys.path.insert(0, _PKG_ROOT)
 
-from jev_harness.client import JevClient
+from jev_harness.client import COMMANDCODE_API_URL, JevClient
 from jev_harness.gates import (
     AbortGateResult,
     ModelRouteResult,
+    NudgeGateResult,
     ReasoningEffortResult,
     TestTriageResult,
     VerificationResult,
     modulate_reasoning_effort,
     route_model_tier,
     should_abort_trajectory,
+    should_nudge_continuation,
     triage_test_failure,
     verify_step_completion,
 )
@@ -200,6 +202,58 @@ class TestSemanticGates(unittest.TestCase):
         )
         self.assertEqual(res_cpp.category, "deep_logic")
         self.assertFalse(res_cpp.skip_llm)
+
+    def test_commandcode_provider_endpoint_and_model(self):
+        cmd_client = JevClient(provider="commandcode", api_key="cmd_test_123")
+        self.assertEqual(cmd_client.base_url, COMMANDCODE_API_URL)
+        self.assertEqual(cmd_client.model, "typesafe/jev")
+        self.assertTrue(cmd_client.is_live)
+
+    def test_sureforge_nudge_gate_execute_and_verify_vs_vetoes(self):
+        # 1. Unfinished implementation ('execute' phase) -> should_nudge = True
+        res_exec = should_nudge_continuation(
+            "Implemented step 1 of 3. Remaining TODO: update CLI parser and run tests.",
+            client=self.client,
+        )
+        self.assertIsInstance(res_exec, NudgeGateResult)
+        self.assertTrue(res_exec.should_nudge)
+        self.assertEqual(res_exec.sureforge_phase, "execute")
+        self.assertGreaterEqual(res_exec.nudge_probability, 0.5)
+
+        # 2. Unverified changes ('verify' phase) -> should_nudge = True with SureForge Verify prompt
+        res_ver = should_nudge_continuation(
+            "Modified gates.py and client.py without running tests yet. Need to verify.",
+            client=self.client,
+        )
+        self.assertTrue(res_ver.should_nudge)
+        self.assertEqual(res_ver.sureforge_phase, "verify")
+        self.assertIn("SureForge Verify phase", res_ver.suggested_nudge_prompt)
+
+        # 3. Waiting on user ('ask' phase / question mark) -> vetoed (should_nudge = False)
+        res_wait = should_nudge_continuation(
+            "Would you like me to target PostgreSQL 16 or SQLite for the migration? Waiting on user choice.",
+            client=self.client,
+        )
+        self.assertFalse(res_wait.should_nudge)
+        self.assertEqual(res_wait.sureforge_phase, "ask")
+        self.assertGreaterEqual(res_wait.waiting_probability, 0.5)
+
+        # 4. Previous nudge made no progress -> vetoed (should_nudge = False)
+        res_no_prog = should_nudge_continuation(
+            "Still in progress with remaining todo items.",
+            previous_nudge_summary="Previous nudge produced no progress and stuck on same output.",
+            client=self.client,
+        )
+        self.assertFalse(res_no_prog.should_nudge)
+        self.assertLess(res_no_prog.progress_probability, 0.5)
+
+        # 5. Complete workflow ('complete' phase) -> should_nudge = False
+        res_done = should_nudge_continuation(
+            "All tests passed (100% passing) and task complete.",
+            client=self.client,
+        )
+        self.assertFalse(res_done.should_nudge)
+        self.assertEqual(res_done.sureforge_phase, "complete")
 
 
 if __name__ == "__main__":

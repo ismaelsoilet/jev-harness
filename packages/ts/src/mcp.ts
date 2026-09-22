@@ -4,13 +4,14 @@ import {
   modulateReasoningEffort,
   routeModelTier,
   shouldAbortTrajectory,
+  shouldNudgeContinuation,
   triageTestFailure,
   verifyStepCompletion,
 } from "./gates.js";
 
 const PROTOCOL_VERSION = "2024-11-05";
 const SERVER_NAME = "jev-harness";
-const SERVER_VERSION = "0.1.8";
+const SERVER_VERSION = "0.1.9";
 
 export const TOOLS_MANIFEST = [
   {
@@ -115,6 +116,29 @@ export const TOOLS_MANIFEST = [
         },
       },
       required: ["context"],
+    },
+  },
+  {
+    name: "jev_should_nudge_continuation",
+    description:
+      "Evaluates whether an autonomous agent paused prematurely with unfinished work or unverified changes (SureForge phases: research, ask, plan, execute, verify, complete + CommandCode Jev Nudge protocol). Vetoes nudges when waiting on user permission/input or when the previous nudge produced no progress.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        transcript_tail: {
+          type: "string",
+          description: "Recent agent transcript tail or turn output.",
+        },
+        previous_nudge_summary: {
+          type: "string",
+          description: "Optional summary of the previous nudge to check if real progress was made.",
+        },
+        threshold: {
+          type: "number",
+          description: "Optional probability threshold for nudge/waiting/progress (default: 0.5).",
+        },
+      },
+      required: ["transcript_tail"],
     },
   },
 ];
@@ -286,6 +310,36 @@ export async function processMessage(line: string, client: JevClient): Promise<R
           cacheSafeRecommendation: res.cacheSafeRecommendation,
           lease_steps: res.leaseSteps,
           leaseSteps: res.leaseSteps,
+          is_mock: res.isMock,
+          isMock: res.isMock,
+        };
+      } else if (toolName === "jev_should_nudge_continuation") {
+        if (!args.transcript_tail) {
+          return {
+            jsonrpc: "2.0",
+            id: reqId,
+            error: { code: -32602, message: "Missing required argument 'transcript_tail'" },
+          };
+        }
+        const res = await shouldNudgeContinuation(String(args.transcript_tail), {
+          previousNudgeSummary: args.previous_nudge_summary ? String(args.previous_nudge_summary) : "",
+          threshold: typeof args.threshold === "number" ? args.threshold : 0.5,
+          client,
+        });
+        result = {
+          should_nudge: res.shouldNudge,
+          shouldNudge: res.shouldNudge,
+          nudge_probability: res.nudgeProbability,
+          nudgeProbability: res.nudgeProbability,
+          waiting_probability: res.waitingProbability,
+          waitingProbability: res.waitingProbability,
+          progress_probability: res.progressProbability,
+          progressProbability: res.progressProbability,
+          sureforge_phase: res.sureforgePhase,
+          sureforgePhase: res.sureforgePhase,
+          suggested_nudge_prompt: res.suggestedNudgePrompt,
+          suggestedNudgePrompt: res.suggestedNudgePrompt,
+          rationale: res.rationale,
           is_mock: res.isMock,
           isMock: res.isMock,
         };

@@ -11,6 +11,7 @@ use std::time::Duration;
 pub const DEFAULT_MODEL: &str = "jev-latest";
 pub const DEFAULT_TIMEOUT_MS: u64 = 10000;
 pub const TYPESAFE_API_URL: &str = "https://api.typesafe.ai/v1/systemone";
+pub const COMMANDCODE_API_URL: &str = "https://api.commandcode.ai/provider/v1/systemone";
 pub const OPENCODE_API_URL: &str = "https://opencode.ai/zen/v1/systemone";
 pub const OPENROUTER_API_URL: &str = "https://openrouter.ai/api/alpha/decisions";
 pub const VERCEL_API_URL: &str = "https://ai-gateway.vercel.sh/v1/evaluate";
@@ -60,7 +61,9 @@ impl JevClient {
         let (resolved_key, resolved_provider, resolved_url) = Self::resolve_credentials(api_key);
         let final_url = base_url.unwrap_or(resolved_url);
         let final_model = model.unwrap_or_else(|| {
-            if resolved_provider == "opencode" {
+            if resolved_provider == "commandcode" {
+                "typesafe/jev".to_string()
+            } else if resolved_provider == "opencode" {
                 "jev-1.13-free".to_string()
             } else if resolved_provider == "openrouter" {
                 "typesafe/jev-1.13".to_string()
@@ -104,12 +107,14 @@ impl JevClient {
     pub fn with_provider(provider: &str, api_key: Option<String>) -> Self {
         let prov = provider.trim().to_lowercase();
         let base_url = match prov.as_str() {
+            "commandcode" => COMMANDCODE_API_URL.to_string(),
             "opencode" => OPENCODE_API_URL.to_string(),
             "openrouter" => OPENROUTER_API_URL.to_string(),
             "vercel" => VERCEL_API_URL.to_string(),
             _ => TYPESAFE_API_URL.to_string(),
         };
         let model = match prov.as_str() {
+            "commandcode" => "typesafe/jev".to_string(),
             "opencode" => "jev-1.13-free".to_string(),
             "openrouter" => "typesafe/jev-1.13".to_string(),
             "vercel" => "typesafe-ai/jev".to_string(),
@@ -165,7 +170,21 @@ impl JevClient {
 
         // 1. Check environment variables
         if let Ok(p) = env::var("JEV_PROVIDER") {
-            if p.trim() == "opencode" {
+            let pt = p.trim();
+            if pt == "commandcode" {
+                let key = env::var("CMD_API_KEY")
+                    .or_else(|_| env::var("COMMAND_CODE_API_KEY"))
+                    .ok();
+                if let Some(k) = key {
+                    if !k.trim().is_empty() {
+                        return (
+                            Some(k),
+                            "commandcode".to_string(),
+                            COMMANDCODE_API_URL.to_string(),
+                        );
+                    }
+                }
+            } else if pt == "opencode" {
                 let key = env::var("OPENCODE_API_KEY").ok();
                 return (key, "opencode".to_string(), OPENCODE_API_URL.to_string());
             }
@@ -178,6 +197,18 @@ impl JevClient {
                     "typesafe".to_string(),
                     TYPESAFE_API_URL.to_string(),
                 );
+            }
+        }
+
+        for env_name in ["CMD_API_KEY", "COMMAND_CODE_API_KEY"] {
+            if let Ok(key) = env::var(env_name) {
+                if !key.trim().is_empty() {
+                    return (
+                        Some(key),
+                        "commandcode".to_string(),
+                        COMMANDCODE_API_URL.to_string(),
+                    );
+                }
             }
         }
 
@@ -248,6 +279,7 @@ impl JevClient {
                 if let Some(k) = val.get("api_key").and_then(|v| v.as_str()) {
                     if !k.trim().is_empty() {
                         let url = match prov {
+                            "commandcode" => COMMANDCODE_API_URL,
                             "openrouter" => OPENROUTER_API_URL,
                             "vercel" => VERCEL_API_URL,
                             _ => TYPESAFE_API_URL,
@@ -262,14 +294,29 @@ impl JevClient {
             }
         }
 
-        // 3. Check ~/.config/jev/credentials.env
-        if let Ok(home) = env::var("HOME") {
-            let p = PathBuf::from(home).join(".config/jev/credentials.env");
+        // 3. Check ~/.config/jev/credentials.env and ~/.commandcode/auth.json
+        if let Ok(home) = env::var("HOME").or_else(|_| env::var("USERPROFILE")) {
+            let p = PathBuf::from(&home).join(".config/jev/credentials.env");
             if let Ok(content) = fs::read_to_string(p) {
                 for line in content.lines() {
                     let trimmed = line.trim();
                     if trimmed.starts_with("JEV_PROVIDER=") && trimmed.contains("opencode") {
                         return (None, "opencode".to_string(), OPENCODE_API_URL.to_string());
+                    }
+                    if trimmed.starts_with("CMD_API_KEY=") || trimmed.starts_with("COMMAND_CODE_API_KEY=") {
+                        let k = trimmed
+                            .split('=')
+                            .nth(1)
+                            .unwrap_or("")
+                            .trim_matches('"')
+                            .trim();
+                        if !k.is_empty() {
+                            return (
+                                Some(k.to_string()),
+                                "commandcode".to_string(),
+                                COMMANDCODE_API_URL.to_string(),
+                            );
+                        }
                     }
                     if trimmed.starts_with("OPENCODE_API_KEY=") {
                         let k = trimmed
@@ -307,6 +354,22 @@ impl JevClient {
                                 Some(k.to_string()),
                                 "vercel".to_string(),
                                 VERCEL_API_URL.to_string(),
+                            );
+                        }
+                    }
+                }
+            }
+
+            let cmd_auth = PathBuf::from(&home).join(".commandcode/auth.json");
+            if let Ok(content) = fs::read_to_string(cmd_auth) {
+                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                    if let Some(k) = val.get("apiKey").and_then(|v| v.as_str()) {
+                        let kt = k.trim();
+                        if !kt.is_empty() {
+                            return (
+                                Some(kt.to_string()),
+                                "commandcode".to_string(),
+                                COMMANDCODE_API_URL.to_string(),
                             );
                         }
                     }
@@ -811,6 +874,95 @@ impl JevClient {
                         if !cq.criteria.contains_key(&best_choice) {
                             best_choice = cq.criteria.keys().next().cloned().unwrap_or_default();
                         }
+                    } else if qid == "sureforge_phase"
+                        || (cq.criteria.contains_key("execute")
+                            && cq.criteria.contains_key("verify"))
+                    {
+                        let is_waiting_q = state_lower.contains('?')
+                            || [
+                                "waiting on user",
+                                "need permission",
+                                "please clarify",
+                                "which option",
+                                "would you like me to",
+                                "do you want me to",
+                                "aguardando usuário",
+                                "preciso de permissão",
+                                "qual opção",
+                            ]
+                            .iter()
+                            .any(|w| state_lower.contains(w));
+                        let is_unverified = [
+                            "without running tests",
+                            "tests not run",
+                            "unverified",
+                            "haven't run pytest",
+                            "todo: run tests",
+                            "falta rodar os testes",
+                            "sem testar",
+                            "need to verify",
+                            "to verify",
+                            "run pytest",
+                            "run cargo test",
+                            "run npm test",
+                            "need to run",
+                        ]
+                        .iter()
+                        .any(|w| state_lower.contains(w));
+                        let is_unfinished = [
+                            "todo",
+                            "remaining",
+                            "next step",
+                            "unfinished",
+                            "partial",
+                            "in progress",
+                            "falta implementar",
+                            "pendente",
+                            "continuarei",
+                            "step 1 of",
+                        ]
+                        .iter()
+                        .any(|w| state_lower.contains(w));
+                        let is_complete = [
+                            "all tests passed",
+                            "tests passed (0 failed)",
+                            "completed and verified",
+                            "100% passing",
+                            "completed all",
+                            "task complete",
+                            "concluído com sucesso",
+                            "todos os testes passaram",
+                        ]
+                        .iter()
+                        .any(|w| state_lower.contains(w));
+
+                        if is_waiting_q && cq.criteria.contains_key("ask") {
+                            best_choice = "ask".to_string();
+                        } else if is_unverified && cq.criteria.contains_key("verify") {
+                            best_choice = "verify".to_string();
+                        } else if is_unfinished && cq.criteria.contains_key("execute") {
+                            best_choice = "execute".to_string();
+                        } else if is_complete && cq.criteria.contains_key("complete") {
+                            best_choice = "complete".to_string();
+                        } else if ["plan", "architecture", "design", "planejamento"]
+                            .iter()
+                            .any(|w| state_lower.contains(w))
+                            && cq.criteria.contains_key("plan")
+                        {
+                            best_choice = "plan".to_string();
+                        } else if ["research", "investigat", "search", "pesquisando"]
+                            .iter()
+                            .any(|w| state_lower.contains(w))
+                            && cq.criteria.contains_key("research")
+                        {
+                            best_choice = "research".to_string();
+                        } else {
+                            best_choice = if cq.criteria.contains_key("complete") {
+                                "complete".to_string()
+                            } else {
+                                cq.criteria.keys().next().cloned().unwrap_or_default()
+                            };
+                        }
                     }
 
                     answers.insert(
@@ -1132,6 +1284,73 @@ impl JevClient {
                     {
                         if inst.contains("deterministically") || inst.contains("skip") {
                             prob = 0.95;
+                        }
+                    }
+
+                    // CommandCode Jev Nudge + SureForge continuation heuristics
+                    let is_waiting_on_user = state_lower.contains('?')
+                        || [
+                            "waiting on user",
+                            "need permission",
+                            "please clarify",
+                            "which option",
+                            "would you like me to",
+                            "do you want me to",
+                            "aguardando usuário",
+                            "preciso de permissão",
+                            "qual opção",
+                        ]
+                        .iter()
+                        .any(|w| state_lower.contains(w));
+                    let has_unfinished_work = [
+                        "todo",
+                        "remaining",
+                        "next step",
+                        "unfinished",
+                        "partial",
+                        "in progress",
+                        "without running tests",
+                        "tests not run",
+                        "unverified",
+                        "haven't run pytest",
+                        "falta implementar",
+                        "pendente",
+                        "falta rodar os testes",
+                        "sem testar",
+                        "need to verify",
+                        "step 1 of",
+                        "to verify",
+                        "run pytest",
+                        "run cargo test",
+                        "run npm test",
+                        "need to run",
+                    ]
+                    .iter()
+                    .any(|w| state_lower.contains(w));
+                    let has_no_progress = [
+                        "no progress",
+                        "stuck",
+                        "same output",
+                        "unchanged",
+                        "repeated without change",
+                        "sem progresso",
+                        "mesma saída",
+                    ]
+                    .iter()
+                    .any(|w| state_lower.contains(w));
+
+                    if qid == "waiting" || inst.contains("waiting on the user") {
+                        prob = if is_waiting_on_user { 0.88 } else { 0.08 };
+                    } else if qid == "progress" || inst.contains("last nudge produce real progress")
+                    {
+                        prob = if has_no_progress { 0.12 } else { 0.86 };
+                    } else if qid == "nudge" || inst.contains("gentle nudge") {
+                        if is_waiting_on_user || has_no_progress {
+                            prob = 0.10;
+                        } else if has_unfinished_work {
+                            prob = 0.89;
+                        } else {
+                            prob = 0.14;
                         }
                     }
 

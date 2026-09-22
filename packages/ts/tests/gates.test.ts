@@ -5,6 +5,7 @@ import {
   modulateReasoningEffort,
   routeModelTier,
   shouldAbortTrajectory,
+  shouldNudgeContinuation,
   triageTestFailure,
   verifyStepCompletion,
 } from "../src/gates.js";
@@ -351,7 +352,7 @@ FAIL src/plugin.test.ts
     // Tools list
     const listRes = await processMessage(JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list" }), client);
     assert.ok(listRes);
-    assert.equal(listRes.result.tools.length, 5);
+    assert.equal(listRes.result.tools.length, 6);
 
     // Tools call
     const callRes = await processMessage(JSON.stringify({
@@ -368,6 +369,46 @@ FAIL src/plugin.test.ts
     const parsed = JSON.parse(callRes.result.content[0].text);
     assert.equal(parsed.category, "env_missing");
     assert.equal(parsed.skipLlm, true);
+  });
+
+  test("commandcode provider and shouldNudgeContinuation SureForge & Fable-Judge verification", async () => {
+    const ccClient = new JevClient({ provider: "commandcode", apiKey: "cmd-test-key" });
+    assert.equal(ccClient.baseUrl, "https://api.commandcode.ai/provider/v1/systemone");
+    assert.equal(ccClient.model, "typesafe/jev");
+
+    // 1. Unverified edits -> shouldNudge = true, phase = verify
+    const resVerify = await shouldNudgeContinuation(
+      "Assistant: Updated src/auth.ts. Now I need to run pytest to verify the changes.",
+      { client }
+    );
+    assert.equal(resVerify.shouldNudge, true);
+    assert.equal(resVerify.sureforgePhase, "verify");
+    assert.ok(resVerify.suggestedNudgePrompt.includes("SureForge Verify"));
+
+    // 2. Waiting on user -> shouldNudge = false, phase = ask
+    const resWait = await shouldNudgeContinuation(
+      "Assistant: Which cloud region should I deploy to? Would you like me to proceed with us-east-1?",
+      { client }
+    );
+    assert.equal(resWait.shouldNudge, false);
+    assert.equal(resWait.sureforgePhase, "ask");
+    assert.ok(resWait.rationale.includes("waiting on user"));
+
+    // 3. Last nudge failed to make progress -> shouldNudge = false
+    const resNoProg = await shouldNudgeContinuation(
+      "Assistant: Same output, no progress after previous nudge, stuck in loop.",
+      { previousNudgeSummary: "Nudge 1: run tests", client }
+    );
+    assert.equal(resNoProg.shouldNudge, false);
+    assert.ok(resNoProg.rationale.includes("did not produce real progress"));
+
+    // 4. Complete and verified -> shouldNudge = false, phase = complete
+    const resDone = await shouldNudgeContinuation(
+      "Assistant: All 122 tests passed (0 failed), task completed and verified.",
+      { client }
+    );
+    assert.equal(resDone.shouldNudge, false);
+    assert.equal(resDone.sureforgePhase, "complete");
   });
 });
 

@@ -20,6 +20,7 @@ try:
         modulate_reasoning_effort,
         route_model_tier,
         should_abort_trajectory,
+        should_nudge_continuation,
         triage_test_failure,
         verify_step_completion,
     )
@@ -31,6 +32,7 @@ except (ImportError, ValueError):
         modulate_reasoning_effort,
         route_model_tier,
         should_abort_trajectory,
+        should_nudge_continuation,
         triage_test_failure,
         verify_step_completion,
     )
@@ -156,6 +158,32 @@ TOOLS_MANIFEST: List[Dict[str, Any]] = [
                 },
             },
             "required": ["context"],
+        },
+    },
+    {
+        "name": "jev_should_nudge_continuation",
+        "description": (
+            "Evaluates whether an autonomous agent paused prematurely with unfinished work or unverified changes "
+            "(SureForge phases: research, ask, plan, execute, verify, complete + CommandCode Jev Nudge protocol). "
+            "Vetoes nudges when waiting on user permission/input or when the previous nudge produced no progress."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "transcript_tail": {
+                    "type": "string",
+                    "description": "Recent agent transcript tail or turn output.",
+                },
+                "previous_nudge_summary": {
+                    "type": "string",
+                    "description": "Optional summary of the previous nudge to check if real progress was made.",
+                },
+                "threshold": {
+                    "type": "number",
+                    "description": "Optional probability threshold for nudge/waiting/progress (default: 0.5).",
+                },
+            },
+            "required": ["transcript_tail"],
         },
     },
 ]
@@ -330,6 +358,39 @@ def handle_tools_call(req_id: Any, params: Dict[str, Any], client: JevClient) ->
                     "is_reasoning_supported": res.is_reasoning_supported,
                     "cache_safe_recommendation": res.cache_safe_recommendation,
                     "lease_steps": res.lease_steps,
+                    "is_mock": res.is_mock,
+                },
+                indent=2,
+            )
+
+        elif tool_name == "jev_should_nudge_continuation":
+            tail = args.get("transcript_tail", "")
+            if not tail or not str(tail).strip():
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "error": {
+                        "code": -32602,
+                        "message": "Invalid params: 'transcript_tail' is required and cannot be empty.",
+                    },
+                }
+            prev = args.get("previous_nudge_summary", "") or ""
+            thresh = float(args.get("threshold", 0.5) if args.get("threshold") is not None else 0.5)
+            res = should_nudge_continuation(
+                transcript_tail=str(tail),
+                previous_nudge_summary=str(prev),
+                threshold=thresh,
+                client=client,
+            )
+            text_content = json.dumps(
+                {
+                    "should_nudge": res.should_nudge,
+                    "nudge_probability": res.nudge_probability,
+                    "waiting_probability": res.waiting_probability,
+                    "progress_probability": res.progress_probability,
+                    "sureforge_phase": res.sureforge_phase,
+                    "suggested_nudge_prompt": res.suggested_nudge_prompt,
+                    "rationale": res.rationale,
                     "is_mock": res.is_mock,
                 },
                 indent=2,

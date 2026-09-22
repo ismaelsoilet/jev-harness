@@ -1,13 +1,13 @@
 # 🏛️ Planta Arquitetural Completa: Jev Harness
 
-> **Documento Oficial de Engenharia — Versão do Projeto: v0.1.8**  
+> **Documento Oficial de Engenharia — Versão do Projeto: v0.1.9**  
 > *Obrigatório para todos os agentes autônomos e desenvolvedores que operam no repositório.*
 
 ---
 
 ## 1. Visão Geral do Sistema
 
-O `jev-harness` é um **harness de decisão não-autorregressiva (System One), otimizador de tokens e barreira de proteção semântica** para agentes autônomos de codificação (OpenCode, Cursor, Claude Code, Antigravity IDE, Windsurf, Zed e Pi).
+O `jev-harness` é um **harness de decisão não-autorregressiva (System One), otimizador de tokens e barreira de proteção semântica** para agentes autônomos de codificação (OpenCode, Command Code, Cursor, Claude Code, Antigravity IDE, Windsurf, Zed e Pi).
 
 Ele aplica o paradigma cognitivo de Daniel Kahneman à engenharia de agentes:
 * **System 1 (Rápido, Intuitivo, Tipado, Não-Autorregressivo)**: O Jev toma micro-decisões semânticas em **< 500µs localmente** ou **70ms a 150ms remotamente**, com custo de **$0.042 por 1 milhão de tokens de entrada e $0.00 por tokens de saída**.

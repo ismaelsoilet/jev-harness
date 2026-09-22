@@ -144,6 +144,37 @@ class TestCLI(unittest.TestCase):
                 self.assertIn("JEV REASONING EFFORT GATE", output)
                 self.assertIn("Assigned Effort:   HIGH", output)
 
+    def test_cli_nudge_gate_json(self):
+        with patch.object(
+            sys,
+            "argv",
+            [
+                "jev-harness",
+                "nudge-gate",
+                "--transcript",
+                "Assistant: Edited src/auth.py. Now I need to run pytest to verify.",
+                "--json",
+                "--mock",
+            ],
+        ):
+            with patch("sys.stdout", new_callable=StringIO) as out:
+                with self.assertRaises(SystemExit) as cm:
+                    main()
+                self.assertEqual(cm.exception.code, 0)
+                data = json.loads(out.getvalue())
+                self.assertTrue(data["should_nudge"])
+                self.assertEqual(data["sureforge_phase"], "verify")
+
+    def test_cli_provider_commandcode_status(self):
+        with patch.dict("os.environ", {"CMD_API_KEY": "cmd-test-key"}):
+            with patch.object(sys, "argv", ["jev-harness", "--provider", "commandcode", "status"]):
+                with patch("sys.stdout", new_callable=StringIO) as out:
+                    with self.assertRaises(SystemExit) as cm:
+                        main()
+                    self.assertEqual(cm.exception.code, 0)
+                    self.assertIn("COMMAND CODE", out.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()
+

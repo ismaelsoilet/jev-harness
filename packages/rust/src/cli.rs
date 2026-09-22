@@ -1,8 +1,9 @@
 use crate::{
-    client::JevClient,
+    client::{JevClient, COMMANDCODE_API_URL},
     gates::{
         modulate_reasoning_effort_full, route_model_tier,
-        should_abort_trajectory, triage_test_failure, verify_step_completion,
+        should_abort_trajectory, should_nudge_continuation, triage_test_failure,
+        verify_step_completion,
     },
 };
 use clap::{Parser, Subcommand};
@@ -29,7 +30,7 @@ pub struct Cli {
     #[arg(
         long,
         global = true,
-        help = "Override backend provider (typesafe, opencode, openrouter)"
+        help = "Override backend provider (typesafe, commandcode, opencode, openrouter, vercel)"
     )]
     pub provider: Option<String>,
 
@@ -141,6 +142,34 @@ pub enum Commands {
         )]
         max_lease_steps: u32,
     },
+
+    #[command(
+        alias = "nudge",
+        alias = "sureforge",
+        about = "Evaluate if agent stopped prematurely with unfinished work or unverified changes (SureForge + Jev Nudge)"
+    )]
+    NudgeGate {
+        #[arg(help = "Recent agent transcript tail or path to file")]
+        transcript_pos: Option<String>,
+
+        #[arg(short, long, help = "Recent agent transcript tail or path to file")]
+        transcript: Option<String>,
+
+        #[arg(
+            short = 'P',
+            long = "previous-nudge",
+            default_value = "",
+            help = "Summary of the previous nudge to verify progress"
+        )]
+        previous_nudge: String,
+
+        #[arg(
+            long,
+            default_value = "0.5",
+            help = "Probability threshold for nudge/waiting/progress (default: 0.5)"
+        )]
+        threshold: f64,
+    },
 }
 
 fn read_input(arg_pos: Option<String>, arg_flag: Option<String>) -> io::Result<String> {
@@ -166,7 +195,10 @@ pub async fn run_cli() {
     let mut client = JevClient::new(None, None, None, None, cli.mock);
     if let Some(ref p) = cli.provider {
         client.provider = p.clone();
-        if p == "opencode" {
+        if p == "commandcode" {
+            client.base_url = COMMANDCODE_API_URL.to_string();
+            client.model = "typesafe/jev".to_string();
+        } else if p == "opencode" {
             client.base_url = "https://opencode.ai/zen/v1/systemone".to_string();
             client.model = "jev-1.13-free".to_string();
         }
@@ -182,6 +214,20 @@ pub async fn run_cli() {
                     println!("Provider:    OPENCODE ZEN (Free Tier)");
                     println!("Endpoint:    {}", client.base_url);
                     println!("Engine Mode: LIVE (OpenCode Zen Free Community Model)");
+                } else if client.provider == "commandcode" {
+                    let masked = if let Some(ref key) = client.api_key {
+                        if key.len() > 10 {
+                            format!("{}...{}", &key[..6], &key[key.len() - 4..])
+                        } else {
+                            "***".to_string()
+                        }
+                    } else {
+                        "***".to_string()
+                    };
+                    println!("API Key:     Configured ({})", masked);
+                    println!("Provider:    COMMAND CODE (Free $0.00/M Deal - typesafe/jev)");
+                    println!("Endpoint:    {}", client.base_url);
+                    println!("Engine Mode: LIVE");
                 } else {
                     let masked = if let Some(ref key) = client.api_key {
                         if key.len() > 10 {
@@ -436,6 +482,57 @@ pub async fn run_cli() {
                 }
                 Err(e) => {
                     eprintln!("Error modulating reasoning effort: {}", e);
+                    process::exit(2);
+                }
+            }
+        }
+
+        Commands::NudgeGate {
+            transcript_pos,
+            transcript,
+            previous_nudge,
+            threshold,
+        } => {
+            let tail = match read_input(transcript_pos, transcript) {
+                Ok(t) if !t.trim().is_empty() => t,
+                _ => {
+                    eprintln!("Error: No transcript tail provided. Pass --transcript <text> or pipe via stdin.");
+                    process::exit(2);
+                }
+            };
+
+            match should_nudge_continuation(&tail, &previous_nudge, threshold, Some(&client)).await
+            {
+                Ok(res) => {
+                    if cli.json {
+                        println!("{}", serde_json::to_string_pretty(&res).unwrap());
+                    } else {
+                        println!("\n=== JEV CONTINUATION NUDGE GATE (RUST) ===");
+                        println!(
+                            "Should Nudge:      {}",
+                            if res.should_nudge {
+                                "YES (Inject Continuation)"
+                            } else {
+                                "NO (Stop & Yield to User)"
+                            }
+                        );
+                        println!("SureForge Phase:   {}", res.sureforge_phase.to_uppercase());
+                        println!("Nudge Prob:        {:.1}%", res.nudge_probability * 100.0);
+                        println!("Waiting Prob:      {:.1}%", res.waiting_probability * 100.0);
+                        println!("Progress Prob:     {:.1}%", res.progress_probability * 100.0);
+                        println!("Rationale:         {}", res.rationale);
+                        if !res.suggested_nudge_prompt.is_empty() {
+                            println!("Suggested Prompt:  {}", res.suggested_nudge_prompt);
+                        }
+                        if res.is_mock {
+                            println!("Engine Mode:       [SIMULATION / MOCK]");
+                        }
+                        println!("==========================================\n");
+                    }
+                    process::exit(if res.should_nudge { 0 } else { 1 });
+                }
+                Err(e) => {
+                    eprintln!("Error evaluating nudge gate: {}", e);
                     process::exit(2);
                 }
             }

@@ -1,6 +1,6 @@
 # 🌐 Governança Estrita de Modelos de IA e Registro de Fronteira (2026)
 
-> **Documento Oficial de Engenharia — Versão: v0.1.8**  
+> **Documento Oficial de Engenharia — Versão: v0.1.9**  
 > *Regra Mandatória de Pesquisa e Atualização para Agentes de IA.*
 
 ---

@@ -748,3 +748,194 @@ pub async fn modulate_reasoning_effort(
 ) -> Result<ReasoningEffortResult, JevError> {
     modulate_reasoning_effort_full(context, provider, model, 0, None, 10, client).await
 }
+
+pub async fn should_nudge_continuation(
+    transcript_tail: &str,
+    previous_nudge_summary: &str,
+    threshold: f64,
+    client: Option<&JevClient>,
+) -> Result<NudgeGateResult, JevError> {
+    let fallback_client;
+    let active_client = match client {
+        Some(c) => c,
+        None => {
+            fallback_client = JevClient::default();
+            &fallback_client
+        }
+    };
+
+    let prev_trimmed = previous_nudge_summary.trim();
+    let has_prev_nudge = !prev_trimmed.is_empty();
+    let raw_state = if has_prev_nudge {
+        format!(
+            "Transcript Tail:\n{}\n\nPrevious Nudge Summary:\n{}",
+            transcript_tail.trim(),
+            prev_trimmed
+        )
+    } else {
+        format!("Transcript Tail:\n{}", transcript_tail.trim())
+    };
+    let clean_state = if raw_state.len() > 4000 {
+        safe_truncate_head_tail(&raw_state, 1500, 2500)
+    } else {
+        raw_state
+    };
+
+    let mut phase_criteria = HashMap::new();
+    phase_criteria.insert(
+        "research".to_string(),
+        "Investigating codebase, gathering context, or discovering dependencies before planning.".to_string(),
+    );
+    phase_criteria.insert(
+        "ask".to_string(),
+        "Blocked on ambiguous requirements or waiting on user clarification/permission.".to_string(),
+    );
+    phase_criteria.insert(
+        "plan".to_string(),
+        "Structuring implementation strategy, test strategy, or architecture before coding.".to_string(),
+    );
+    phase_criteria.insert(
+        "execute".to_string(),
+        "Actively implementing changes or paused mid-implementation with unfinished edits/todos.".to_string(),
+    );
+    phase_criteria.insert(
+        "verify".to_string(),
+        "Code written or modified, but verification (unit tests, build, linter) has not yet been executed or completed.".to_string(),
+    );
+    phase_criteria.insert(
+        "complete".to_string(),
+        "All requested work and verification gates are completely satisfied.".to_string(),
+    );
+
+    let mut questions = HashMap::new();
+    questions.insert(
+        "sureforge_phase".to_string(),
+        Question::Choice(ChoiceQuestion {
+            instructions: "Identify the active SureForge workflow phase based on the agent's recent transcript.".to_string(),
+            criteria: phase_criteria,
+        }),
+    );
+    questions.insert(
+        "nudge".to_string(),
+        Question::Noul(NoulQuestion {
+            instructions: "Would a gentle nudge help the agent advance useful work within the user's existing request right now?".to_string(),
+        }),
+    );
+    questions.insert(
+        "waiting".to_string(),
+        Question::Noul(NoulQuestion {
+            instructions: "Is the agent waiting on the user (for permission, missing info, or a choice)?".to_string(),
+        }),
+    );
+    if has_prev_nudge {
+        questions.insert(
+            "progress".to_string(),
+            Question::Noul(NoulQuestion {
+                instructions: "Did the last nudge produce real progress?".to_string(),
+            }),
+        );
+    }
+
+    let resp = active_client.system_one(&clean_state, questions).await?;
+
+    let mut phase = resp
+        .answers
+        .get("sureforge_phase")
+        .and_then(|a| a.as_choice())
+        .map(|a| a.choice.clone())
+        .unwrap_or_else(|| "complete".to_string());
+    if !["research", "ask", "plan", "execute", "verify", "complete"].contains(&phase.as_str()) {
+        phase = "complete".to_string();
+    }
+
+    let nudge_prob = resp
+        .answers
+        .get("nudge")
+        .and_then(|a| a.as_noul())
+        .map(|a| a.noul)
+        .unwrap_or(0.0);
+    let waiting_prob = resp
+        .answers
+        .get("waiting")
+        .and_then(|a| a.as_noul())
+        .map(|a| a.noul)
+        .unwrap_or(0.0);
+    let progress_prob = if has_prev_nudge {
+        resp.answers
+            .get("progress")
+            .and_then(|a| a.as_noul())
+            .map(|a| a.noul)
+            .unwrap_or(1.0)
+    } else {
+        1.0
+    };
+
+    let is_waiting = waiting_prob >= threshold || phase == "ask";
+    let made_progress = !has_prev_nudge || progress_prob >= threshold;
+    let is_complete = phase == "complete";
+
+    let should_nudge = (nudge_prob >= threshold) && !is_waiting && made_progress && !is_complete;
+
+    let (suggested_nudge_prompt, rationale) = if should_nudge {
+        if phase == "verify" {
+            (
+                "Continue with the SureForge Verify phase: run the test suite and build verification to confirm your changes before concluding.".to_string(),
+                format!(
+                    "Agent paused during SureForge 'verify' phase without running verification (nudge={:.2}, waiting={:.2}).",
+                    nudge_prob, waiting_prob
+                ),
+            )
+        } else {
+            (
+                "Continue executing the remaining steps in the user's request and verify your changes before stopping.".to_string(),
+                format!(
+                    "Unfinished work detected in SureForge '{}' phase (nudge={:.2}, waiting={:.2}, progress={:.2}).",
+                    phase, nudge_prob, waiting_prob, progress_prob
+                ),
+            )
+        }
+    } else if is_waiting {
+        (
+            String::new(),
+            format!(
+                "Nudge vetoed: agent is waiting on user input or permission (waiting={:.2}, phase='{}').",
+                waiting_prob, phase
+            ),
+        )
+    } else if !made_progress {
+        (
+            String::new(),
+            format!(
+                "Nudge vetoed: previous nudge did not produce real progress (progress={:.2} < {:.2}).",
+                progress_prob, threshold
+            ),
+        )
+    } else if is_complete {
+        (
+            String::new(),
+            format!(
+                "No nudge needed: SureForge workflow is complete (phase='complete', nudge={:.2}).",
+                nudge_prob
+            ),
+        )
+    } else {
+        (
+            String::new(),
+            format!(
+                "No nudge needed: nudge probability ({:.2}) below threshold ({:.2}).",
+                nudge_prob, threshold
+            ),
+        )
+    };
+
+    Ok(NudgeGateResult {
+        should_nudge,
+        nudge_probability: nudge_prob,
+        waiting_probability: waiting_prob,
+        progress_probability: progress_prob,
+        sureforge_phase: phase,
+        suggested_nudge_prompt,
+        rationale,
+        is_mock: resp.is_mock,
+    })
+}

@@ -4,7 +4,7 @@
 
 > **ATENÇÃO:** TODO agente autônomo de inteligência artificial (Claude Code, OpenAI Codex / Astra-Codex, Pi, Oh My Pi, CommandCode, Cursor, Antigravity IDE, OpenCode, Windsurf, Zed, Devin, Aider) que abrir este repositório **DEVE LER ESTE DOCUMENTO OBRIGATORIAMENTE** antes de planejar, modificar código ou executar alterações.
 > 
-> *Versão do Projeto: v0.1.8 — Sincronizado nos 4 registries oficiais.*
+> *Versão do Projeto: v0.1.9 — Sincronizado nos 4 registries oficiais.*
 
 ---
 
@@ -15,7 +15,7 @@ Este documento é o portal de entrada. O repositório organiza suas convenções
 1. 🏛️ **[Planta Arquitetural Completa](.agents/rules/01_project_blueprint.md)**: Mapeamento de pastas, runtimes (Python, TS, Rust), fluxos de dados e contratos de zero dependências.
 2. 🧠 **[Princípios Essenciais de Engenharia](.agents/rules/02_software_engineering_principles.md)**: Princípios Karpathy, Fable Loop, Kahneman Sistema 1 vs 2, Filosofia Unix e Arquitetura Anti-Frankenstein.
 3. 🌐 **[Governança de Modelos e Catálogo de Fronteira 2026](.agents/rules/03_model_governance_and_frontier_registry.md)**: Regra de ouro contra modelos obsoletos, pesquisa web mandatória diária, dialetos e safeguards para modelos direct.
-4. 🛡️ **[Testes Exaustivos e Honestidade Absoluta](.agents/rules/04_testing_and_truthfulness.md)**: Postura de zero-trust, proibição de testes tautológicos, bateria de 122 testes.
+4. 🛡️ **[Testes Exaustivos e Honestidade Absoluta](.agents/rules/04_testing_and_truthfulness.md)**: Postura de zero-trust, proibição de testes tautológicos, bateria de 145 testes.
 5. 🚀 **[Protocolo de Release e Sincronização Quad-Sync](.agents/rules/05_release_and_quad_sync_protocol.md)**: Pipeline síncrono nos 4 registries (GitHub, PyPI, npm, Crates.io).
 6. 📝 **[Convenções de Código por Linguagem](.agents/rules/06_code_style_and_conventions.md)**: Padrões estritos para Python (stdlib pura), TypeScript (ESM nativo) e Rust (Tokio 2021).
 7. 🤖 **[Guia de Implementação Rápida para Agentes em Qualquer Projeto](docs/AGENT_INTEGRATION_GUIDE.pt-BR.md)** ([English](docs/AGENT_INTEGRATION_GUIDE.md)): Como plugar o Jev Harness via MCP, CLI ou SDK nativo no seu projeto em 2 minutos.
@@ -29,7 +29,7 @@ O `jev-harness` resolve o problema mais custoso da computação com agentes: **o
 ### Arquitetura Tri-Runtime com Paridade Semântica Estrita:
 * **Python Core (`src/jev_harness/`)**:
   - `client.py`: Cliente HTTP ultra-resiliente com biblioteca padrão pura (`urllib.request`), timeout dinâmico e simulação heurística offline em **< 500µs**.
-  - `gates.py`: Implementação dos 5 gates de decisão semântica (`triage_test_failure`, `should_abort_trajectory`, `route_model_tier`, `verify_step_completion`, `modulate_reasoning_effort`).
+  - `gates.py`: Implementação dos 6 gates de decisão semântica (`triage_test_failure`, `should_abort_trajectory`, `route_model_tier`, `verify_step_completion`, `modulate_reasoning_effort`, `should_nudge_continuation`).
   - `mcp_server.py`: Servidor stdio MCP universal para integração direta com Cursor, Claude Desktop e Antigravity IDE.
   - `cli.py`: Interface de linha de comando (`jev-harness`) em conformidade estrita com pipes Unix.
   - `session.py`: Telemetria de sessão, cálculo de ROI e proteção de cache.

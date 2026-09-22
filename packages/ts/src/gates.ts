@@ -5,6 +5,8 @@ import type {
   EffortLevel,
   ModelRouteResult,
   NoulAnswer,
+  NudgeGateResult,
+  Question,
   ReasoningEffortResult,
   ScoreAnswer,
   TestTriageResult,
@@ -542,6 +544,113 @@ export async function modulateReasoningEffort(
     isReasoningSupported: isSupported,
     cacheSafeRecommendation,
     leaseSteps,
+    isMock: resp.isMock,
+  };
+}
+
+export async function shouldNudgeContinuation(
+  transcriptTail: string,
+  options: {
+    previousNudgeSummary?: string;
+    threshold?: number;
+    client?: JevClient;
+  } = {}
+): Promise<NudgeGateResult> {
+  const activeClient = options.client || new JevClient();
+  const previousNudgeSummary = (options.previousNudgeSummary || "").trim();
+  const threshold = options.threshold ?? 0.5;
+  const hasPrevNudge = previousNudgeSummary.length > 0;
+
+  const stateParts = [`Transcript Tail:\n${transcriptTail.trim()}`];
+  if (hasPrevNudge) {
+    stateParts.push(`Previous Nudge Summary:\n${previousNudgeSummary}`);
+  }
+  const cleanState = safeTruncateHeadTail(stateParts.join("\n\n"), 1500, 2500);
+
+  const questions: Record<string, Question> = {
+    sureforge_phase: {
+      type: "choice",
+      instructions: "Identify the active SureForge workflow phase based on the agent's recent transcript.",
+      criteria: {
+        research: "Investigating codebase, gathering context, or discovering dependencies before planning.",
+        ask: "Blocked on ambiguous requirements or waiting on user clarification/permission.",
+        plan: "Structuring implementation strategy, test strategy, or architecture before coding.",
+        execute: "Actively implementing changes or paused mid-implementation with unfinished edits/todos.",
+        verify: "Code written or modified, but verification (unit tests, build, linter) has not yet been executed or completed.",
+        complete: "All requested work and verification gates are completely satisfied.",
+      },
+    },
+    nudge: {
+      type: "noul",
+      instructions: "Would a gentle nudge help the agent advance useful work within the user's existing request right now?",
+    },
+    waiting: {
+      type: "noul",
+      instructions: "Is the agent waiting on the user (for permission, missing info, or a choice)?",
+    },
+  };
+
+  if (hasPrevNudge) {
+    questions.progress = {
+      type: "noul",
+      instructions: "Did the last nudge produce real progress?",
+    };
+  }
+
+  const resp = await activeClient.systemOne(cleanState, questions);
+
+  const phaseAns = resp.answers.sureforge_phase as ChoiceAnswer | undefined;
+  const nudgeAns = resp.answers.nudge as NoulAnswer | undefined;
+  const waitingAns = resp.answers.waiting as NoulAnswer | undefined;
+  const progressAns = resp.answers.progress as NoulAnswer | undefined;
+
+  const validPhases = new Set(["research", "ask", "plan", "execute", "verify", "complete"]);
+  let phase = phaseAns?.choice || "complete";
+  if (!validPhases.has(phase)) {
+    phase = "complete";
+  }
+
+  const nudgeProb = nudgeAns?.noul ?? 0.0;
+  const waitingProb = waitingAns?.noul ?? 0.0;
+  const progressProb = hasPrevNudge ? (progressAns?.noul ?? 1.0) : 1.0;
+
+  const isWaiting = waitingProb >= threshold || phase === "ask";
+  const madeProgress = !hasPrevNudge || progressProb >= threshold;
+  const isComplete = phase === "complete";
+
+  const shouldNudge = nudgeProb >= threshold && !isWaiting && madeProgress && !isComplete;
+
+  let suggestedNudgePrompt = "";
+  let rationale = "";
+
+  if (shouldNudge) {
+    if (phase === "verify") {
+      suggestedNudgePrompt =
+        "Continue with the SureForge Verify phase: run the test suite and build verification to confirm your changes before concluding.";
+      rationale = `Agent paused during SureForge 'verify' phase without running verification (nudge=${nudgeProb.toFixed(2)}, waiting=${waitingProb.toFixed(2)}).`;
+    } else {
+      suggestedNudgePrompt =
+        "Continue executing the remaining steps in the user's request and verify your changes before stopping.";
+      rationale = `Unfinished work detected in SureForge '${phase}' phase (nudge=${nudgeProb.toFixed(2)}, waiting=${waitingProb.toFixed(2)}, progress=${progressProb.toFixed(2)}).`;
+    }
+  } else if (isWaiting) {
+    rationale = `Nudge vetoed: agent is waiting on user input or permission (waiting=${waitingProb.toFixed(2)}, phase='${phase}').`;
+  } else if (!madeProgress) {
+    rationale = `Nudge vetoed: previous nudge did not produce real progress (progress=${progressProb.toFixed(2)} < ${threshold.toFixed(2)}).`;
+  } else if (isComplete) {
+    rationale = `No nudge needed: SureForge workflow is complete (phase='complete', nudge=${nudgeProb.toFixed(2)}).`;
+  } else {
+    rationale = `No nudge needed: nudge probability (${nudgeProb.toFixed(2)}) below threshold (${threshold.toFixed(2)}).`;
+  }
+
+  return {
+    shouldNudge,
+    nudgeProbability: nudgeProb,
+    waitingProbability: waitingProb,
+    progressProbability: progressProb,
+    sureforgePhase: phase,
+    suggestedNudgePrompt,
+    rationale,
     isMock: resp.isMock,
   };
 }

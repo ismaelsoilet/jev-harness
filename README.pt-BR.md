@@ -122,14 +122,16 @@ O Jev Harness suporta diversos backends e detecta credenciais automaticamente:
 
 | Provedor | Endpoint | Custo | Configuração |
 | :--- | :--- | :--- | :--- |
+| **Command Code (Tier Gratuito)** | `https://api.commandcode.ai/provider/v1/systemone` | **$0,00 / Grátis** | `export CMD_API_KEY=sua-chave` ou `cmd login` (`~/.commandcode/auth.json`) |
 | **OpenCode Zen (Tier Gratuito)** | `https://opencode.ai/zen/v1/systemone` | **$0,00 / Grátis** | `export OPENCODE_API_KEY=zen` ou selecionado automaticamente |
 | **TypeSafe AI (Direto)** | `https://api.typesafe.ai/v1/systemone` | $0,042 / 1M | `export TYPESAFE_API_KEY=sua-chave` |
-| **Adaptador OpenRouter** | `https://openrouter.ai/api/v1/chat/completions` | Por Modelo | `export OPENROUTER_API_KEY=sua-chave` |
+| **OpenRouter Native Decisions** | `https://openrouter.ai/api/alpha/decisions` | $0,042 / 1M | `export OPENROUTER_API_KEY=sua-chave` |
+| **Vercel AI Gateway** | `https://ai-gateway.vercel.sh/v1/evaluate` | $0,042 / 1M | `export AI_GATEWAY_API_KEY=sua-chave` |
 | **Simulação Autônoma** | Heurística Local (< 500µs) | **$0,00** | Ativa por padrão se offline ou sem chave |
 
 Prioridade de resolução de credenciais:
-1. Variáveis de ambiente (`TYPESAFE_API_KEY`, `OPENCODE_API_KEY` ou `OPENROUTER_API_KEY`)
-2. Arquivo `.jev.json` ou `.env` na raiz do repositório
+1. Variáveis de ambiente (`TYPESAFE_API_KEY`, `CMD_API_KEY`, `COMMAND_CODE_API_KEY`, `OPENCODE_API_KEY`, `OPENROUTER_API_KEY` ou `AI_GATEWAY_API_KEY`)
+2. Arquivo `.jev.json`, `.env` na raiz do repositório ou `~/.commandcode/auth.json`
 3. Configuração global `~/.config/jev/credentials.env`
 4. **Fallback para Simulação Autônoma** (garante que sua CI, agentes e scripts nunca quebrem)
 
@@ -224,7 +226,23 @@ jev-harness reasoning-effort \
   --model gpt-5.6-luna
 ```
 
-### 6. Telemetria de ROI e Economia de Tokens (`metrics`)
+### 6. Gate de Continuação SureForge & Jev Nudge (`nudge-gate` / `sureforge`)
+Inspirado no [`CommandCodeAI/cmd-mod-jev-nudge`](https://github.com/CommandCodeAI/cmd-mod-jev-nudge), nas fases verificadas do **SureForge** (`research`, `ask`, `plan`, `execute`, `verify`, `complete`) e na verificação adversarial **Fable-Judge**, o `nudge-gate` avalia se um agente autônomo parou prematuramente com código não verificado ou tarefas incompletas (`should_nudge = true`, exit code `0`), aplicando vetos automáticos caso o agente esteja aguardando resposta do usuário (`waiting >= 0.5` ou `phase == "ask"`), sem progresso após o nudge anterior (`progress < 0.5`) ou com tarefa 100% concluída (`phase == "complete"`):
+
+```bash
+# Avaliar se o agente parou após editar código sem rodar a bateria de testes
+jev-harness nudge-gate \
+  --transcript "Assistant: Edited src/auth.py. Now I need to run pytest to verify." \
+  --json
+# -> should_nudge: true | sureforge_phase: "verify" | exit code 0
+
+# Avaliar quando o agente aguarda decisão do usuário (vetado automaticamente)
+jev-harness nudge-gate \
+  --transcript "Assistant: Which AWS region should I deploy to? Would you like me to proceed?"
+# -> should_nudge: false | sureforge_phase: "ask" | exit code 1
+```
+
+### 7. Telemetria de ROI e Economia de Tokens (`metrics`)
 Inspecione tokens acumulados poupados, dólares economizados e loops circulares interrompidos:
 
 ```bash
@@ -507,7 +525,7 @@ Latência ultra-baixa (< 500µs local, zero-overhead) para Tauri, ferramentas de
 
 ```toml
 [dependencies]
-jev-harness = "0.1.8"
+jev-harness = "0.1.9"
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -531,7 +549,7 @@ async fn main() {
 ```yaml
 repos:
   - repo: https://github.com/ismaelsoilet/jev-harness
-    rev: v0.1.8
+    rev: v0.1.9
     hooks:
       - id: jev-test-gate
 ```

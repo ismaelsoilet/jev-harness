@@ -1,11 +1,12 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { JevClient, OPENCODE_API_URL } from "./client.js";
+import { COMMANDCODE_API_URL, JevClient, OPENCODE_API_URL } from "./client.js";
 import {
   modulateReasoningEffort,
   routeModelTier,
   shouldAbortTrajectory,
+  shouldNudgeContinuation,
   triageTestFailure,
   verifyStepCompletion,
 } from "./gates.js";
@@ -34,7 +35,7 @@ function getPackageVersion(): string {
   } catch {
     // fallback
   }
-  return "0.1.8";
+  return "0.1.9";
 }
 
 export async function runCli(argv: string[] = process.argv.slice(2)): Promise<number> {
@@ -69,6 +70,10 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
           args[i] === "-H" ||
           args[i] === "--task" ||
           args[i] === "-t" ||
+          args[i] === "--transcript" ||
+          args[i] === "--previous-nudge" ||
+          args[i] === "-P" ||
+          args[i] === "--threshold" ||
           args[i] === "--criteria" ||
           args[i] === "-c" ||
           args[i] === "--output" ||
@@ -95,7 +100,10 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
   const client = new JevClient({ forceMock: isMock });
   if (providerVal) {
     client.provider = providerVal;
-    if (providerVal === "opencode") {
+    if (providerVal === "commandcode") {
+      client.baseUrl = COMMANDCODE_API_URL;
+      client.model = "typesafe/jev";
+    } else if (providerVal === "opencode") {
       client.baseUrl = OPENCODE_API_URL;
       client.model = "jev-1.13-free";
     }
@@ -117,12 +125,13 @@ Commands:
   route --task <text>                    Select minimal sufficient model tier
   verify --criteria <c> --output <o>     Calibrate criteria verification
   reasoning-effort --context <text>      Dynamically modulate reasoning effort per-generation (Astra-Jev)
+  nudge-gate --transcript <text>         Evaluate premature stops via SureForge + CommandCode Jev Nudge
   mcp                                    Run stdio MCP server for Cursor, Claude Desktop, Antigravity IDE
 
 Options:
   --mock                                 Force offline heuristic simulation
   --json                                 Output machine-readable JSON
-  --provider <typesafe|opencode|...>     Override backend provider
+  --provider <typesafe|commandcode|...>  Override backend provider
   --target-provider <openai|deepseek|..> Target provider for reasoning effort
   --model <name>                         Target model name
   --session-context-tokens <num>         Active prompt tokens in session
@@ -150,6 +159,12 @@ Options:
         console.log("Provider:    OPENCODE ZEN (Free Tier)");
         console.log(`Endpoint:    ${client.baseUrl}`);
         console.log("Engine Mode: LIVE (OpenCode Zen Free Community Model)");
+      } else if (client.provider === "commandcode") {
+        const masked = client.apiKey && client.apiKey.length > 10 ? client.apiKey.slice(0, 6) + "..." + client.apiKey.slice(-4) : "***";
+        console.log(`API Key:     Configured (${masked})`);
+        console.log("Provider:    COMMAND CODE (Free $0.00/M Deal - typesafe/jev)");
+        console.log(`Endpoint:    ${client.baseUrl}`);
+        console.log("Engine Mode: LIVE");
       } else {
         const masked = client.apiKey && client.apiKey.length > 10 ? client.apiKey.slice(0, 6) + "..." + client.apiKey.slice(-4) : "***";
         console.log(`API Key:     Configured (${masked})`);
@@ -449,6 +464,74 @@ Options:
       console.log("-----------------------------------------\n");
     }
     return 0;
+  }
+
+  if (command === "nudge-gate" || command === "nudge" || command === "sureforge") {
+    const tIdx = args.findIndex((a) => a === "--transcript" || a === "-t");
+    let tVal = tIdx !== -1 ? args[tIdx + 1] : undefined;
+    if (!tVal) {
+      const cmdIdx = args.indexOf(command);
+      if (cmdIdx !== -1 && args[cmdIdx + 1] && !args[cmdIdx + 1].startsWith("-")) {
+        tVal = args[cmdIdx + 1];
+      }
+    }
+    const cleanTranscript = (tVal ? readInput(tVal, true) : readInput(undefined, true)).trim();
+    if (!cleanTranscript) {
+      console.error("Error: No transcript tail provided. Pass --transcript <text_or_path>, positional arg, or pipe via stdin.");
+      return 2;
+    }
+
+    const prevIdx = args.findIndex((a) => a === "--previous-nudge" || a === "-P");
+    const previousNudgeSummary = prevIdx !== -1 ? readInput(args[prevIdx + 1], false).trim() : "";
+
+    const threshIdx = args.findIndex((a) => a === "--threshold");
+    const threshold = threshIdx !== -1 ? parseFloat(args[threshIdx + 1]) || 0.5 : 0.5;
+
+    const res = await shouldNudgeContinuation(cleanTranscript, {
+      previousNudgeSummary,
+      threshold,
+      client,
+    });
+
+    if (isJson) {
+      console.log(
+        JSON.stringify(
+          {
+            should_nudge: res.shouldNudge,
+            shouldNudge: res.shouldNudge,
+            nudge_probability: res.nudgeProbability,
+            nudgeProbability: res.nudgeProbability,
+            waiting_probability: res.waitingProbability,
+            waitingProbability: res.waitingProbability,
+            progress_probability: res.progressProbability,
+            progressProbability: res.progressProbability,
+            sureforge_phase: res.sureforgePhase,
+            sureforgePhase: res.sureforgePhase,
+            suggested_nudge_prompt: res.suggestedNudgePrompt,
+            suggestedNudgePrompt: res.suggestedNudgePrompt,
+            rationale: res.rationale,
+            is_mock: res.isMock,
+            isMock: res.isMock,
+          },
+          null,
+          2
+        )
+      );
+    } else {
+      console.log("\n=== JEV CONTINUATION NUDGE GATE (TS) ===");
+      console.log(`Should Nudge:      ${res.shouldNudge ? "YES (Inject Continuation)" : "NO (Stop & Yield to User)"}`);
+      console.log(`SureForge Phase:   ${res.sureforgePhase.toUpperCase()}`);
+      console.log(`Nudge Prob:        ${(res.nudgeProbability * 100).toFixed(1)}%`);
+      console.log(`Waiting Prob:      ${(res.waitingProbability * 100).toFixed(1)}%`);
+      console.log(`Progress Prob:     ${(res.progressProbability * 100).toFixed(1)}%`);
+      console.log(`Rationale:         ${res.rationale}`);
+      if (res.suggestedNudgePrompt) {
+        console.log(`Suggested Prompt:  ${res.suggestedNudgePrompt}`);
+      }
+      if (res.isMock) console.log("Engine Mode:       [SIMULATION / MOCK]");
+      console.log("========================================\n");
+    }
+    return res.shouldNudge ? 0 : 1;
   }
 
   console.error(`Unknown command: ${command}`);

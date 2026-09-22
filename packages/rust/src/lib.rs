@@ -11,9 +11,9 @@ pub mod client;
 pub mod gates;
 pub mod types;
 
-pub use client::JevClient;
+pub use client::{JevClient, COMMANDCODE_API_URL};
 pub use gates::{
     build_provider_params, modulate_reasoning_effort, route_model_tier, should_abort_trajectory,
-    triage_test_failure, verify_step_completion,
+    should_nudge_continuation, triage_test_failure, verify_step_completion,
 };
 pub use types::*;
