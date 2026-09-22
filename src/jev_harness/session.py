@@ -14,8 +14,12 @@ import os
 from pathlib import Path
 import re
 import tempfile
+import threading
 import time
 from typing import Any, Dict, List, Optional
+
+
+_IN_PROCESS_LOCK = threading.RLock()
 
 
 @dataclass
@@ -59,16 +63,31 @@ def _get_storage_path() -> Path:
 
 @contextlib.contextmanager
 def _session_lock(storage_path: Path):
-    """Acquires an exclusive file lock to prevent concurrency race conditions."""
+    """Acquires an in-process thread lock and cross-process file lock."""
+    _IN_PROCESS_LOCK.acquire()
     lock_path = storage_path.with_name(f"{storage_path.stem}.lock")
     lock_file = None
+    has_msvcrt_lock = False
     try:
-        lock_file = open(lock_path, "a+")
         try:
-            import fcntl
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            lock_file = open(lock_path, "a+")
         except Exception:
             pass
+
+        if lock_file is not None:
+            try:
+                import fcntl
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            except ImportError:
+                try:
+                    import msvcrt
+                    lock_file.seek(0)
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+                    has_msvcrt_lock = True
+                except Exception:
+                    pass
+            except Exception:
+                pass
         yield
     finally:
         if lock_file is not None:
@@ -77,10 +96,18 @@ def _session_lock(storage_path: Path):
                 fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
             except Exception:
                 pass
+            if has_msvcrt_lock:
+                try:
+                    import msvcrt
+                    lock_file.seek(0)
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+                except Exception:
+                    pass
             try:
                 lock_file.close()
             except Exception:
                 pass
+        _IN_PROCESS_LOCK.release()
 
 
 def load_session() -> SessionState:
@@ -122,8 +149,8 @@ def save_session(session: SessionState) -> None:
             "estimated_cost_saved_usd": session.estimated_cost_saved_usd,
             "last_updated": time.time(),
         }
-        # Atomic file write to avoid corrupted JSON on dirty process kill
-        temp_file = p.with_name(f"{p.name}.{os.getpid()}.tmp")
+        # Atomic file write with thread/pid unique suffix to avoid collisions on Windows/Unix
+        temp_file = p.with_name(f"{p.name}.{os.getpid()}_{threading.get_ident()}_{time.time_ns()}.tmp")
         temp_file.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
         temp_file.replace(p)
     except Exception:
