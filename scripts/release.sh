@@ -89,10 +89,14 @@ bump_version() {
     sed -i -E "s/^version = \"[^\"]+\"/version = \"${new_ver}\"/" "${CARGO_TOML}"
     (cd "${REPO_ROOT}/packages/rust" && cargo check --quiet || true)
 
-    # 4. Update README.md and packages/rust/README.md dependencies & hooks
+    # 4. Update README.md, README.pt-BR.md and packages/rust/README.md dependencies & hooks
     sed -i -E "s/jev-harness = \"[^\"]+\"/jev-harness = \"${new_ver}\"/" "${REPO_ROOT}/README.md"
     sed -i -E "s/jev-harness = \"[^\"]+\"/jev-harness = \"${new_ver}\"/" "${REPO_ROOT}/packages/rust/README.md"
     sed -i -E "s/rev: v[0-9]+\.[0-9]+\.[0-9]+/rev: v${new_ver}/" "${REPO_ROOT}/README.md"
+    if [[ -f "${REPO_ROOT}/README.pt-BR.md" ]]; then
+        sed -i -E "s/jev-harness = \"[^\"]+\"/jev-harness = \"${new_ver}\"/" "${REPO_ROOT}/README.pt-BR.md"
+        sed -i -E "s/rev: v[0-9]+\.[0-9]+\.[0-9]+/rev: v${new_ver}/" "${REPO_ROOT}/README.pt-BR.md"
+    fi
 
     show_versions
     echo "✅ Version bump complete across all manifests, code, and docs."

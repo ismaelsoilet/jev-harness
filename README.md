@@ -14,11 +14,15 @@
   <a href="#"><img src="https://img.shields.io/badge/dependencies-0%20(pure%20stdlib)-success.svg" alt="Zero Dependencies"></a>
 </p>
 
+<p align="center">
+  <b><a href="README.md">🇬🇧 English</a> | <a href="README.pt-BR.md">🇧🇷 Português</a></b>
+</p>
+
 > **Stop burning 50,000 frontier tokens on missing packages, network flakiness, and circular doom loops.**
 >
 > `jev-harness` is an ultra-fast, zero-dependency token optimizer, test failure triage gate, and semantic guardrail for AI coding agents (OpenCode, Command Code, Claude Code, Cursor, Antigravity IDE, Windsurf, Zed, and Pi). Powered by **TypeSafe AI's Jev System One** non-autoregressive decision model.
 >
-> 🤖 **Operating as an AI Agent?** You **MUST** read [`AGENTS.md`](AGENTS.md) before executing tasks (system blueprint, Karpathy & Fable principles, strict 2026 frontier model governance, and quad-registry release protocols).
+> 🤖 **Operating as an AI Agent?** You **MUST** read [`AGENTS.md`](AGENTS.md) ([Português](AGENTS.pt-BR.md)) before executing tasks, and refer to our [**Universal AI Agent Integration Guide**](docs/AGENT_INTEGRATION_GUIDE.md) to plug the harness into any project in 2 minutes.
 
 ---
 
@@ -320,6 +324,8 @@ The value of dynamic reasoning modulation fundamentally depends on the provider 
 ---
 
 ## 🤖 Universal Agent & IDE Integrations
+
+> 📖 **Looking for a turnkey setup for any project?** Read the [**Universal AI Agent Integration Guide**](docs/AGENT_INTEGRATION_GUIDE.md) ([Português](docs/AGENT_INTEGRATION_GUIDE.pt-BR.md)) with copy-paste configs for Cursor, Claude Desktop, Antigravity, CI/CD, and prompt rules.
 
 ### 1. Cursor IDE (`.cursor/mcp.json`)
 Add to `.cursor/mcp.json` (or run `jev-harness init --cursor` in your repo):
