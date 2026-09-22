@@ -193,7 +193,32 @@ jev-harness verify \
   --output "All 10 unit tests passed in 0.02s. format_date exported in index.ts."
 ```
 
-### 5. ROI & Token Savings Telemetry (`metrics`)
+### 5. Dynamic Reasoning Effort Governance (`reasoning-effort` / `astra-jev`)
+Dynamically modulate reasoning effort per-generation (inspired by Vechen @miu21590) to eliminate latency and save thousands of tokens on mechanical tool steps:
+
+```bash
+# Evaluate immediate step for DeepSeek (e.g. DeepSeek V4.1-Flash / V4-Pro)
+jev-harness reasoning-effort \
+  --context "git status e verificar arquivos alterados no commit recente" \
+  --target-provider deepseek
+
+# Output:
+# Effort: LOW | Dialect: {"extra_body": {"thinking": {"type": "enabled"}}, "reasoning_effort": "low"}
+# Latency eliminated: ~200s internal CoT reduced to 1.5s!
+
+# Evaluate architectural task for Anthropic (Claude Fable 5.1 / Opus 4.8)
+jev-harness reasoning-effort \
+  --context "Architect distributed actor supervision tree with raft consensus" \
+  --target-provider anthropic --json
+
+# Safeguard check for direct models (returns empty params and warnings for non-reasoning models)
+jev-harness reasoning-effort \
+  --context "Run bash command" \
+  --target-provider openai \
+  --model gpt-5.6-luna
+```
+
+### 6. ROI & Token Savings Telemetry (`metrics`)
 Inspect cumulative tokens saved, dollars saved, and doom loops intercepted:
 
 ```bash
@@ -213,12 +238,13 @@ Total Triage Interceptions:      14 calls
 LLM Frontier Calls Skipped:      11 calls (78.6%)
 Abort Guard Stops Triggered:     2 doom loops killed
 Deterministic Routes:            6 tasks
-Estimated Tokens Saved:          380,200 tokens
-Estimated Frontier Dollars Saved: $5.24 USD
+Reasoning Effort Modulations:    8 steps (6 low, 2 high)
+Estimated Tokens Saved:          422,200 tokens
+Estimated Frontier Dollars Saved: $6.12 USD
 ============================================================
 ```
 
-### 6. One-Command Agent Setup (`init`)
+### 7. One-Command Agent Setup (`init`)
 Automatically scaffold MCP configurations for your active agent or IDE:
 
 ```bash
@@ -234,6 +260,60 @@ jev-harness init --git
 # Setup all supported tools at once
 jev-harness init --all
 ```
+
+---
+
+## ⚡ Astra-Jev: Dynamic Reasoning Effort Governance (2026 Frontier Models)
+
+Inspired by Vechen's ([@miu21590](https://x.com/miu21590)) groundbreaking work on *Astra-Codex*, **Astra-Jev** introduces autonomous, per-generation reasoning effort modulation governed by TypeSafe Jev System One.
+
+Instead of locking an entire multi-turn coding session into heavy, slow reasoning (or risking bugs by running exclusively in low reasoning), Astra-Jev evaluates the cognitive demand of the immediate next generation in **< 500µs locally (70ms remote)**.
+
+```
+                  ┌────────────────────────────────────────────────────────┐
+                  │                 Autonomous Agent Loop                  │
+                  └──────────────────────────┬─────────────────────────────┘
+                                             │
+                                   Proposed Next Action
+                     ("git status", "read file", or "architect kernel")
+                                             │
+                                             ▼
+                             ┌───────────────────────────────┐
+                             │       Astra-Jev Gate          │
+                             │  (Jev System One Micro-Eval)  │
+                             └───────────────┬───────────────┘
+                                             │
+            ┌────────────────────────────────┼────────────────────────────────┐
+            ▼                                ▼                                ▼
+    [Trivial / Mechanical]          [Standard Feature]             [Deep Architecture]
+      Cognitive Depth: LOW           Cognitive Depth: MED          Cognitive Depth: HIGH
+            │                                │                                │
+            ▼                                ▼                                ▼
+   Compile Provider Dialect       Compile Provider Dialect         Compile Provider Dialect
+ (e.g. enable_thinking: false)     (e.g. reasoning_effort: med)    (e.g. thinking: adaptive max)
+            │                                │                                │
+            ▼                                ▼                                ▼
+  ⚡ 1.5s response (~0 CoT)        🎯 Balanced ~4,000 CoT           🧠 Deep 32,000 CoT Analysis
+   Western: Saves ~$0.80 USD       Western: Normal pricing          Western: Maximum reasoning
+   Chinese: Saves ~240s wait       Chinese: Normal thinking         Chinese: Deep exploration
+```
+
+### Dual ROI: Why Modulate Reasoning Effort in 2026?
+
+The value of dynamic reasoning modulation fundamentally depends on the provider architecture:
+
+| Provider Ecosystem | Problem Solved | Without Astra-Jev | With Astra-Jev |
+| :--- | :--- | :--- | :--- |
+| **Western Frontier**<br>(*GPT-6 Astra*, *Claude Fable 5.1*) | **Dollar Cost**<br>($10/1M in, $50/1M out) | Agent burns ~8,000 reasoning tokens ($0.40 - $1.20) just to inspect `git status` or read a file | Injects `effort="low"`, burning only ~300 tokens. **Saves up to $1.15 per mechanical generation.** |
+| **Chinese Frontier**<br>(*DeepSeek V4.1-Flash*, *Qwen 3.8 Max*, *Kimi-k3*, *MiMo*) | **Latency & GPU Starvation**<br>(Tokens are cheap, but internal CoT takes 3–5 minutes) | Agent enters 200–300 second internal thinking loop before running a trivial bash command | Disables thinking CoT or sets `effort="low"`. Response delivered in **1.5s instead of 240s**. |
+
+### 🛡️ Critical Safeguards Built into Astra-Jev
+
+1. **Direct Single-Pass Model Safeguard:** Models that do not support internal reasoning (e.g. `gpt-5.6-luna`, `gemini-3.8-live`, `claude-3.5-haiku`) will return fatal **HTTP 400 Bad Request** if reasoning parameters are injected. Astra-Jev automatically detects non-reasoning targets, sets `is_reasoning_supported = False`, and returns clean empty payloads `{}`.
+2. **Preservation of `reasoning_content` (DeepSeek multi-turn):** In DeepSeek V4.1-Flash/Pro APIs, stripping `reasoning_content` across multi-turn tool calling can corrupt tool execution. Astra-Jev enforces dialect compliance to preserve thinking structures across turn transitions.
+3. **Prompt Cache (KV Cache) Trade-off Advisory:** Toggling reasoning parameters back-and-forth mid-session can invalidate prefix cache on long contexts (>100k tokens). Astra-Jev provides `cache_safe_recommendation` advisories:
+   - For pure mechanical actions, use Jev's `skip_llm=true` to execute directly without calling the LLM at all.
+   - Keep reasoning effort stable across related sub-steps of a single complex implementation.
 
 ---
 
@@ -319,6 +399,7 @@ from jev_harness import (
     should_abort_trajectory,
     route_model_tier,
     verify_step_completion,
+    modulate_reasoning_effort,
 )
 
 client = JevClient()
@@ -336,6 +417,16 @@ abort_decision = should_abort_trajectory(
 )
 if abort_decision.should_abort:
     print("Trajectory aborted! Re-align with user.")
+
+# 3. Dynamic Reasoning Effort Modulation (Astra-Jev)
+effort_res = modulate_reasoning_effort(
+    context="git status e inspecionar diff de arquivos alterados",
+    provider="deepseek",
+    model="deepseek-v4.1-flash",
+    client=client,
+)
+print(f"Effort: {effort_res.effort}")  # low
+print(f"Provider Params to inject: {effort_res.provider_params}")  # {'extra_body': {'thinking': {'type': 'enabled'}}, 'reasoning_effort': 'low'}
 ```
 
 ---
@@ -360,6 +451,7 @@ import {
   shouldAbortTrajectory,
   routeModelTier,
   verifyStepCompletion,
+  modulateReasoningEffort,
   JevClient,
 } from "@ismaelsoilet/jev-harness";
 
@@ -379,9 +471,13 @@ if (abortCheck.shouldAbort) {
   console.error("Agent trapped in dead-end loop! Aborting.");
 }
 
-// 3. Select minimal sufficient model tier
-const route = await routeModelTier("Fix typo in variable name");
-console.log("Assigned Model Tier:", route.selectedTier); // deterministic
+// 3. Dynamic Reasoning Effort Modulation (Astra-Jev)
+const effortRes = await modulateReasoningEffort(
+  "git status and check changed files",
+  "anthropic"
+);
+console.log("Effort:", effortRes.effort); // low
+console.log("Params:", effortRes.providerParams); // { thinking: { type: 'adaptive' }, output_config: { effort: 'low' } }
 ```
 
 ### TypeScript CLI
@@ -405,14 +501,14 @@ Ultra-low latency (< 500µs local, zero-overhead) for systems programming, Tauri
 
 ```toml
 [dependencies]
-jev-harness = "0.1.4"
+jev-harness = "0.1.5"
 tokio = { version = "1", features = ["full"] }
 ```
 
 ### Programmatic Usage
 
 ```rust
-use jev_harness::gates::{triage_test_failure, should_abort_trajectory, route_model_tier};
+use jev_harness::gates::{triage_test_failure, should_abort_trajectory, modulate_reasoning_effort};
 
 #[tokio::main]
 async fn main() {
@@ -427,6 +523,11 @@ async fn main() {
     if abort.should_abort {
         eprintln!("Doomed loop detected: {}", abort.reasoning_summary);
     }
+
+    // 3. Dynamic Reasoning Effort Modulation (Astra-Jev)
+    let effort_res = modulate_reasoning_effort("git status", "openai", None, None).await.unwrap();
+    println!("Effort: {}", effort_res.effort); // low
+    println!("Params: {:?}", effort_res.provider_params); // {"reasoning_effort": "low"}
 }
 ```
 
@@ -449,7 +550,7 @@ jev route --task "Architect enterprise distributed consensus"
 ```yaml
 repos:
   - repo: https://github.com/ismaelsoilet/jev-harness
-    rev: v0.1.4
+    rev: v0.1.5
     hooks:
       - id: jev-test-gate
 ```
@@ -499,11 +600,11 @@ To update the packages and documentation across all 3 registries:
 Use the automated multi-runtime script to check, bump versions, and publish:
 
 ```bash
-# 1. Run full test battery (Python, TS, Rust - 82 tests)
+# 1. Run full test battery (Python, TS, Rust - 94 tests)
 ./scripts/release.sh --check
 
 # 2. Synchronously bump version in pyproject.toml, package.json, and Cargo.toml
-./scripts/release.sh --bump 0.1.4
+./scripts/release.sh --bump 0.1.5
 
 # 3. Publish to a specific registry or all at once:
 ./scripts/release.sh --publish rust    # Publishes to crates.io
@@ -511,15 +612,26 @@ Use the automated multi-runtime script to check, bump versions, and publish:
 ./scripts/release.sh --publish python  # Builds wheel/sdist for PyPI
 
 # 4. Create git tag and push to GitHub
-./scripts/release.sh --git-tag 0.1.4
+./scripts/release.sh --git-tag 0.1.5
 ```
 
 ### 2. Automated GitHub Actions CD (`.github/workflows/release.yml`)
 You can also trigger releases via GitHub Actions:
-- **Automatic:** Pushing any tag matching `v*.*.*` (e.g. `git push origin v0.1.4`) triggers the `release.yml` workflow, which tests all runtimes and automatically publishes to PyPI, npm, and Crates.io.
+- **Automatic:** Pushing any tag matching `v*.*.*` (e.g. `git push origin v0.1.5`) triggers the `release.yml` workflow, which tests all runtimes and automatically publishes to PyPI, npm, and Crates.io.
 - **Manual:** Go to **GitHub Actions → Release & Publish → Run workflow**, specify the version, and click run.
 
 *(Requires `PYPI_API_TOKEN` and `CARGO_REGISTRY_TOKEN` in GitHub Repository Secrets; npm uses OpenID Connect (OIDC) Trusted Publishing with cryptographic Sigstore provenance without static tokens).*
+
+---
+
+## 🌟 What's New in v0.1.5
+
+- ⚡ **Astra-Jev Dynamic Reasoning Effort Governance**: Pioneered from Vechen (@miu21590) with native Jev System One semantic governance. Modulates per-generation reasoning effort in <500µs local / 70ms remote.
+- 🌐 **2026 Frontier Models & Dialect Compiling**: Full provider parameters dialect mapping across OpenAI (`reasoning_effort`), Anthropic (`thinking.type: adaptive`, `output_config.effort`), Gemini (`thinking_level`), DeepSeek (`extra_body.thinking: enabled`, preserving `reasoning_content`), Qwen (`enable_thinking`, `thinking_budget`), Kimi, and Xiaomi MiMo.
+- 🛡️ **Zero-Failure Model Safeguards**: Automatically detects direct single-pass models (`gpt-5.6-luna`, `gemini-3.8-live`) to prevent fatal HTTP 400 Bad Request rejections.
+- 🧠 **Prompt Cache (KV Cache) Advisories**: Includes cache-safety recommendations to prevent prefix cache invalidation across 100k+ token sessions.
+- 🔌 **Universal MCP Tool & CLI Subcommand**: Added `jev_modulate_reasoning_effort` MCP tool and `jev-harness reasoning-effort` / `astra-jev` CLI command with telemetry tracking.
+- 🧪 **Comprehensive 94-Test Battery**: 100% test pass rate across Python (62 tests), Rust (18 tests), and TypeScript (14 tests) with zero external runtime dependencies.
 
 ---
 

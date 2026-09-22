@@ -91,6 +91,18 @@ export interface VerificationResult {
   isMock: boolean;
 }
 
+export interface ReasoningEffortResult {
+  effort: "low" | "medium" | "high";
+  confidence: number;
+  complexityScore: number;
+  rationale: string;
+  provider: string;
+  providerParams: Record<string, any>;
+  isReasoningSupported: boolean;
+  cacheSafeRecommendation: string;
+  isMock: boolean;
+}
+
 export type AbortCheckResult = AbortGateResult;
 export type StepVerificationResult = VerificationResult;
 

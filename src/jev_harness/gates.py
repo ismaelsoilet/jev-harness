@@ -13,6 +13,7 @@ from .client import ChoiceQuestion, JevClient, NoulQuestion, ScoreQuestion
 from .session import (
     detect_repeated_failure,
     record_abort_event,
+    record_reasoning_effort_event,
     record_route_event,
     record_step_attempt,
     record_triage_event,
@@ -66,6 +67,19 @@ class VerificationResult:
     rigor_score: float
     confidence: float
     needs_rework: bool
+    is_mock: bool = False
+
+
+@dataclass
+class ReasoningEffortResult:
+    effort: str  # 'low', 'medium', 'high'
+    confidence: float
+    complexity_score: float
+    rationale: str
+    provider: str
+    provider_params: Dict[str, Any]
+    is_reasoning_supported: bool = True
+    cache_safe_recommendation: str = ""
     is_mock: bool = False
 
 
@@ -320,3 +334,209 @@ def verify_step_completion(
         needs_rework=needs_rework,
         is_mock=resp.is_mock,
     )
+
+
+def build_provider_params(
+    provider: str, effort: str, model: Optional[str] = None
+) -> tuple[Dict[str, Any], bool, str, str]:
+    """
+    Compiles typed provider payload for the target model family.
+    Returns: (provider_params, is_supported, rationale, cache_safe_recommendation)
+    """
+    norm_provider = provider.strip().lower() if provider else "openai"
+    norm_model = (model or "").strip().lower()
+
+    # Detect non-reasoning direct execution models that would return HTTP 400
+    direct_models = ["gpt-5.6-luna", "gpt-5.5", "gemini-3.8-live", "gemini-1.5-flash", "qwen-3.8-flash-standard"]
+    if any(dm in norm_model for dm in direct_models):
+        return (
+            {},
+            False,
+            f"Model '{model}' is a direct single-pass model without internal reasoning CoT. Do NOT inject reasoning parameters to avoid HTTP 400. Use route_model_tier instead.",
+            "Cache unaffected. Model runs in direct generation mode.",
+        )
+
+    cache_rec = (
+        "Keep reasoning effort stable across related sub-steps to preserve Prompt Cache (KV Cache)."
+        if effort != "low"
+        else "Low reasoning effort saves ~7,000 reasoning tokens. Safe to use for mechanical tool calls."
+    )
+
+    if norm_provider in ["openai", "codex", "azure"]:
+        # Frontier 2026: GPT-6 Astra, o3, o4, GPT-5.6 Sol/Terra
+        return (
+            {"reasoning_effort": effort},
+            True,
+            f"Configured OpenAI reasoning_effort='{effort}' for target model.",
+            cache_rec,
+        )
+
+    elif norm_provider in ["deepseek", "deepseek-ai"]:
+        # DeepSeek V4.1-Flash / V4-Pro / R1
+        # In multi-turn tool conversations, reasoning_content must be preserved
+        effort_val = "low" if effort == "low" else "high"
+        return (
+            {
+                "extra_body": {"thinking": {"type": "enabled"}},
+                "reasoning_effort": effort_val,
+            },
+            True,
+            f"DeepSeek Thinking mode configured with effort='{effort_val}'. Preserves reasoning_content in multi-turn tool calling.",
+            "Cuts latency by ~200s in mechanical steps when set to low." if effort == "low" else cache_rec,
+        )
+
+    elif norm_provider in ["qwen", "alibaba", "dashscope"]:
+        # Qwen 3.8 Max (2.4T MoE), Qwen 3.8-Omni-Flash
+        if effort == "low":
+            return (
+                {"enable_thinking": False},
+                True,
+                "Disabled Qwen thinking CoT for mechanical/terminal step to minimize latency.",
+                "Zero tokens spent on reasoning trace.",
+            )
+        elif effort == "medium":
+            return (
+                {"enable_thinking": True, "thinking_budget": 4096},
+                True,
+                "Enabled balanced Qwen thinking budget (4096 tokens).",
+                cache_rec,
+            )
+        else:
+            return (
+                {"enable_thinking": True, "thinking_budget": 16384},
+                True,
+                "Enabled frontier deep reasoning budget (16384 tokens) on Qwen 3.8 Max.",
+                cache_rec,
+            )
+
+    elif norm_provider in ["anthropic", "claude"]:
+        # Claude Fable 5.1 / Claude 5 Sonnet/Opus / Claude 4.8
+        effort_map = {"low": "low", "medium": "medium", "high": "max"}
+        chosen = effort_map.get(effort, "medium")
+        return (
+            {
+                "thinking": {"type": "adaptive"},
+                "output_config": {"effort": chosen},
+            },
+            True,
+            f"Configured Anthropic Adaptive Thinking with effort='{chosen}'.",
+            cache_rec,
+        )
+
+    elif norm_provider in ["gemini", "google"]:
+        # Gemini 3.8 Flash Thinking / Gemini 3.5 Pro Thinking
+        gemini_map = {"low": "minimal", "medium": "medium", "high": "high"}
+        chosen = gemini_map.get(effort, "medium")
+        return (
+            {"thinking_config": {"thinking_level": chosen}},
+            True,
+            f"Configured Gemini thinking_level='{chosen}'.",
+            cache_rec,
+        )
+
+    elif norm_provider in ["kimi", "moonshot"]:
+        # Moonshot Kimi-k3
+        if effort == "low":
+            return (
+                {"extra_body": {"thinking": False}},
+                True,
+                "Enabled Kimi Instant Mode (thinking disabled) for zero-latency execution.",
+                "Eliminates internal CoT overhead.",
+            )
+        else:
+            k_effort = "high" if effort == "high" else "low"
+            return (
+                {"reasoning_effort": k_effort},
+                True,
+                f"Configured Kimi reasoning_effort='{k_effort}'.",
+                cache_rec,
+            )
+
+    elif norm_provider in ["mimo", "xiaomi"]:
+        # Xiaomi MiMo-v2.6-pro / flash
+        if effort == "low":
+            return (
+                {"thinking": {"type": "disabled"}},
+                True,
+                "Disabled MiMo CoT for terminal command to free GPU inference.",
+                "Immediate generation without scratchpad.",
+            )
+        else:
+            return (
+                {"thinking": {"type": "enabled"}, "reasoning": {"effort": effort}},
+                True,
+                f"Enabled MiMo deep reasoning with effort='{effort}'.",
+                cache_rec,
+            )
+
+    else:
+        # Generic / OpenAI-compatible
+        return (
+            {"reasoning_effort": effort},
+            True,
+            f"Generic reasoning effort='{effort}'.",
+            cache_rec,
+        )
+
+
+def modulate_reasoning_effort(
+    context: str,
+    provider: str = "openai",
+    model: Optional[str] = None,
+    client: Optional[JevClient] = None,
+) -> ReasoningEffortResult:
+    """
+    Dynamically decides the optimal reasoning effort ('low', 'medium', 'high')
+    for the immediate next generation step, mapping typed parameters to the target provider.
+    Eliminates reasoning token waste on mechanical tool calls and cuts multi-minute delays.
+    """
+    client = client or JevClient()
+
+    questions = {
+        "effort": ChoiceQuestion(
+            instructions="Select the minimal sufficient reasoning effort needed for this immediate agent step",
+            criteria={
+                "low": "Mechanical action: run bash command, check git status, view file, format code, linter check, simple import, or trivial syntax edit",
+                "medium": "Standard code modification: implement bounded function, write standard unit test, add parameter, or localized refactoring",
+                "high": "Deep cognitive task: architectural design, race condition, distributed deadlock, concurrency kernel bug, or complex multi-file debugging",
+            },
+        ),
+        "complexity": ScoreQuestion(
+            instructions="Rate the cognitive depth required for this next step",
+            criteria=["trivial_mechanical", "standard_implementation", "complex_logic", "exceptional_architecture"],
+        ),
+    }
+
+    clean_context = context.strip()
+    if len(clean_context) > 4000:
+        clean_context = clean_context[:1500] + "\n...[truncated]...\n" + clean_context[-2500:]
+
+    resp = client.system_one(state=clean_context, questions=questions)
+
+    effort_ans = resp.answers.get("effort")
+    comp_ans = resp.answers.get("complexity")
+
+    effort = effort_ans.choice if effort_ans and hasattr(effort_ans, "choice") else "medium"
+    conf = effort_ans.confidence if effort_ans and hasattr(effort_ans, "confidence") else 0.85
+    comp_score = comp_ans.score if comp_ans and hasattr(comp_ans, "score") else 2.0
+
+    params, is_supported, rationale, cache_rec = build_provider_params(provider, effort, model)
+
+    result = ReasoningEffortResult(
+        effort=effort,
+        confidence=conf,
+        complexity_score=comp_score,
+        rationale=rationale,
+        provider=provider,
+        provider_params=params,
+        is_reasoning_supported=is_supported,
+        cache_safe_recommendation=cache_rec,
+        is_mock=resp.is_mock,
+    )
+
+    try:
+        record_reasoning_effort_event(result.effort, provider=provider)
+    except Exception:
+        pass
+
+    return result

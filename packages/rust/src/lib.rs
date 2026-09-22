@@ -13,6 +13,7 @@ pub mod types;
 
 pub use client::JevClient;
 pub use gates::{
-    route_model_tier, should_abort_trajectory, triage_test_failure, verify_step_completion,
+    build_provider_params, modulate_reasoning_effort, route_model_tier, should_abort_trajectory,
+    triage_test_failure, verify_step_completion,
 };
 pub use types::*;

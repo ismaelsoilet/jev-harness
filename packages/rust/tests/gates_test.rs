@@ -1,6 +1,9 @@
 use jev_harness::{
     client::JevClient,
-    gates::{route_model_tier, should_abort_trajectory, triage_test_failure, verify_step_completion},
+    gates::{
+        build_provider_params, modulate_reasoning_effort, route_model_tier,
+        should_abort_trajectory, triage_test_failure, verify_step_completion,
+    },
 };
 
 #[tokio::test]
@@ -227,3 +230,65 @@ async fn test_adversarial_portuguese_and_safe_fallback() {
     assert_eq!(res_fallback.category, "deep_logic");
     assert!(!res_fallback.skip_llm);
 }
+
+#[tokio::test]
+async fn test_modulate_reasoning_effort_mechanical_bash() {
+    let client = JevClient::with_mock();
+    let res = modulate_reasoning_effort(
+        "Run bash command 'git status' to inspect modified files",
+        "openai",
+        None,
+        Some(&client),
+    )
+    .await
+    .expect("Reasoning effort modulation failed");
+
+    assert_eq!(res.effort, "low");
+    assert!(res.is_reasoning_supported);
+    assert_eq!(res.provider_params["reasoning_effort"], "low");
+}
+
+#[tokio::test]
+async fn test_modulate_reasoning_effort_heavy_architecture() {
+    let client = JevClient::with_mock();
+    let res = modulate_reasoning_effort(
+        "Architect enterprise distributed consensus and transaction deadlock detection kernel",
+        "anthropic",
+        None,
+        Some(&client),
+    )
+    .await
+    .expect("Reasoning effort modulation failed");
+
+    assert_eq!(res.effort, "high");
+    assert!(res.is_reasoning_supported);
+    assert_eq!(res.provider_params["thinking"]["type"], "adaptive");
+    assert_eq!(res.provider_params["output_config"]["effort"], "max");
+}
+
+#[tokio::test]
+async fn test_build_provider_params_dialects() {
+    // DeepSeek
+    let (ds_low, ds_sup, _, _) = build_provider_params("deepseek", "low", Some("deepseek-v4.1-flash"));
+    assert!(ds_sup);
+    assert_eq!(ds_low["reasoning_effort"], "low");
+
+    let (ds_high, _, _, _) = build_provider_params("deepseek", "high", Some("deepseek-v4-pro"));
+    assert_eq!(ds_high["reasoning_effort"], "high");
+
+    // Qwen
+    let (qw_low, qw_sup, _, _) = build_provider_params("qwen", "low", Some("qwen-3.8-omni-flash"));
+    assert!(qw_sup);
+    assert_eq!(qw_low["enable_thinking"], false);
+
+    let (qw_high, _, _, _) = build_provider_params("qwen", "high", Some("qwen-3.8-max"));
+    assert_eq!(qw_high["enable_thinking"], true);
+    assert_eq!(qw_high["thinking_budget"], 16384);
+
+    // Unsupported model (direct single-pass)
+    let (direct_params, direct_sup, rationale, _) = build_provider_params("openai", "low", Some("gpt-5.6-luna"));
+    assert!(!direct_sup);
+    assert_eq!(direct_params, serde_json::json!({}));
+    assert!(rationale.contains("direct single-pass model"));
+}
+

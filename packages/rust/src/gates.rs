@@ -357,3 +357,219 @@ pub async fn verify_step_completion(
         is_mock: resp.is_mock,
     })
 }
+
+pub fn build_provider_params(
+    provider: &str,
+    effort: &str,
+    model: Option<&str>,
+) -> (serde_json::Value, bool, String, String) {
+    let norm_provider = provider.trim().to_lowercase();
+    let norm_model = model.unwrap_or("").trim().to_lowercase();
+
+    let direct_models = [
+        "gpt-5.6-luna",
+        "gpt-5.5",
+        "gemini-3.8-live",
+        "gemini-1.5-flash",
+        "qwen-3.8-flash-standard",
+    ];
+    if direct_models.iter().any(|dm| norm_model.contains(dm)) {
+        return (
+            serde_json::json!({}),
+            false,
+            format!("Model '{:?}' is a direct single-pass model without internal reasoning CoT. Do NOT inject reasoning parameters.", model),
+            "Cache unaffected. Model runs in direct generation mode.".to_string(),
+        );
+    }
+
+    let cache_rec = if effort != "low" {
+        "Keep reasoning effort stable across related sub-steps to preserve Prompt Cache (KV Cache)."
+    } else {
+        "Low reasoning effort saves ~7,000 reasoning tokens. Safe to use for mechanical tool calls."
+    };
+
+    if norm_provider == "openai" || norm_provider == "codex" {
+        (
+            serde_json::json!({ "reasoning_effort": effort }),
+            true,
+            format!("Configured OpenAI reasoning_effort='{}' for target model.", effort),
+            cache_rec.to_string(),
+        )
+    } else if norm_provider == "deepseek" || norm_provider == "deepseek-ai" {
+        let effort_val = if effort == "low" { "low" } else { "high" };
+        (
+            serde_json::json!({
+                "extra_body": { "thinking": { "type": "enabled" } },
+                "reasoning_effort": effort_val
+            }),
+            true,
+            format!("DeepSeek Thinking mode configured with effort='{}'. Preserves reasoning_content in multi-turn tool calling.", effort_val),
+            if effort == "low" { "Cuts latency by ~200s in mechanical steps when set to low.".to_string() } else { cache_rec.to_string() },
+        )
+    } else if norm_provider == "qwen" || norm_provider == "alibaba" {
+        if effort == "low" {
+            (
+                serde_json::json!({ "enable_thinking": false }),
+                true,
+                "Disabled Qwen thinking CoT for mechanical/terminal step to minimize latency.".to_string(),
+                "Zero tokens spent on reasoning trace.".to_string(),
+            )
+        } else {
+            let budget = if effort == "medium" { 4096 } else { 16384 };
+            (
+                serde_json::json!({ "enable_thinking": true, "thinking_budget": budget }),
+                true,
+                format!("Enabled Qwen thinking budget ({} tokens).", budget),
+                cache_rec.to_string(),
+            )
+        }
+    } else if norm_provider == "anthropic" || norm_provider == "claude" {
+        let chosen = match effort {
+            "low" => "low",
+            "medium" => "medium",
+            _ => "max",
+        };
+        (
+            serde_json::json!({
+                "thinking": { "type": "adaptive" },
+                "output_config": { "effort": chosen }
+            }),
+            true,
+            format!("Configured Anthropic Adaptive Thinking with effort='{}'.", chosen),
+            cache_rec.to_string(),
+        )
+    } else if norm_provider == "gemini" || norm_provider == "google" {
+        let chosen = match effort {
+            "low" => "minimal",
+            "medium" => "medium",
+            _ => "high",
+        };
+        (
+            serde_json::json!({
+                "thinking_config": { "thinking_level": chosen }
+            }),
+            true,
+            format!("Configured Gemini thinking_level='{}'.", chosen),
+            cache_rec.to_string(),
+        )
+    } else if norm_provider == "kimi" || norm_provider == "moonshot" {
+        if effort == "low" {
+            (
+                serde_json::json!({ "extra_body": { "thinking": false } }),
+                true,
+                "Enabled Kimi Instant Mode (thinking disabled) for zero-latency execution.".to_string(),
+                "Eliminates internal CoT overhead.".to_string(),
+            )
+        } else {
+            let k_effort = if effort == "high" { "high" } else { "low" };
+            (
+                serde_json::json!({ "reasoning_effort": k_effort }),
+                true,
+                format!("Configured Kimi reasoning_effort='{}'.", k_effort),
+                cache_rec.to_string(),
+            )
+        }
+    } else if norm_provider == "mimo" || norm_provider == "xiaomi" {
+        if effort == "low" {
+            (
+                serde_json::json!({ "thinking": { "type": "disabled" } }),
+                true,
+                "Disabled MiMo CoT for terminal command to free GPU inference.".to_string(),
+                "Immediate generation without scratchpad.".to_string(),
+            )
+        } else {
+            (
+                serde_json::json!({
+                    "thinking": { "type": "enabled" },
+                    "reasoning": { "effort": effort }
+                }),
+                true,
+                format!("Enabled MiMo deep reasoning with effort='{}'.", effort),
+                cache_rec.to_string(),
+            )
+        }
+    } else {
+        (
+            serde_json::json!({ "reasoning_effort": effort }),
+            true,
+            format!("Generic reasoning effort='{}'.", effort),
+            cache_rec.to_string(),
+        )
+    }
+}
+
+pub async fn modulate_reasoning_effort(
+    context: &str,
+    provider: &str,
+    model: Option<&str>,
+    client: Option<&JevClient>,
+) -> Result<ReasoningEffortResult, JevError> {
+    let default_client = JevClient::default();
+    let active_client = client.unwrap_or(&default_client);
+
+    let mut questions = HashMap::new();
+
+    let mut effort_criteria = HashMap::new();
+    effort_criteria.insert(
+        "low".to_string(),
+        "Mechanical action: run bash command, check git status, view file, format code, linter check, simple import, or trivial syntax edit".to_string(),
+    );
+    effort_criteria.insert(
+        "medium".to_string(),
+        "Standard code modification: implement bounded function, write standard unit test, add parameter, or localized refactoring".to_string(),
+    );
+    effort_criteria.insert(
+        "high".to_string(),
+        "Deep cognitive task: architectural design, race condition, distributed deadlock, concurrency kernel bug, or complex multi-file debugging".to_string(),
+    );
+
+    questions.insert(
+        "effort".to_string(),
+        Question::Choice(ChoiceQuestion {
+            instructions: "Select the minimal sufficient reasoning effort needed for this immediate agent step".to_string(),
+            criteria: effort_criteria,
+        }),
+    );
+
+    questions.insert(
+        "complexity".to_string(),
+        Question::Score(ScoreQuestion {
+            instructions: "Rate the cognitive depth required for this next step".to_string(),
+            criteria: vec![
+                "trivial_mechanical".to_string(),
+                "standard_implementation".to_string(),
+                "complex_logic".to_string(),
+                "exceptional_architecture".to_string(),
+            ],
+        }),
+    );
+
+    let clean_context = if context.len() > 4000 {
+        &context[..4000]
+    } else {
+        context
+    };
+
+    let resp = active_client.system_one(clean_context, questions).await?;
+
+    let effort_ans = resp.answers.get("effort").and_then(|a| a.as_choice());
+    let comp_ans = resp.answers.get("complexity").and_then(|a| a.as_score());
+
+    let effort = effort_ans.map(|a| a.choice.clone()).unwrap_or_else(|| "medium".to_string());
+    let confidence = effort_ans.map(|a| a.confidence).unwrap_or(0.85);
+    let complexity_score = comp_ans.map(|a| a.score as f64).unwrap_or(2.0);
+
+    let (provider_params, is_supported, rationale, cache_rec) = build_provider_params(provider, &effort, model);
+
+    Ok(ReasoningEffortResult {
+        effort,
+        confidence,
+        complexity_score,
+        rationale,
+        provider: provider.to_string(),
+        provider_params,
+        is_reasoning_supported: is_supported,
+        cache_safe_recommendation: cache_rec,
+        is_mock: resp.is_mock,
+    })
+}

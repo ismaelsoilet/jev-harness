@@ -16,6 +16,7 @@ try:
     from . import __version__
     from .client import JevClient
     from .gates import (
+        modulate_reasoning_effort,
         route_model_tier,
         should_abort_trajectory,
         triage_test_failure,
@@ -26,6 +27,7 @@ except (ImportError, ValueError):
     from jev_harness import __version__
     from jev_harness.client import JevClient
     from jev_harness.gates import (
+        modulate_reasoning_effort,
         route_model_tier,
         should_abort_trajectory,
         triage_test_failure,
@@ -92,6 +94,7 @@ def cmd_metrics(args: argparse.Namespace) -> int:
                     "skipped_llm_calls": s.skipped_llm_calls,
                     "abort_guards_triggered": s.abort_guards_triggered,
                     "deterministic_routes": s.deterministic_routes,
+                    "effort_modulations": s.effort_modulations,
                     "estimated_tokens_saved": s.estimated_tokens_saved,
                     "estimated_cost_saved_usd": round(s.estimated_cost_saved_usd, 2),
                 },
@@ -104,6 +107,7 @@ def cmd_metrics(args: argparse.Namespace) -> int:
         print(f"LLM Calls Intercepted:   {s.skipped_llm_calls} (Fixed deterministically)")
         print(f"Doom Loops Aborted:      {s.abort_guards_triggered}")
         print(f"Deterministic Routes:    {s.deterministic_routes}")
+        print(f"Effort Modulations:      {s.effort_modulations} (Astra-Jev per-generation)")
         print(f"Estimated Tokens Saved:  ⚡ {s.estimated_tokens_saved:,} tokens")
         print(f"Estimated API Cost Saved: 💸 ${s.estimated_cost_saved_usd:.2f} USD")
         print("=======================================\n")
@@ -430,6 +434,58 @@ def cmd_verify(args: argparse.Namespace) -> int:
     return 0 if res.is_verified else 1
 
 
+def cmd_reasoning_effort(args: argparse.Namespace) -> int:
+    context_raw = getattr(args, "context_pos", None) or getattr(args, "context", None)
+    context = _read_input(context_raw).strip()
+    if not context:
+        print("Error: Context/step description must be provided via argument or stdin.", file=sys.stderr)
+        return 2
+
+    provider = getattr(args, "target_provider", None) or getattr(args, "provider", "openai")
+    model = getattr(args, "model", None)
+    force_mock = getattr(args, "mock", False)
+    is_json = getattr(args, "json", False)
+
+    client = JevClient(force_mock=force_mock)
+    res = modulate_reasoning_effort(context, provider=provider, model=model, client=client)
+
+    if is_json:
+        print(
+            json.dumps(
+                {
+                    "effort": res.effort,
+                    "confidence": res.confidence,
+                    "complexity_score": res.complexity_score,
+                    "rationale": res.rationale,
+                    "provider": res.provider,
+                    "provider_params": res.provider_params,
+                    "is_reasoning_supported": res.is_reasoning_supported,
+                    "cache_safe_recommendation": res.cache_safe_recommendation,
+                    "is_mock": res.is_mock,
+                },
+                indent=2,
+            )
+        )
+    else:
+        print("\n=== JEV REASONING EFFORT GATE ===")
+        print(f"Assigned Effort:   {res.effort.upper()}")
+        print(f"Target Provider:   {res.provider.upper()}")
+        print(f"Confidence:        {res.confidence * 100:.1f}%")
+        print(f"Complexity Score:  {res.complexity_score:.1f} / 4.0")
+        print(f"Rationale:         {res.rationale}")
+        print(f"Provider Payload:  {json.dumps(res.provider_params)}")
+        print(f"Cache Advisory:    {res.cache_safe_recommendation}")
+        if not res.is_reasoning_supported:
+            print("WARNING: Target model is direct single-pass; do NOT inject reasoning params!")
+        if res.is_mock:
+            print("Engine Mode:       [SIMULATION / MOCK]")
+        else:
+            print(f"Engine Mode:       [LIVE: {client.provider.upper()}]")
+        print("=================================\n")
+
+    return 0
+
+
 def cmd_mcp(args: argparse.Namespace) -> int:
     force_mock = getattr(args, "mock", False)
     provider = getattr(args, "provider", None)
@@ -495,6 +551,25 @@ def main() -> None:
     p_route.add_argument("task_pos", nargs="?", default=None, help="Task description or prompt")
     p_route.add_argument("--task", "-t", default=None, help="Task description or prompt")
     p_route.set_defaults(func=cmd_route)
+
+    # reasoning-effort (alias: astra-jev)
+    p_effort = subparsers.add_parser(
+        "reasoning-effort",
+        aliases=["astra-jev"],
+        parents=[common_parser],
+        help="Modulate reasoning effort dynamically before each generation (2026 Frontier Models)",
+    )
+    p_effort.add_argument("context_pos", nargs="?", default=None, help="Context or prompt of the immediate next step")
+    p_effort.add_argument("--context", "-c", default=None, help="Context or prompt of the immediate next step")
+    p_effort.add_argument(
+        "--target-provider",
+        "--provider-target",
+        dest="target_provider",
+        default="openai",
+        help="Target model provider (openai, deepseek, qwen, anthropic, gemini, kimi, mimo)",
+    )
+    p_effort.add_argument("--model", "-m", default=None, help="Specific target model identifier")
+    p_effort.set_defaults(func=cmd_reasoning_effort)
 
     # verify
     p_verify = subparsers.add_parser("verify", parents=[common_parser], help="Verify if produced evidence satisfies acceptance criteria")

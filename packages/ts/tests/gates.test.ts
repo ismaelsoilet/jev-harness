@@ -2,6 +2,7 @@ import { test, describe } from "node:test";
 import * as assert from "node:assert/strict";
 import { JevClient } from "../src/client.js";
 import {
+  modulateReasoningEffort,
   routeModelTier,
   shouldAbortTrajectory,
   triageTestFailure,
@@ -112,5 +113,21 @@ describe("Jev System One (TypeScript) Decision Gates", () => {
     const resFallback = await triageTestFailure("xyz123 uninformative random text with no keywords", client);
     assert.equal(resFallback.category, "deep_logic");
     assert.equal(resFallback.skipLlm, false);
+  });
+
+  test("modulateReasoningEffort modulates mechanical tasks to low and outputs safe provider dialect", async () => {
+    const resLow = await modulateReasoningEffort("git status e diff", { provider: "deepseek", client });
+    assert.equal(resLow.effort, "low");
+    assert.equal(resLow.provider, "deepseek");
+    assert.equal(resLow.providerParams.reasoning_effort, "low");
+    assert.equal(resLow.isReasoningSupported, true);
+
+    const resQwen = await modulateReasoningEffort("cat package.json", { provider: "qwen", client });
+    assert.equal(resQwen.effort, "low");
+    assert.deepEqual(resQwen.providerParams, { enable_thinking: false });
+
+    const resDirect = await modulateReasoningEffort("cat package.json", { provider: "openai", model: "gpt-5.6-luna", client });
+    assert.equal(resDirect.isReasoningSupported, false);
+    assert.deepEqual(resDirect.providerParams, {});
   });
 });

@@ -409,6 +409,32 @@ impl JevClient {
                         }
                     }
 
+                    let criteria = &cq.criteria;
+                    if criteria.contains_key("low") && criteria.contains_key("high") {
+                        if has_heavy_keywords
+                            || [
+                                "deadlock", "race condition", "distributed", "concurrency",
+                                "kernel", "supervision", "architectural", "complex", "algorithmic",
+                            ]
+                            .iter()
+                            .any(|k| state_lower.contains(k))
+                        {
+                            best_choice = "high".to_string();
+                        } else if [
+                            "git", "status", "diff", "ls", "cat", "view", "read", "typo", "format",
+                            "black", "lint", "flake8", "eslint", "prettier", "import", "version",
+                            "trivial",
+                        ]
+                        .iter()
+                        .any(|k| state_lower.contains(k))
+                            && !has_heavy_keywords
+                        {
+                            best_choice = "low".to_string();
+                        } else {
+                            best_choice = "medium".to_string();
+                        }
+                    }
+
                     answers.insert(
                         qid.clone(),
                         Answer::Choice(ChoiceAnswer {

@@ -97,6 +97,52 @@ class TestCLI(unittest.TestCase):
                 self.assertEqual(cm.exception.code, 0)
                 self.assertIn(__version__, out.getvalue())
 
+    def test_cli_reasoning_effort_json(self):
+        with patch.object(
+            sys,
+            "argv",
+            [
+                "jev-harness",
+                "reasoning-effort",
+                "--context",
+                "git status e diff",
+                "--target-provider",
+                "deepseek",
+                "--json",
+                "--mock",
+            ],
+        ):
+            with patch("sys.stdout", new_callable=StringIO) as out:
+                with self.assertRaises(SystemExit) as cm:
+                    main()
+                self.assertEqual(cm.exception.code, 0)
+                data = json.loads(out.getvalue())
+                self.assertEqual(data["effort"], "low")
+                self.assertEqual(data["provider"], "deepseek")
+                self.assertIn("extra_body", data["provider_params"])
+
+    def test_cli_reasoning_effort_text(self):
+        with patch.object(
+            sys,
+            "argv",
+            [
+                "jev-harness",
+                "reasoning-effort",
+                "--context",
+                "Refactor kernel deadlock concurrency",
+                "--target-provider",
+                "openai",
+                "--mock",
+            ],
+        ):
+            with patch("sys.stdout", new_callable=StringIO) as out:
+                with self.assertRaises(SystemExit) as cm:
+                    main()
+                self.assertEqual(cm.exception.code, 0)
+                output = out.getvalue()
+                self.assertIn("JEV REASONING EFFORT GATE", output)
+                self.assertIn("Assigned Effort:   HIGH", output)
+
 
 if __name__ == "__main__":
     unittest.main()

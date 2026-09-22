@@ -17,7 +17,7 @@ import type {
 export const TYPESAFE_API_URL = "https://api.typesafe.ai/v1/systemone";
 export const OPENCODE_API_URL = "https://opencode.ai/zen/v1/systemone";
 export const DEFAULT_MODEL = "jev-latest";
-export const DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.1.4; +https://github.com/ismaelsoilet/jev-harness)";
+export const DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.1.5; +https://github.com/ismaelsoilet/jev-harness)";
 
 export class JevClient {
   public apiKey?: string;
@@ -300,6 +300,27 @@ export class JevClient {
           if (matchScore > bestScore) {
             bestScore = matchScore;
             bestChoice = opt;
+          }
+        }
+
+        if (q.criteria["low"] && q.criteria["high"]) {
+          if (
+            hasHeavyKeywords ||
+            [
+              "deadlock", "race condition", "distributed", "concurrency", "kernel",
+              "supervision", "architectural", "complex", "algorithmic"
+            ].some((k) => stateLower.includes(k))
+          ) {
+            bestChoice = "high";
+          } else if (
+            [
+              "git", "status", "diff", "ls", "cat", "view", "read", "typo", "format",
+              "black", "lint", "flake8", "eslint", "prettier", "import", "version", "trivial"
+            ].some((k) => stateLower.includes(k)) && !hasHeavyKeywords
+          ) {
+            bestChoice = "low";
+          } else {
+            bestChoice = "medium";
           }
         }
 

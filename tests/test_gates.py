@@ -14,8 +14,10 @@ from jev_harness.client import JevClient
 from jev_harness.gates import (
     AbortGateResult,
     ModelRouteResult,
+    ReasoningEffortResult,
     TestTriageResult,
     VerificationResult,
+    modulate_reasoning_effort,
     route_model_tier,
     should_abort_trajectory,
     triage_test_failure,
@@ -76,6 +78,46 @@ class TestSemanticGates(unittest.TestCase):
         self.assertIsInstance(res, VerificationResult)
         self.assertTrue(res.is_verified)
         self.assertFalse(res.needs_rework)
+
+    def test_modulate_reasoning_effort_mechanical(self):
+        ctx = "git status e verificar arquivos modificados"
+        res = modulate_reasoning_effort(ctx, provider="openai", client=self.client)
+        self.assertIsInstance(res, ReasoningEffortResult)
+        self.assertEqual(res.effort, "low")
+        self.assertTrue(res.is_reasoning_supported)
+        self.assertEqual(res.provider_params, {"reasoning_effort": "low"})
+
+    def test_modulate_reasoning_effort_heavy(self):
+        ctx = "Diagnosticar deadlock distribuído e race conditions entre threads no kernel"
+        res = modulate_reasoning_effort(ctx, provider="openai", client=self.client)
+        self.assertIsInstance(res, ReasoningEffortResult)
+        self.assertEqual(res.effort, "high")
+        self.assertEqual(res.provider_params, {"reasoning_effort": "high"})
+
+    def test_modulate_reasoning_effort_deepseek_dialects(self):
+        ctx_low = "executar flake8 e linter no codigo"
+        res_low = modulate_reasoning_effort(ctx_low, provider="deepseek", client=self.client)
+        self.assertEqual(res_low.effort, "low")
+        self.assertEqual(res_low.provider_params["reasoning_effort"], "low")
+        self.assertIn("extra_body", res_low.provider_params)
+
+        ctx_high = "Refactor distributed consensus supervision tree architecture"
+        res_high = modulate_reasoning_effort(ctx_high, provider="deepseek", client=self.client)
+        self.assertEqual(res_high.effort, "high")
+        self.assertEqual(res_high.provider_params["reasoning_effort"], "high")
+
+    def test_modulate_reasoning_effort_qwen_dialects(self):
+        ctx_low = "cat package.json"
+        res_low = modulate_reasoning_effort(ctx_low, provider="qwen", client=self.client)
+        self.assertEqual(res_low.effort, "low")
+        self.assertEqual(res_low.provider_params, {"enable_thinking": False})
+
+    def test_direct_model_safeguard(self):
+        ctx = "cat package.json"
+        res = modulate_reasoning_effort(ctx, provider="openai", model="gpt-5.6-luna", client=self.client)
+        self.assertFalse(res.is_reasoning_supported)
+        self.assertEqual(res.provider_params, {})
+        self.assertIn("direct single-pass model", res.rationale)
 
 
 if __name__ == "__main__":

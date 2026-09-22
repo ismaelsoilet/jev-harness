@@ -31,6 +31,7 @@ class SessionState:
     skipped_llm_calls: int = 0
     abort_guards_triggered: int = 0
     deterministic_routes: int = 0
+    effort_modulations: int = 0
     estimated_tokens_saved: int = 0
     estimated_cost_saved_usd: float = 0.0
 
@@ -66,6 +67,7 @@ def load_session() -> SessionState:
                 skipped_llm_calls=data.get("skipped_llm_calls", 0),
                 abort_guards_triggered=data.get("abort_guards_triggered", 0),
                 deterministic_routes=data.get("deterministic_routes", 0),
+                effort_modulations=data.get("effort_modulations", 0),
                 estimated_tokens_saved=data.get("estimated_tokens_saved", 0),
                 estimated_cost_saved_usd=data.get("estimated_cost_saved_usd", 0.0),
             )
@@ -83,6 +85,7 @@ def save_session(session: SessionState) -> None:
             "skipped_llm_calls": session.skipped_llm_calls,
             "abort_guards_triggered": session.abort_guards_triggered,
             "deterministic_routes": session.deterministic_routes,
+            "effort_modulations": session.effort_modulations,
             "estimated_tokens_saved": session.estimated_tokens_saved,
             "estimated_cost_saved_usd": session.estimated_cost_saved_usd,
             "last_updated": time.time(),
@@ -124,6 +127,18 @@ def record_route_event(selected_tier: str) -> None:
         session.estimated_tokens_saved += tokens
         session.estimated_cost_saved_usd += cost
         save_session(session)
+
+
+def record_reasoning_effort_event(effort: str, provider: str = "openai") -> None:
+    session = load_session()
+    session.effort_modulations += 1
+    if effort == "low":
+        # Turning high reasoning to low saves ~7,000 reasoning tokens per turn
+        tokens = 7000
+        cost = 0.21
+        session.estimated_tokens_saved += tokens
+        session.estimated_cost_saved_usd += cost
+    save_session(session)
 
 
 def detect_repeated_failure(error_snippet: str, max_repeats: int = 2) -> bool:

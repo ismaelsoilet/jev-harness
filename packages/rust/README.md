@@ -56,7 +56,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-jev-harness = "0.1.4"
+jev-harness = "0.1.5"
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -124,7 +124,23 @@ async fn main() {
 }
 ```
 
-### 4. CLI Usage
+### 4. Dynamic Reasoning Effort Modulation (Astra-Jev)
+
+```rust
+use jev_harness::gates::modulate_reasoning_effort;
+
+#[tokio::main]
+async fn main() {
+    let step = "git status and inspect modified files";
+    let effort = modulate_reasoning_effort(step, "deepseek", Some("deepseek-v4.1-flash"), None).await.unwrap();
+
+    println!("Effort: {}", effort.effort); // low
+    println!("Dialect Params: {:?}", effort.provider_params); // {"extra_body": {"thinking": {"type": "enabled"}}, "reasoning_effort": "low"}
+    println!("Cache Safe Advisory: {}", effort.cache_safe_recommendation);
+}
+```
+
+### 5. CLI Usage
 
 ```bash
 # Run triage on a traceback
@@ -137,6 +153,9 @@ jev abort-check --plan "Try identical prompt again" --history "Attempt 1 failed"
 
 # Route model tier
 jev route --task "Fix typo in variable name"
+
+# Check reasoning effort (Astra-Jev)
+jev reasoning-effort --context "git status" --target-provider deepseek
 
 # Check system status
 jev status

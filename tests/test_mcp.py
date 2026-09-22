@@ -47,6 +47,7 @@ class TestMCPServer(unittest.TestCase):
         self.assertIn("jev_abort_check", tool_names)
         self.assertIn("jev_route_task", tool_names)
         self.assertIn("jev_verify_completion", tool_names)
+        self.assertIn("jev_modulate_reasoning_effort", tool_names)
 
     def test_mcp_tools_call_triage(self):
         req = json.dumps({
@@ -164,6 +165,27 @@ class TestMCPServer(unittest.TestCase):
         self.assertIsNotNone(resp)
         content = json.loads(resp["result"]["content"][0]["text"])
         self.assertTrue(content["is_verified"])
+
+    def test_mcp_tools_call_reasoning_effort(self):
+        req = json.dumps({
+            "jsonrpc": "2.0",
+            "id": 13,
+            "method": "tools/call",
+            "params": {
+                "name": "jev_modulate_reasoning_effort",
+                "arguments": {
+                    "context": "git status e verificar arquivos",
+                    "provider": "deepseek",
+                },
+            },
+        })
+        resp = process_message(req, self.client)
+        self.assertIsNotNone(resp)
+        content = json.loads(resp["result"]["content"][0]["text"])
+        self.assertEqual(content["effort"], "low")
+        self.assertEqual(content["provider"], "deepseek")
+        self.assertIn("extra_body", content["provider_params"])
+        self.assertEqual(content["provider_params"]["reasoning_effort"], "low")
 
     def test_mcp_run_server_loop(self):
         from io import StringIO

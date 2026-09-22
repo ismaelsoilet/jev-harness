@@ -4,6 +4,7 @@ import type {
   ChoiceAnswer,
   ModelRouteResult,
   NoulAnswer,
+  ReasoningEffortResult,
   ScoreAnswer,
   TestTriageResult,
   VerificationResult,
@@ -229,6 +230,187 @@ export async function verifyStepCompletion(
     rigorScore,
     confidence: conf,
     needsRework: !isVerified,
+    isMock: resp.isMock,
+  };
+}
+
+export function buildProviderParams(
+  provider: string = "openai",
+  effort: "low" | "medium" | "high",
+  model?: string
+): { providerParams: Record<string, any>; isSupported: boolean; rationale: string; cacheSafeRecommendation: string } {
+  const normProvider = provider.trim().toLowerCase();
+  const normModel = (model || "").trim().toLowerCase();
+
+  const directModels = ["gpt-5.6-luna", "gpt-5.5", "gemini-3.8-live", "gemini-1.5-flash", "qwen-3.8-flash-standard"];
+  if (directModels.some((dm) => normModel.includes(dm))) {
+    return {
+      providerParams: {},
+      isSupported: false,
+      rationale: `Model '${model}' is a direct single-pass model without internal reasoning CoT. Do NOT inject reasoning parameters.`,
+      cacheSafeRecommendation: "Cache unaffected. Model runs in direct generation mode.",
+    };
+  }
+
+  const cacheRec =
+    effort !== "low"
+      ? "Keep reasoning effort stable across related sub-steps to preserve Prompt Cache (KV Cache)."
+      : "Low reasoning effort saves ~7,000 reasoning tokens. Safe to use for mechanical tool calls.";
+
+  if (normProvider === "openai" || normProvider === "codex") {
+    return {
+      providerParams: { reasoning_effort: effort },
+      isSupported: true,
+      rationale: `Configured OpenAI reasoning_effort='${effort}' for target model.`,
+      cacheSafeRecommendation: cacheRec,
+    };
+  } else if (normProvider === "deepseek" || normProvider === "deepseek-ai") {
+    const effortVal = effort === "low" ? "low" : "high";
+    return {
+      providerParams: {
+        extra_body: { thinking: { type: "enabled" } },
+        reasoning_effort: effortVal,
+      },
+      isSupported: true,
+      rationale: `DeepSeek Thinking mode configured with effort='${effortVal}'. Preserves reasoning_content in multi-turn tool calling.`,
+      cacheSafeRecommendation: effort === "low" ? "Cuts latency by ~200s in mechanical steps when set to low." : cacheRec,
+    };
+  } else if (normProvider === "qwen" || normProvider === "alibaba") {
+    if (effort === "low") {
+      return {
+        providerParams: { enable_thinking: false },
+        isSupported: true,
+        rationale: "Disabled Qwen thinking CoT for mechanical/terminal step to minimize latency.",
+        cacheSafeRecommendation: "Zero tokens spent on reasoning trace.",
+      };
+    } else {
+      const budget = effort === "medium" ? 4096 : 16384;
+      return {
+        providerParams: { enable_thinking: true, thinking_budget: budget },
+        isSupported: true,
+        rationale: `Enabled Qwen thinking budget (${budget} tokens).`,
+        cacheSafeRecommendation: cacheRec,
+      };
+    }
+  } else if (normProvider === "anthropic" || normProvider === "claude") {
+    const effortMap: Record<string, string> = { low: "low", medium: "medium", high: "max" };
+    const chosen = effortMap[effort] || "medium";
+    return {
+      providerParams: {
+        thinking: { type: "adaptive" },
+        output_config: { effort: chosen },
+      },
+      isSupported: true,
+      rationale: `Configured Anthropic Adaptive Thinking with effort='${chosen}'.`,
+      cacheSafeRecommendation: cacheRec,
+    };
+  } else if (normProvider === "gemini" || normProvider === "google") {
+    const geminiMap: Record<string, string> = { low: "minimal", medium: "medium", high: "high" };
+    const chosen = geminiMap[effort] || "medium";
+    return {
+      providerParams: {
+        thinking_config: { thinking_level: chosen },
+      },
+      isSupported: true,
+      rationale: `Configured Gemini thinking_level='${chosen}'.`,
+      cacheSafeRecommendation: cacheRec,
+    };
+  } else if (normProvider === "kimi" || normProvider === "moonshot") {
+    if (effort === "low") {
+      return {
+        providerParams: { extra_body: { thinking: false } },
+        isSupported: true,
+        rationale: "Enabled Kimi Instant Mode (thinking disabled) for zero-latency execution.",
+        cacheSafeRecommendation: "Eliminates internal CoT overhead.",
+      };
+    } else {
+      const kEffort = effort === "high" ? "high" : "low";
+      return {
+        providerParams: { reasoning_effort: kEffort },
+        isSupported: true,
+        rationale: `Configured Kimi reasoning_effort='${kEffort}'.`,
+        cacheSafeRecommendation: cacheRec,
+      };
+    }
+  } else if (normProvider === "mimo" || normProvider === "xiaomi") {
+    if (effort === "low") {
+      return {
+        providerParams: { thinking: { type: "disabled" } },
+        isSupported: true,
+        rationale: "Disabled MiMo CoT for terminal command to free GPU inference.",
+        cacheSafeRecommendation: "Immediate generation without scratchpad.",
+      };
+    } else {
+      return {
+        providerParams: { thinking: { type: "enabled" }, reasoning: { effort } },
+        isSupported: true,
+        rationale: `Enabled MiMo deep reasoning with effort='${effort}'.`,
+        cacheSafeRecommendation: cacheRec,
+      };
+    }
+  } else {
+    return {
+      providerParams: { reasoning_effort: effort },
+      isSupported: true,
+      rationale: `Generic reasoning effort='${effort}'.`,
+      cacheSafeRecommendation: cacheRec,
+    };
+  }
+}
+
+export async function modulateReasoningEffort(
+  context: string,
+  options: { provider?: string; model?: string; client?: JevClient } = {}
+): Promise<ReasoningEffortResult> {
+  const activeClient = options.client || new JevClient();
+  const provider = options.provider || "openai";
+  const model = options.model;
+
+  const questions = {
+    effort: {
+      type: "choice" as const,
+      instructions: "Select the minimal sufficient reasoning effort needed for this immediate agent step",
+      criteria: {
+        low: "Mechanical action: run bash command, check git status, view file, format code, linter check, simple import, or trivial syntax edit",
+        medium: "Standard code modification: implement bounded function, write standard unit test, add parameter, or localized refactoring",
+        high: "Deep cognitive task: architectural design, race condition, distributed deadlock, concurrency kernel bug, or complex multi-file debugging",
+      },
+    },
+    complexity: {
+      type: "score" as const,
+      instructions: "Rate the cognitive depth required for this next step",
+      criteria: ["trivial_mechanical", "standard_implementation", "complex_logic", "exceptional_architecture"],
+    },
+  };
+
+  const cleanContext = context.trim().slice(0, 4000);
+  const resp = await activeClient.systemOne(cleanContext, questions);
+
+  const effortAns = resp.answers.effort as ChoiceAnswer | undefined;
+  const compAns = resp.answers.complexity as ScoreAnswer | undefined;
+
+  let effort = (effortAns?.choice as "low" | "medium" | "high") || "medium";
+  if (!["low", "medium", "high"].includes(effort)) {
+    effort = "medium";
+  }
+  const confidence = effortAns?.confidence ?? 0.85;
+  const complexityScore = compAns?.score ?? 2.0;
+
+  const { providerParams, isSupported, rationale, cacheSafeRecommendation } = buildProviderParams(
+    provider,
+    effort,
+    model
+  );
+
+  return {
+    effort,
+    confidence,
+    complexityScore,
+    rationale,
+    provider,
+    providerParams,
+    isReasoningSupported: isSupported,
+    cacheSafeRecommendation,
     isMock: resp.isMock,
   };
 }

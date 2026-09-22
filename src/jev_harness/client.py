@@ -20,7 +20,7 @@ TYPESAFE_API_URL = "https://api.typesafe.ai/v1/systemone"
 OPENCODE_API_URL = "https://opencode.ai/zen/v1/systemone"
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 DEFAULT_MODEL = "jev-latest"
-DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.1.4; +https://github.com/ismaelsoilet/jev-harness)"
+DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.1.5; +https://github.com/ismaelsoilet/jev-harness)"
 
 
 def _urlopen_with_ipv4_fallback(req: urllib.request.Request, timeout: float):
@@ -472,6 +472,22 @@ class JevClient:
                         best_choice = opt
 
                 probs = {k: (0.85 if k == best_choice else 0.15 / max(1, len(q.criteria) - 1)) for k in q.criteria}
+                if "low" in q.criteria and "high" in q.criteria:
+                    # Specialized reasoning effort modulation question
+                    if has_heavy_keywords or any(k in state_lower for k in [
+                        "deadlock", "race condition", "distributed", "concurrency", "kernel", "supervision",
+                        "architectural", "complex", "algorithmic", "deadlocks", "concorrência", "arquitetura"
+                    ]):
+                        best_choice = "high"
+                    elif any(k in state_lower for k in [
+                        "git", "status", "diff", "ls", "cat", "view", "read", "typo", "format", "black",
+                        "lint", "flake8", "eslint", "prettier", "import", "version", "trivial", "linter", "echo"
+                    ]) and not has_heavy_keywords:
+                        best_choice = "low"
+                    else:
+                        best_choice = "medium"
+                    probs = {k: (0.90 if k == best_choice else 0.10 / max(1, len(q.criteria) - 1)) for k in q.criteria}
+
                 answers[qid] = ChoiceAnswer(choice=best_choice, confidence=0.88, probabilities=probs)
 
             elif isinstance(q, ScoreQuestion):

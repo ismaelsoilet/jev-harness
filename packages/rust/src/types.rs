@@ -159,6 +159,20 @@ pub struct VerificationResult {
     pub is_mock: bool,
 }
 
+/// Dynamic reasoning effort modulation result (Astra-Jev).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ReasoningEffortResult {
+    pub effort: String,
+    pub confidence: f64,
+    pub complexity_score: f64,
+    pub rationale: String,
+    pub provider: String,
+    pub provider_params: serde_json::Value,
+    pub is_reasoning_supported: bool,
+    pub cache_safe_recommendation: String,
+    pub is_mock: bool,
+}
+
 /// Error type for Jev operations.
 #[derive(Debug)]
 pub enum JevError {

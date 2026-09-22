@@ -1,8 +1,7 @@
 [package]
 name = "jev-harness"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
-authors = ["ISMAEL HOSNI SOILET DE LIMA <soilet.ismael@gmail.com>"]
 description = "Zero-overhead System One decision harness and token optimizer for AI coding agents."
 license = "MIT"
 repository = "https://github.com/ismaelsoilet/jev-harness"

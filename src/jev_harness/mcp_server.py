@@ -17,6 +17,7 @@ try:
     from . import __version__
     from .client import JevClient
     from .gates import (
+        modulate_reasoning_effort,
         route_model_tier,
         should_abort_trajectory,
         triage_test_failure,
@@ -27,6 +28,7 @@ except (ImportError, ValueError):
     from jev_harness import __version__
     from jev_harness.client import JevClient
     from jev_harness.gates import (
+        modulate_reasoning_effort,
         route_model_tier,
         should_abort_trajectory,
         triage_test_failure,
@@ -114,6 +116,33 @@ TOOLS_MANIFEST: List[Dict[str, Any]] = [
                 },
             },
             "required": ["acceptance_criteria", "produced_output"],
+        },
+    },
+    {
+        "name": "jev_modulate_reasoning_effort",
+        "description": (
+            "Dynamically modulates reasoning effort (low, medium, high) for the immediate generation step. "
+            "Maps exact parameters for OpenAI (GPT-6 Astra/o3), DeepSeek (V4.1-Flash/R1), Qwen (3.8 Max), "
+            "Anthropic (Claude Fable 5.1), and Gemini (3.8 Thinking). Eliminates reasoning token waste "
+            "and cuts multi-minute delays on mechanical tool calls."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "context": {
+                    "type": "string",
+                    "description": "The command, prompt, or next step to evaluate.",
+                },
+                "provider": {
+                    "type": "string",
+                    "description": "Target provider (openai, deepseek, qwen, anthropic, gemini, kimi, mimo). Default: openai.",
+                },
+                "model": {
+                    "type": "string",
+                    "description": "Optional model identifier to check for direct non-reasoning compatibility.",
+                },
+            },
+            "required": ["context"],
         },
     },
 ]
@@ -247,6 +276,35 @@ def handle_tools_call(req_id: Any, params: Dict[str, Any], client: JevClient) ->
                     "rigor_score": res.rigor_score,
                     "confidence": res.confidence,
                     "needs_rework": res.needs_rework,
+                    "is_mock": res.is_mock,
+                },
+                indent=2,
+            )
+
+        elif tool_name == "jev_modulate_reasoning_effort":
+            ctx = args.get("context", "")
+            if not ctx or not str(ctx).strip():
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "error": {
+                        "code": -32602,
+                        "message": "Invalid params: 'context' is required and cannot be empty.",
+                    },
+                }
+            prov = args.get("provider", "openai")
+            mdl = args.get("model", None)
+            res = modulate_reasoning_effort(str(ctx), provider=str(prov), model=mdl, client=client)
+            text_content = json.dumps(
+                {
+                    "effort": res.effort,
+                    "confidence": res.confidence,
+                    "complexity_score": res.complexity_score,
+                    "rationale": res.rationale,
+                    "provider": res.provider,
+                    "provider_params": res.provider_params,
+                    "is_reasoning_supported": res.is_reasoning_supported,
+                    "cache_safe_recommendation": res.cache_safe_recommendation,
                     "is_mock": res.is_mock,
                 },
                 indent=2,
