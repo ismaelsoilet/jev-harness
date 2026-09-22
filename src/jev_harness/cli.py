@@ -35,14 +35,14 @@ except (ImportError, ValueError):
     )
 
 
-def _read_input(val_or_path: Optional[str]) -> str:
-    """Reads input from direct string, file path, or stdin."""
+def _read_input(val_or_path: Optional[str], allow_stdin: bool = True) -> str:
+    """Reads input from direct string, file path, or optionally stdin."""
     if val_or_path:
         p = Path(val_or_path)
         if p.is_file():
             return p.read_text(encoding="utf-8")
         return val_or_path
-    if not sys.stdin.isatty():
+    if allow_stdin and not sys.stdin.isatty():
         return sys.stdin.read()
     return ""
 
@@ -306,8 +306,8 @@ def cmd_test_gate(args: argparse.Namespace) -> int:
 
 def cmd_abort_check(args: argparse.Namespace) -> int:
     raw_plan = getattr(args, "plan", None) or getattr(args, "plan_pos", None)
-    plan = _read_input(raw_plan).strip()
-    history = _read_input(args.history).strip()
+    plan = _read_input(raw_plan, allow_stdin=True).strip()
+    history = _read_input(args.history, allow_stdin=False).strip()
     if not plan:
         print("Error: No plan provided. Pass --plan <text_or_path> or as positional argument.", file=sys.stderr)
         return 2
@@ -392,8 +392,8 @@ def cmd_route(args: argparse.Namespace) -> int:
 
 
 def cmd_verify(args: argparse.Namespace) -> int:
-    criteria = _read_input(args.criteria).strip()
-    output = _read_input(args.output).strip()
+    criteria = _read_input(args.criteria, allow_stdin=False).strip()
+    output = _read_input(args.output, allow_stdin=False).strip()
     if not criteria or not output:
         print("Error: Both --criteria and --output must be provided.", file=sys.stderr)
         return 2
@@ -597,7 +597,15 @@ def main() -> None:
     p_mcp.set_defaults(func=cmd_mcp)
 
     args = parser.parse_args()
-    sys.exit(args.func(args))
+    try:
+        sys.exit(args.func(args))
+    except BrokenPipeError:
+        try:
+            devnull = os.open(os.devnull, os.O_WRONLY)
+            os.dup2(devnull, sys.stdout.fileno())
+        except Exception:
+            pass
+        sys.exit(0)
 
 
 if __name__ == "__main__":

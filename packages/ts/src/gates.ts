@@ -10,16 +10,37 @@ import type {
   VerificationResult,
 } from "./types.js";
 
+export function safeTruncateHeadTail(s: string, maxHead: number, maxTail: number, sep: string = "\n...[truncated]...\n"): string {
+  if (s.length <= maxHead + maxTail) {
+    return s;
+  }
+  let headEnd = maxHead;
+  if (headEnd > 0 && headEnd < s.length) {
+    const code = s.charCodeAt(headEnd - 1);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      headEnd--;
+    }
+  }
+  let tailStart = s.length - maxTail;
+  if (tailStart > 0 && tailStart < s.length) {
+    const code = s.charCodeAt(tailStart);
+    if (code >= 0xdc00 && code <= 0xdfff) {
+      tailStart++;
+    }
+  }
+  if (headEnd >= tailStart) {
+    return s;
+  }
+  return s.slice(0, headEnd) + sep + s.slice(tailStart);
+}
+
 export async function triageTestFailure(
   failureLog: string,
   client?: JevClient
 ): Promise<TestTriageResult> {
   const activeClient = client || new JevClient();
 
-  let cleanLog = failureLog.trim();
-  if (cleanLog.length > 6000) {
-    cleanLog = cleanLog.slice(0, 1500) + "\n...[truncated]...\n" + cleanLog.slice(-4000);
-  }
+  const cleanLog = safeTruncateHeadTail(failureLog.trim(), 2000, 4000);
 
   const questions = {
     category: {
@@ -316,15 +337,12 @@ export function buildProviderParams(
       };
     }
   } else if (normProvider === "anthropic" || normProvider === "claude") {
-    const effortMap: Record<string, string> = { low: "low", medium: "medium", high: "max" };
-    const chosen = effortMap[effort] || "medium";
     return {
       providerParams: {
         thinking: { type: "adaptive" },
-        output_config: { effort: chosen },
       },
       isSupported: true,
-      rationale: `Configured Anthropic Adaptive Thinking with effort='${chosen}'.`,
+      rationale: `Configured Anthropic Adaptive Thinking (effort='${effort}'). Note: Output tokens are calibrated dynamically by model.`,
       cacheSafeRecommendation: cacheRec,
     };
   } else if (normProvider === "gemini" || normProvider === "google") {
@@ -408,10 +426,7 @@ export async function modulateReasoningEffort(
   };
 
   const trimmed = context.trim();
-  const cleanContext =
-    trimmed.length > 4000
-      ? trimmed.slice(0, 1500) + "\n... [context truncated] ...\n" + trimmed.slice(-2500)
-      : trimmed;
+  const cleanContext = safeTruncateHeadTail(trimmed, 1500, 2500, "\n... [context truncated] ...\n");
   const resp = await activeClient.systemOne(cleanContext, questions);
 
   const effortAns = resp.answers.effort as ChoiceAnswer | undefined;

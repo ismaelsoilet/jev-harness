@@ -241,6 +241,31 @@ Calculation returned 42, expected 100
         self.assertTrue(res.is_reasoning_supported)
         self.assertIn("HIGH CACHE RISK", res.cache_safe_recommendation)
 
+    def test_detect_repeated_failure_with_volatile_memory_addresses(self):
+        reset_metrics()
+        err1 = "RuntimeError: object at 0x7f9a12bc4000 in thread [Thread-1] failed at line 42: lock timeout"
+        err2 = "RuntimeError: object at 0x7f9a12bc9550 in thread [Thread-2] failed at line 42: lock timeout"
+        record_step_attempt("Attempt 1", error_snippet=err1)
+        self.assertFalse(detect_repeated_failure(err2, max_repeats=2))
+        record_step_attempt("Attempt 2", error_snippet=err2)
+        self.assertTrue(
+            detect_repeated_failure(err2, max_repeats=2),
+            "Normalized error snippet must catch repeated failure across dynamic memory addresses",
+        )
+
+    def test_adversarial_anthropic_dialect_no_output_config(self):
+        from jev_harness.gates import modulate_reasoning_effort
+
+        res = modulate_reasoning_effort(
+            "Architect distributed consensus",
+            provider="anthropic",
+            model="claude-fable-5.1",
+            client=self.client,
+        )
+        self.assertTrue(res.is_reasoning_supported)
+        self.assertEqual(res.provider_params, {"thinking": {"type": "adaptive"}})
+        self.assertNotIn("output_config", res.provider_params)
+
 
 if __name__ == "__main__":
     unittest.main()

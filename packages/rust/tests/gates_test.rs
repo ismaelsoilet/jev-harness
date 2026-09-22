@@ -281,7 +281,7 @@ async fn test_modulate_reasoning_effort_heavy_architecture() {
     assert_eq!(res.effort, "high");
     assert!(res.is_reasoning_supported);
     assert_eq!(res.provider_params["thinking"]["type"], "adaptive");
-    assert_eq!(res.provider_params["output_config"]["effort"], "max");
+    assert!(res.provider_params.get("output_config").is_none());
 }
 
 #[tokio::test]

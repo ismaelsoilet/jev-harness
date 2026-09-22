@@ -13,10 +13,12 @@ from .client import ChoiceQuestion, JevClient, NoulQuestion, ScoreQuestion
 from .session import (
     detect_repeated_failure,
     record_abort_event,
+    record_abort_step,
     record_reasoning_effort_event,
     record_route_event,
     record_step_attempt,
     record_triage_event,
+    record_triage_step,
 )
 
 
@@ -154,8 +156,7 @@ def triage_test_failure(
         details={"model": resp.model, "usage": resp.usage},
     )
     try:
-        record_triage_event(result.skip_llm, result.category)
-        record_step_attempt("test-gate", error_snippet=clean_log[:200], action=rec)
+        record_triage_step(result.skip_llm, result.category, error_snippet=clean_log[:200], action=rec)
     except Exception:
         pass
     return result
@@ -228,8 +229,7 @@ def should_abort_trajectory(
         is_mock=resp.is_mock,
     )
     try:
-        record_abort_event(abort_res.should_abort)
-        record_step_attempt(proposed_step, action=abort_res.action)
+        record_abort_step(abort_res.should_abort, proposed_step, action=abort_res.action)
     except Exception:
         pass
     return abort_res
@@ -436,15 +436,10 @@ def build_provider_params(
 
     elif norm_provider in ["anthropic", "claude"]:
         # Claude Fable 5.1 / Claude 5 Sonnet / Claude Opus 5
-        effort_map = {"low": "low", "medium": "medium", "high": "max"}
-        chosen = effort_map.get(effort, "medium")
         return (
-            {
-                "thinking": {"type": "adaptive"},
-                "output_config": {"effort": chosen},
-            },
+            {"thinking": {"type": "adaptive"}},
             True,
-            f"Configured Anthropic Adaptive Thinking with effort='{chosen}'.",
+            f"Configured Anthropic Adaptive Thinking (effort='{effort}'). Note: Output tokens are calibrated dynamically by model.",
             cache_rec,
         )
 

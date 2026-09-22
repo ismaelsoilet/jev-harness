@@ -651,7 +651,7 @@ To update the packages and documentation across all 3 registries:
 Use the automated multi-runtime script to check, bump versions, and publish:
 
 ```bash
-# 1. Run full test battery (Python, TS, Rust - 109 tests)
+# 1. Run full test battery (Python, TS, Rust - 122 tests)
 ./scripts/release.sh --check
 
 # 2. Synchronously bump version in pyproject.toml, package.json, and Cargo.toml
@@ -679,8 +679,8 @@ You can also trigger releases via GitHub Actions:
 
 - 🛡️ **Expanded Direct Model Safeguards**: Automatically identifies non-reasoning direct execution models (`gpt-4o`, `gpt-4o-mini`, `gemini-2.5-flash`, `gemini-2.0-flash`, `claude-3-5-haiku`, `qwen-2.5-coder`, `llama-3.3`, etc.), injecting `{}` to prevent fatal HTTP 400 Bad Request parameter rejections across all 3 runtimes.
 - 🧠 **Active Session Context Tokens & Cache Risk Warning**: Added `--session-context-tokens` parameter to CLI and MCP tool. Emits proactive `HIGH CACHE RISK` advisory when session context exceeds 30,000 tokens to protect Prompt Cache (KV Cache) prefix hit rates.
-- 💻 **TypeScript CLI `reasoning-effort`**: Added full native CLI command support (`npx @ismaelsoilet/jev-harness reasoning-effort --context "..." --target-provider ...`) matching Python and Rust.
-- 🧪 **Hardened Adversarial Heuristics & 109-Test Battery**: Hardened regex matching for Jest and Pytest logs where `AssertionError` contains module names (guaranteeing `deep_logic` and `skip_llm=false`), preventing premature aborts on forward-progress implementation steps, and reaching 100% pass across 109 tests (68 Python, 23 Rust, 18 TypeScript).
+- 💻 **TypeScript CLI `reasoning-effort` & Zero-Dependency Native MCP Server**: Added full native CLI command support (`npx @ismaelsoilet/jev-harness reasoning-effort`) and zero-dependency stdio MCP server (`npx @ismaelsoilet/jev-harness mcp`) matching Python and Rust.
+- 🧪 **Hardened Adversarial Heuristics & 122-Test Battery**: Hardened regex matching for Jest and Pytest logs where `AssertionError` contains module names (guaranteeing `deep_logic` and `skip_llm=false`), preventing premature aborts on forward-progress implementation steps, and reaching 100% pass across 122 tests (73 Python, 25 Rust, 24 TypeScript).
 - 🌐 **OpenRouter & Provider Enhancements**: Updated OpenRouter fallback model to `google/gemini-2.5-flash` with direct provider configuration options.
 
 ---

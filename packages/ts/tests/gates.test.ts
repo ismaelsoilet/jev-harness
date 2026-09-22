@@ -209,5 +209,54 @@ FAIL src/plugin.test.ts
     const res = await modulateReasoningEffort(full, { provider: "openai", client });
     assert.equal(res.effort, "high", "Must detect high complexity from head/tail even after truncation");
   });
+
+  test("adversarial: anthropic dialect produces clean thinking without output_config", async () => {
+    const res = await modulateReasoningEffort("Design distributed consensus protocol", {
+      provider: "anthropic",
+      model: "claude-fable-5.1",
+      client,
+    });
+    assert.equal(res.isReasoningSupported, true);
+    assert.deepEqual(res.providerParams, { thinking: { type: "adaptive" } });
+    assert.equal("output_config" in res.providerParams, false, "Anthropic must never include output_config");
+  });
+
+  test("adversarial: safeTruncateHeadTail preserves surrogate pairs", async () => {
+    const emojiStr = "🚀🔥✨🎉".repeat(1000);
+    const res = await modulateReasoningEffort(emojiStr, { provider: "openai", client });
+    assert.ok(res.effort);
+  });
+
+  test("adversarial: TypeScript native MCP server handles initialize, tools/list and tools/call", async () => {
+    const { processMessage } = await import("../src/mcp.js");
+    
+    // Initialize
+    const initRes = await processMessage(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize" }), client);
+    assert.ok(initRes);
+    assert.equal(initRes.id, 1);
+    assert.equal(initRes.result.serverInfo.name, "jev-harness");
+
+    // Tools list
+    const listRes = await processMessage(JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list" }), client);
+    assert.ok(listRes);
+    assert.equal(listRes.result.tools.length, 5);
+
+    // Tools call
+    const callRes = await processMessage(JSON.stringify({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "tools/call",
+      params: {
+        name: "jev_triage_test_failure",
+        arguments: { failure_log: "ModuleNotFoundError: No module named 'foo'" }
+      }
+    }), client);
+    assert.ok(callRes);
+    assert.equal(callRes.result.isError, false);
+    const parsed = JSON.parse(callRes.result.content[0].text);
+    assert.equal(parsed.category, "env_missing");
+    assert.equal(parsed.skipLlm, true);
+  });
 });
+
 

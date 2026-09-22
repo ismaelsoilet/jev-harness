@@ -463,20 +463,14 @@ pub fn build_provider_params(
             )
         }
     } else if norm_provider == "anthropic" || norm_provider == "claude" {
-        let chosen = match effort {
-            "low" => "low",
-            "medium" => "medium",
-            _ => "max",
-        };
         (
             serde_json::json!({
-                "thinking": { "type": "adaptive" },
-                "output_config": { "effort": chosen }
+                "thinking": { "type": "adaptive" }
             }),
             true,
             format!(
-                "Configured Anthropic Adaptive Thinking with effort='{}'.",
-                chosen
+                "Configured Anthropic Adaptive Thinking (effort='{}'). Note: Output tokens are calibrated dynamically by model.",
+                effort
             ),
             cache_rec.to_string(),
         )

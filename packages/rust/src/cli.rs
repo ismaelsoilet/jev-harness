@@ -52,6 +52,9 @@ pub enum Commands {
 
         #[arg(short, long, help = "Path to error log or raw string")]
         log: Option<String>,
+
+        #[arg(long, help = "Sample error string (alias for --log)")]
+        sample: Option<String>,
     },
 
     #[command(
@@ -190,8 +193,12 @@ pub async fn run_cli() {
             process::exit(0);
         }
 
-        Commands::TestGate { log_pos, log } => {
-            let text = match read_input(log_pos, log) {
+        Commands::TestGate {
+            log_pos,
+            log,
+            sample,
+        } => {
+            let text = match read_input(log_pos, log.or(sample)) {
                 Ok(t) if !t.trim().is_empty() => t,
                 _ => {
                     eprintln!("Error: No test failure log provided. Pass log via argument or pipe via stdin.");
@@ -236,8 +243,8 @@ pub async fn run_cli() {
             plan,
             history,
         } => {
-            let plan_text = match plan.or(plan_pos) {
-                Some(p) if !p.trim().is_empty() => p,
+            let plan_text = match read_input(plan_pos, plan) {
+                Ok(p) if !p.trim().is_empty() => p,
                 _ => {
                     eprintln!(
                         "Error: No plan provided. Pass --plan <text> or positional argument."
@@ -278,8 +285,8 @@ pub async fn run_cli() {
         }
 
         Commands::Route { task_pos, task } => {
-            let task_text = match task.or(task_pos) {
-                Some(t) if !t.trim().is_empty() => t,
+            let task_text = match read_input(task_pos, task) {
+                Ok(t) if !t.trim().is_empty() => t,
                 _ => {
                     eprintln!("Error: No task description provided. Pass --task <text>.");
                     process::exit(2);

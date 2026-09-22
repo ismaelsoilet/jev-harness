@@ -559,8 +559,8 @@ npm test 2>&1 | npx @ismaelsoilet/jev-harness test-gate || exit 1
 
 - 🛡️ **Salvaguardas Expandidas para Modelos Direct**: Identifica automaticamente modelos single-pass (`gpt-4o`, `gpt-4o-mini`, `gemini-2.5-flash`, `claude-3-5-haiku`, `llama-3.3`), injetando `{}` para evitar erros fatais de HTTP 400 nos 3 runtimes.
 - 🧠 **Aviso de Risco de Cache no Contexto da Sessão**: Novo parâmetro `--session-context-tokens` na CLI e ferramenta MCP emite alerta preventivo de `HIGH CACHE RISK` quando o contexto excede 30.000 tokens.
-- 💻 **CLI TypeScript `reasoning-effort`**: Suporte nativo completo na linha de comando TypeScript via `npx @ismaelsoilet/jev-harness reasoning-effort`.
-- 🧪 **Heurísticas Adversariais Reforçadas & Bateria de 109 Testes**: 100% de aprovação em 109 testes (68 Python, 23 Rust, 18 TypeScript).
+- 💻 **CLI TypeScript `reasoning-effort` & Servidor MCP Nativo Zero-Dependency**: Suporte nativo completo na linha de comando TypeScript via `npx @ismaelsoilet/jev-harness reasoning-effort` e servidor MCP stdio nativo via `npx @ismaelsoilet/jev-harness mcp`.
+- 🧪 **Heurísticas Adversariais Reforçadas & Bateria de 122 Testes**: 100% de aprovação em 122 testes (73 Python, 25 Rust, 24 TypeScript).
 
 ---
 

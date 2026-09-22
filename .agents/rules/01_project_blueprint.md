@@ -107,7 +107,7 @@ jev-harness/
 │       ├── gates.py                  # Gates semânticos (triage, abort, route, verify, reasoning-effort)
 │       ├── mcp_server.py             # Servidor MCP stdio universal (`jev-mcp`)
 │       └── session.py                # Telemetria, persistência de sessão e cálculo de ROI
-├── tests/                            # Bateria de testes Python (68 testes, 100% pass)
+├── tests/                            # Bateria de testes Python (73 testes, 100% pass)
 │   ├── test_adversarial.py           # Testes adversariais, negação, português, emojis UTF-8
 │   ├── test_cli.py                   # Testes de argumentos CLI e códigos de saída
 │   ├── test_client.py                # Testes de cliente e perguntas tipadas
@@ -119,7 +119,7 @@ jev-harness/
 ├── AGENTS.md                         # Ponto de entrada obrigatório para agentes de IA
 ├── LICENSE                           # Licença MIT
 └── scripts/
-    └── release.sh                    # Script mestre de release, check (109 testes) e sync
+    └── release.sh                    # Script mestre de release, check (122 testes) e sync
 ```
 
 ---

@@ -11,6 +11,8 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
+import tempfile
 import time
 from typing import Any, Dict, List, Optional
 
@@ -50,7 +52,7 @@ def _get_storage_path() -> Path:
         global_dir.mkdir(parents=True, exist_ok=True)
         return global_dir / "session.json"
     except Exception:
-        return Path("/tmp") / "jev_session_default.json"
+        return Path(tempfile.gettempdir()) / "jev_session_default.json"
 
 
 def load_session() -> SessionState:
@@ -90,7 +92,10 @@ def save_session(session: SessionState) -> None:
             "estimated_cost_saved_usd": session.estimated_cost_saved_usd,
             "last_updated": time.time(),
         }
-        p.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        # Atomic file write to avoid corrupted JSON on dirty process kill
+        temp_file = p.with_name(f"{p.name}.{os.getpid()}.tmp")
+        temp_file.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        temp_file.replace(p)
     except Exception:
         pass
 
@@ -141,17 +146,30 @@ def record_reasoning_effort_event(effort: str, provider: str = "openai") -> None
     save_session(session)
 
 
+def _normalize_snippet(text: str) -> str:
+    """Strips volatile dynamic memory addresses, timestamps, thread IDs, and line numbers."""
+    if not text:
+        return ""
+    t = re.sub(r"0x[0-9a-fA-F]+", "<HEX>", text)
+    t = re.sub(r"\b\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?\b", "<TIME>", t)
+    t = re.sub(r"\[Thread-\d+\]|\bthread '[^']+'\b", "<THREAD>", t)
+    t = re.sub(r":\d+:\d+|\bline \d+\b", ":<LINE>", t)
+    return " ".join(t.strip().split()[:20]).lower()
+
+
 def detect_repeated_failure(snippet: str, max_repeats: int = 2) -> bool:
-    """Returns True if the identical error snippet or proposed step has appeared 2 or more times recently."""
+    """Returns True if the normalized error snippet or proposed step has appeared 2 or more times recently."""
     if not snippet or len(snippet.strip()) < 10:
         return False
     session = load_session()
-    clean_target = " ".join(snippet.strip().split()[:20]).lower()
+    clean_target = _normalize_snippet(snippet)
+    if not clean_target:
+        return False
     matches = 0
     for h in session.history[-5:]:
-        h_err = " ".join(h.error_snippet.strip().split()[:20]).lower()
-        h_step = " ".join(h.step.strip().split()[:20]).lower()
-        if clean_target and (clean_target in h_err or clean_target in h_step):
+        h_err = _normalize_snippet(h.error_snippet)
+        h_step = _normalize_snippet(h.step)
+        if clean_target and (clean_target in h_err or clean_target in h_step or (len(h_err) > 15 and h_err in clean_target)):
             matches += 1
     return matches >= max_repeats
 
@@ -165,6 +183,49 @@ def record_step_attempt(step: str, error_snippet: str = "", diff_content: str = 
             step=step[:300],
             error_snippet=error_snippet[:300],
             diff_hash=diff_hash,
+            action_taken=action[:100],
+        )
+    )
+    if len(session.history) > 20:
+        session.history = session.history[-20:]
+    save_session(session)
+
+
+def record_triage_step(skip_llm: bool, category: str, error_snippet: str = "", action: str = "") -> None:
+    """Single-pass atomic telemetry and history update for test triage."""
+    session = load_session()
+    session.total_triage_calls += 1
+    if skip_llm:
+        session.skipped_llm_calls += 1
+        session.estimated_tokens_saved += 26200
+        session.estimated_cost_saved_usd += 0.31
+    session.history.append(
+        AttemptRecord(
+            timestamp=time.time(),
+            step="test-gate",
+            error_snippet=error_snippet[:300],
+            diff_hash="",
+            action_taken=action[:100],
+        )
+    )
+    if len(session.history) > 20:
+        session.history = session.history[-20:]
+    save_session(session)
+
+
+def record_abort_step(should_abort: bool, proposed_step: str, action: str = "") -> None:
+    """Single-pass atomic telemetry and history update for abort gate."""
+    session = load_session()
+    if should_abort:
+        session.abort_guards_triggered += 1
+        session.estimated_tokens_saved += 80000
+        session.estimated_cost_saved_usd += 1.20
+    session.history.append(
+        AttemptRecord(
+            timestamp=time.time(),
+            step=proposed_step[:300],
+            error_snippet="",
+            diff_hash="",
             action_taken=action[:100],
         )
     )

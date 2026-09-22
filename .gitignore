@@ -59,3 +59,4 @@ packages/*/dist-test/
 node_modules/
 target/
 packages/*/target/
+.wiki/

@@ -9,15 +9,16 @@ import {
   triageTestFailure,
   verifyStepCompletion,
 } from "./gates.js";
+import { runMcpServer } from "./mcp.js";
 
-function readInput(valOrPath?: string): string {
+function readInput(valOrPath?: string, allowStdin: boolean = true): string {
   if (valOrPath) {
     if (fs.existsSync(valOrPath) && fs.statSync(valOrPath).isFile()) {
       return fs.readFileSync(valOrPath, "utf-8");
     }
     return valOrPath;
   }
-  if (!process.stdin.isTTY) {
+  if (allowStdin && !process.stdin.isTTY) {
     return fs.readFileSync(0, "utf-8");
   }
   return "";
@@ -114,6 +115,7 @@ Commands:
   route --task <text>                    Select minimal sufficient model tier
   verify --criteria <c> --output <o>     Calibrate criteria verification
   reasoning-effort --context <text>      Dynamically modulate reasoning effort per-generation (Astra-Jev)
+  mcp                                    Run stdio MCP server for Cursor, Claude Desktop, Antigravity IDE
 
 Options:
   --mock                                 Force offline heuristic simulation
@@ -123,6 +125,11 @@ Options:
   --model <name>                         Target model name
   --session-context-tokens <num>         Active prompt tokens in session
 `);
+    return 0;
+  }
+
+  if (command === "mcp") {
+    await runMcpServer(client);
     return 0;
   }
 
@@ -193,11 +200,11 @@ Options:
         plan = args[cmdIdx + 1];
       }
     }
-    const history = histIdx !== -1 ? args[histIdx + 1] : "";
-    const cleanPlan = (plan ? readInput(plan) : "").trim();
+    const history = histIdx !== -1 ? readInput(args[histIdx + 1], false) : "";
+    const cleanPlan = readInput(plan, true).trim();
 
     if (!cleanPlan) {
-      console.error("Error: No plan provided. Pass --plan <text>.");
+      console.error("Error: No plan provided. Pass --plan <text> or pipe via stdin.");
       return 2;
     }
 
@@ -226,10 +233,10 @@ Options:
         task = args[cmdIdx + 1];
       }
     }
-    const cleanTask = (task ? readInput(task) : "").trim();
+    const cleanTask = readInput(task, true).trim();
 
     if (!cleanTask) {
-      console.error("Error: No task description provided. Pass --task <text>.");
+      console.error("Error: No task description provided. Pass --task <text> or pipe via stdin.");
       return 2;
     }
 
@@ -254,8 +261,8 @@ Options:
     const outIdx = args.findIndex((a) => a === "--output" || a === "-o");
     const criteria = critIdx !== -1 ? args[critIdx + 1] : undefined;
     const output = outIdx !== -1 ? args[outIdx + 1] : undefined;
-    const cleanCrit = (criteria ? readInput(criteria) : "").trim();
-    const cleanOut = (output ? readInput(output) : "").trim();
+    const cleanCrit = (criteria ? readInput(criteria, false) : "").trim();
+    const cleanOut = (output ? readInput(output, false) : "").trim();
 
     if (!cleanCrit || !cleanOut) {
       console.error("Error: Both --criteria and --output must be provided.");
