@@ -45,8 +45,8 @@ pub async fn triage_test_failure(
     let default_client = JevClient::default();
     let active_client = client.unwrap_or(&default_client);
 
-    let truncated_log = if raw_error_log.len() > 3000 {
-        safe_truncate_head_tail(raw_error_log, 1400, 1400)
+    let truncated_log = if raw_error_log.len() > 6000 {
+        safe_truncate_head_tail(raw_error_log, 2000, 4000)
     } else {
         raw_error_log.to_string()
     };
@@ -97,10 +97,10 @@ pub async fn triage_test_failure(
         Question::Score(ScoreQuestion {
             instructions: "Rate the severity of this defect on application stability".to_string(),
             criteria: vec![
-                "trivial_cleanup".to_string(),
-                "blocking_env".to_string(),
-                "feature_broken".to_string(),
-                "systemic_disaster".to_string(),
+                "trivial_env".to_string(),
+                "minor_syntax".to_string(),
+                "moderate_bug".to_string(),
+                "critical_systemic".to_string(),
             ],
         }),
     );
@@ -339,19 +339,19 @@ pub async fn verify_step_completion(
     let mut questions = HashMap::new();
 
     questions.insert(
-        "satisfied".to_string(),
+        "satisfaction".to_string(),
         Question::Noul(NoulQuestion {
-            instructions: "Does the output fully satisfy all required acceptance criteria without missing details?".to_string(),
+            instructions: "Does the produced output satisfy the acceptance criteria with concrete verifiable evidence?".to_string(),
         }),
     );
 
     questions.insert(
         "rigor".to_string(),
         Question::Score(ScoreQuestion {
-            instructions: "Score the completeness and rigor of verification evidence".to_string(),
+            instructions: "Rate how rigorously the criteria are verified by the evidence".to_string(),
             criteria: vec![
-                "unsupported_claim".to_string(),
-                "partial_evidence".to_string(),
+                "unverified".to_string(),
+                "partially_verified".to_string(),
                 "well_verified".to_string(),
                 "exhaustively_proven".to_string(),
             ],
@@ -360,11 +360,12 @@ pub async fn verify_step_completion(
 
     let resp = active_client.system_one(&state, questions).await?;
 
-    let sat_ans = resp.answers.get("satisfied").and_then(|a| a.as_noul());
+    let sat_ans = resp.answers.get("satisfaction").and_then(|a| a.as_noul());
     let rig_ans = resp.answers.get("rigor").and_then(|a| a.as_score());
 
     let sat_prob = sat_ans.map(|a| a.noul).unwrap_or(0.0);
     let rig_score = rig_ans.map(|a| a.score as f64).unwrap_or(2.0);
+    let confidence = rig_ans.map(|a| a.confidence).unwrap_or(0.8);
 
     let is_verified = sat_prob >= 0.80 && rig_score >= 2.5;
 
@@ -372,7 +373,7 @@ pub async fn verify_step_completion(
         is_verified,
         satisfaction_probability: sat_prob,
         rigor_score: rig_score,
-        confidence: sat_prob,
+        confidence,
         needs_rework: !is_verified,
         is_mock: resp.is_mock,
     })
@@ -391,21 +392,30 @@ pub fn build_provider_params(
         "gpt-5.5",
         "gpt-4o",
         "gpt-4o-mini",
+        "gpt-4-turbo",
+        "gpt-4",
         "gemini-3.8-live",
         "gemini-2.5-flash",
         "gemini-2.0-flash",
         "gemini-1.5-flash",
         "claude-3-5-haiku",
+        "claude-3-haiku",
+        "claude-3-5-sonnet",
+        "deepseek-chat",
         "qwen-3.8-flash-standard",
         "qwen-2.5-coder",
+        "qwen-2.5-72b",
         "llama-3.3",
         "llama-3.1",
+        "codestral",
+        "mistral",
     ];
     if direct_models.iter().any(|dm| norm_model.contains(dm)) {
+        let display_model = model.unwrap_or("unknown");
         return (
             serde_json::json!({}),
             false,
-            format!("Model '{:?}' is a direct single-pass model without internal reasoning CoT. Do NOT inject reasoning parameters.", model),
+            format!("Model '{}' is a direct single-pass model without internal reasoning CoT. Do NOT inject reasoning parameters.", display_model),
             "Cache unaffected. Model runs in direct generation mode.".to_string(),
         );
     }
@@ -579,12 +589,12 @@ pub async fn modulate_reasoning_effort_with_tokens(
     );
 
     let clean_context = if context.len() > 4000 {
-        &context[..4000]
+        safe_truncate_head_tail(context, 1500, 2500)
     } else {
-        context
+        context.to_string()
     };
 
-    let resp = active_client.system_one(clean_context, questions).await?;
+    let resp = active_client.system_one(&clean_context, questions).await?;
 
     let effort_ans = resp.answers.get("effort").and_then(|a| a.as_choice());
     let comp_ans = resp.answers.get("complexity").and_then(|a| a.as_score());

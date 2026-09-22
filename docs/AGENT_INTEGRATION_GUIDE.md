@@ -2,7 +2,7 @@
 
 **[ 🇬🇧 English ](AGENT_INTEGRATION_GUIDE.md) | [ 🇧🇷 Português ](AGENT_INTEGRATION_GUIDE.pt-BR.md)**
 
-> **Turnkey implementation playbook for autonomous AI coding agents (Cursor, Claude Code, Antigravity, OpenCode, Windsurf, Zed, Devin, Aider) and engineers equipping agentic workflows in ANY project.**
+> **Turnkey implementation playbook for autonomous AI coding agents (Claude Code, OpenAI Codex, Pi, Oh My Pi, CommandCode, Cursor, Antigravity, OpenCode, Windsurf, Zed, Devin, Aider) and engineers equipping agentic workflows in ANY project.**
 
 ---
 
@@ -33,17 +33,38 @@ Choose the mode that fits your agent's execution environment:
              ┌───────────────────────────────┼───────────────────────────────┐
              ▼                               ▼                               ▼
     [Mode 1: MCP Server]           [Mode 2: Shell / CLI Pipe]       [Mode 3: Native SDK]
-   Cursor, Claude Desktop,            pytest | jev-harness           Python / TS / Rust
-    Antigravity, Windsurf            npm test | npx ...              Custom Agent Loops
+   Claude Code, Cursor,             Pi, Oh My Pi, Codex,             Python / TS / Rust
+  CommandCode, Antigravity           pytest | jev-harness            Custom Agent Loops
 ```
 
 ---
 
 ### Mode 1: Universal MCP Server (Zero Code, Highest Capability)
 
-If your agent runs inside an MCP-compatible environment (**Cursor, Claude Desktop, Antigravity IDE, Windsurf, Zed, OpenCode**), expose Jev tools over standard I/O in 30 seconds.
+If your agent runs inside an MCP-compatible environment (**Claude Code, CommandCode, Cursor, Claude Desktop, Antigravity IDE, Windsurf, Zed, OpenCode**), expose Jev tools over standard I/O in 30 seconds.
 
 #### 1. Configuration Snippet
+
+**For Claude Code (`claude` CLI by Anthropic):**
+```bash
+# Register Jev Harness MCP directly into Claude Code
+claude mcp add jev-harness -- npx -y @ismaelsoilet/jev-harness mcp
+
+# Or using Python:
+claude mcp add jev-harness -- jev-mcp
+```
+
+**For CommandCode (`.commandcode/config.json`):**
+```json
+{
+  "mcpServers": {
+    "jev-harness": {
+      "command": "npx",
+      "args": ["-y", "@ismaelsoilet/jev-harness", "mcp"]
+    }
+  }
+}
+```
 
 **For Cursor (`.cursor/mcp.json` in project root or `~/.cursor/mcp.json` globally):**
 ```json
@@ -250,9 +271,145 @@ To make your agent completely autonomous and token-frugal, inject these 3 operat
 
 ---
 
+## 🔌 Detailed Harness-by-Harness Recipes
+
+### 1. Claude Code (`claude` CLI by Anthropic)
+Claude Code is Anthropic's agentic command-line tool. It connects directly to local MCP servers and executes bash commands autonomously.
+
+#### Fast Registration:
+```bash
+# Register via npm/npx
+claude mcp add jev-harness -- npx -y @ismaelsoilet/jev-harness mcp
+
+# Or register via Python CLI
+claude mcp add jev-harness -- jev-mcp
+```
+
+#### How it works inside Claude Code:
+1. When Claude Code executes a test suite or compiler command via its bash tool and it fails, Claude Code calls `jev_triage_test_failure`.
+2. If `skip_llm == true`, Claude Code immediately executes `triage.action_recommendation` (e.g. `pip install pytest-mock` or `npm install -D vitest`) **without generating a single frontier reasoning token**.
+3. For repetitive failures across multi-turn refactorings, Claude Code invokes `jev_should_abort_trajectory` before hallucinating a 3rd attempt.
+
+---
+
+### 2. OpenAI Codex / Astra-Codex
+OpenAI Codex workflows (CLI runners, autonomous scripts, and Astra-Codex implementations) operate on fast multi-turn tool loops.
+
+#### Per-Generation Reasoning Modulation (Astra-Jev):
+As highlighted by Vechen ([@miu21590](https://x.com/miu21590)), frontier models like GPT-6 Astra burn excessive tokens and time when mechanical tasks run with high reasoning effort.
+```bash
+# In your Codex pre-generation step:
+jev-harness reasoning-effort \
+  --context "Inspect git diff and identify modified imports" \
+  --target-provider openai \
+  --model gpt-6-astra \
+  --json
+```
+
+#### Zero-Cache-Invalidation Integration:
+Inject the output parameter directly into the root API payload:
+```python
+effort = modulate_reasoning_effort(task_step, provider="openai", model="gpt-6-astra")
+
+# Root-level payload injection preserves 100% of the GPU prefix KV-cache across 50+ turns:
+response = openai_client.chat.completions.create(
+    model="gpt-6-astra",
+    messages=session_history,     # NEVER mutate message prefix!
+    **effort.provider_params       # Injects reasoning_effort: "low" | "medium" | "high"
+)
+```
+
+---
+
+### 3. Pi & Oh My Pi (`pi` / `oh-my-pi`)
+Mario Zechner's minimalist terminal agent (`pi`) and community shell harnesses like `oh-my-pi` are designed for lightning-fast, Unix-native execution.
+
+#### Pipe-First Execution with Semantic Exit Codes:
+In Pi, tests and verification scripts pipe directly into `jev-harness test-gate`:
+```bash
+# Terminal execution inside Pi:
+pytest 2>&1 | jev-harness test-gate
+npm test 2>&1 | npx @ismaelsoilet/jev-harness test-gate
+cargo test 2>&1 | jev test-gate
+```
+
+#### Autonomous Branching Logic:
+- **Exit Code `0`** (`skip_llm = true`): Jev resolved the issue to a missing dependency, flaky test, or environment issue. Pi automatically executes the deterministic remedy without sending logs to the LLM.
+- **Exit Code `1`** (`skip_llm = false`): Deep logic error or doom loop detected. Pi sends the filtered, high-signal failure log to the model.
+
+#### Shell Hook for `oh-my-pi` (`~/.config/oh-my-pi/plugins/jev.sh`):
+```bash
+# Wrap command execution in Oh My Pi
+jev_guard() {
+  local cmd="$*"
+  eval "$cmd" 2>&1 | jev-harness test-gate
+  return ${PIPESTATUS[1]}
+}
+```
+
+---
+
+### 4. CommandCode
+CommandCode is a terminal-centric autonomous coding assistant. It supports MCP servers and pre-command execution hooks.
+
+#### Configuration (`.commandcode/config.json`):
+```json
+{
+  "mcpServers": {
+    "jev-harness": {
+      "command": "npx",
+      "args": ["-y", "@ismaelsoilet/jev-harness", "mcp"]
+    }
+  }
+}
+```
+
+#### CommandCode Rule (`COMMANDCODE.md` in repository root):
+```markdown
+# CommandCode Autonomous Rules
+- Always pipe build/test execution output through `jev-harness test-gate`.
+- If the exit code is 0 with skip_llm=true, run the action recommendation immediately.
+- Run `jev-harness abort-check` before retrying any failed command a second time.
+```
+
+---
+
 ## 📋 Ready-to-Paste Agent Rules Snippets
 
 Copy the appropriate snippet directly into your project's agent configuration file:
+
+### For Claude Code (`CLAUDE.md`):
+```markdown
+# Jev Harness Protocol for Claude Code
+- Triage test errors using `jev-harness test-gate --log <file>` or MCP tool `jev_triage_test_failure`.
+- When `skip_llm` is true, execute the deterministic command (e.g. missing package install) immediately. Do not deliberate.
+- Prevent doom loops by checking proposed recovery steps with `jev-harness abort-check`.
+- For mechanical bash operations or file inspections, use `jev_modulate_reasoning_effort` with effort="low".
+```
+
+### For OpenAI Codex / Astra-Codex (`CODEX.md` or `AGENTS.md`):
+```markdown
+# Astra-Jev Dynamic Reasoning Protocol
+- Modulate reasoning effort per turn: set `reasoning_effort="low"` for mechanical inspection and `"high"` for architecture.
+- Keep message prefixes clean: pass provider dialect parameters at root API level to preserve 100% prompt cache.
+- Filter test failures with `jev-harness test-gate` before passing back to GPT-6 Astra.
+```
+
+### For Pi & Oh My Pi (`PI.md` or `~/.pi_rules`):
+```markdown
+# Pi / Oh My Pi Frugal Rules
+- Wrap all test runs: `npm test 2>&1 | npx @ismaelsoilet/jev-harness test-gate` (or `pytest 2>&1 | jev-harness test-gate`).
+- If exit code is 0, auto-apply the recommended shell command.
+- If exit code is 1, summarize failure concisely for the model.
+```
+
+### For CommandCode (`COMMANDCODE.md`):
+```markdown
+# CommandCode Safety & Token Gate
+- Call `jev_triage_test_failure` on non-zero exit codes.
+- Adhere to `skip_llm` verdicts to preserve quota.
+- Abort repetitive recovery loops when `jev_should_abort_trajectory` returns true.
+```
 
 ### For Cursor (`.cursorrules` or `.cursor/rules/jev.mdc`):
 ```markdown
@@ -263,14 +420,6 @@ Before spending tokens on test or compilation failures:
 2. If `skip_llm` is true, immediately execute the recommended action without querying the model.
 3. If a task fails across 2 consecutive attempts, invoke `jev_should_abort_trajectory` before proposing a third attempt.
 4. If `should_abort` is true, halt execution and report the blocked trajectory to the user.
-```
-
-### For Claude Code / Claude Desktop (`CLAUDE.md`):
-```markdown
-# Agent Optimization & Safety Protocol
-- Triage test errors using `jev-harness test-gate --log <file>` or MCP tool `jev_triage_test_failure`.
-- When `skip_llm` is true, execute the deterministic command (e.g. missing package install). Do not deliberate.
-- Prevent doom loops by checking proposed recovery steps with `jev-harness abort-check`.
 ```
 
 ### For Google Antigravity IDE (`GEMINI.md` or `.agents/rules/`):

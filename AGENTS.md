@@ -2,7 +2,7 @@
 
 **[ 🇬🇧 English ](AGENTS.md) | [ 🇧🇷 Português ](AGENTS.pt-BR.md)**
 
-> **ATTENTION:** ANY autonomous artificial intelligence agent (Cursor, Antigravity IDE, Claude Code, OpenCode, Windsurf, Zed, Devin, Aider) opening this repository **MUST READ THIS DOCUMENT** before planning, modifying code, or executing changes.
+> **ATTENTION:** ANY autonomous artificial intelligence agent (Claude Code, OpenAI Codex / Astra-Codex, Pi, Oh My Pi, CommandCode, Cursor, Antigravity IDE, OpenCode, Windsurf, Zed, Devin, Aider) opening this repository **MUST READ THIS DOCUMENT** before planning, modifying code, or executing changes.
 > 
 > *Project Version: v0.1.6 — Synchronized across all 4 official registries.*
 

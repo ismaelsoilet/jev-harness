@@ -344,6 +344,18 @@ impl JevClient {
                             score += 3;
                         }
 
+                        let has_deadlock_or_loop = [
+                            "infinite loop",
+                            "loop infinito",
+                            "deadlock",
+                            "deadlock!",
+                            "goroutines are asleep",
+                            "mutex",
+                            "thread hung",
+                        ]
+                        .iter()
+                        .any(|k| state_lower.contains(k));
+
                         // Domain heuristics
                         if opt == "deep_logic" {
                             let triggers = [
@@ -354,6 +366,9 @@ impl JevClient {
                                 "panic",
                                 "deadlock",
                                 "goroutines are asleep",
+                                "infinite loop",
+                                "loop infinito",
+                                "mutex",
                                 "segmentation fault",
                                 "nullpointerexception",
                                 "nil pointer dereference",
@@ -366,7 +381,7 @@ impl JevClient {
                             if triggers.iter().any(|t| state_lower.contains(t)) {
                                 score += 8;
                             }
-                            if is_explicit_assertion {
+                            if is_explicit_assertion || has_deadlock_or_loop {
                                 score += 18;
                             }
                         } else if opt == "env_missing" {
@@ -391,7 +406,7 @@ impl JevClient {
                             if triggers.iter().any(|t| state_lower.contains(t)) {
                                 score += if is_explicit_assertion { 0 } else { 7 };
                             }
-                        } else if opt == "flaky_transient" {
+                        } else if opt == "flaky_transient" && !has_deadlock_or_loop {
                             let triggers = [
                                 "connectionreset",
                                 "timeout",
@@ -717,7 +732,18 @@ impl JevClient {
                             prob = 0.15;
                         }
                     } else if inst.contains("deterministically") || inst.contains("skip") {
-                        if is_explicit_assertion {
+                        let has_deadlock_or_loop = [
+                            "infinite loop",
+                            "loop infinito",
+                            "deadlock",
+                            "deadlock!",
+                            "goroutines are asleep",
+                            "mutex",
+                        ]
+                        .iter()
+                        .any(|k| state_lower.contains(k));
+
+                        if is_explicit_assertion || has_deadlock_or_loop {
                             prob = 0.05;
                         } else if [
                             "modulenotfounderror",

@@ -323,9 +323,46 @@ O impacto da modulação depende fundamentalmente da arquitetura do provedor:
 
 ## 🤖 Integrações Universais com Agentes e IDEs
 
-Para um guia passo a passo completo, veja o [**Guia Universal de Integração para Agentes**](docs/AGENT_INTEGRATION_GUIDE.pt-BR.md).
+> 📖 **Procurando configuração pronta para o seu projeto?** Leia o [**Guia Universal de Integração para Agentes**](docs/AGENT_INTEGRATION_GUIDE.pt-BR.md) com modelos de copiar e colar para Claude Code, Codex, Pi, Oh My Pi, CommandCode, Cursor e CI/CD.
 
-### 1. IDE Cursor (`.cursor/mcp.json`)
+### 1. Claude Code (CLI `claude` da Anthropic)
+Conecte o Jev ao Claude Code em 5 segundos via MCP nativo:
+```bash
+# Registre o MCP do Jev Harness no Claude Code
+claude mcp add jev-harness -- npx -y @ismaelsoilet/jev-harness mcp
+
+# Ou usando Python:
+claude mcp add jev-harness -- jev-mcp
+```
+Adicione ao arquivo `CLAUDE.md` do seu projeto:
+```markdown
+## Governança de Tokens com Jev Harness
+- Antes de consultar LLMs em falhas de teste ou build, execute `jev_triage_test_failure`. Se `skip_llm=true`, execute a correção determinística diretamente no shell.
+- Se uma tarefa falhar 2 vezes seguidas sem progresso, execute `jev_should_abort_trajectory` para quebrar loops circulares.
+- Para comandos mecânicos ou busca de arquivos, chame `jev_modulate_reasoning_effort` com effort="low".
+```
+
+### 2. OpenAI Codex / Astra-Codex
+Module dinamicamente o esforço de raciocínio do GPT-6 Astra a cada geração dentro do Codex sem invalidar o cache de prefixo (como destacado no X):
+```bash
+# Em scripts de automação do Codex ou pre-hooks:
+jev-harness reasoning-effort \
+  --context "$TASK_STEP_DESCRIPTION" \
+  --target-provider openai --json
+```
+Injete o parâmetro `reasoning_effort: "low" | "medium" | "high"` no nível raiz do payload da API. Zero mutação no histórico de mensagens = 100% do cache de prefixo preservado ao longo de 50+ turnos.
+
+### 3. Pi & Oh My Pi (`pi` / `oh-my-pi`)
+Equipe o agente de terminal minimalista de Mario Zechner (`pi`) e fluxos do `oh-my-pi`:
+```bash
+# No seu prompt de terminal ou tarefa do Pi:
+npm test 2>&1 | npx @ismaelsoilet/jev-harness test-gate
+pytest 2>&1 | jev-harness test-gate
+```
+Se o código de saída for `0` (`skip_llm=true`), o Pi aplica a instalação determinística do pacote ou comando de retry sem chamar modelos caros.
+
+### 4. CommandCode
+No arquivo `.commandcode/config.json` ou pré-gatilhos de CLI:
 ```json
 {
   "mcpServers": {
@@ -337,7 +374,8 @@ Para um guia passo a passo completo, veja o [**Guia Universal de Integração pa
 }
 ```
 
-### 2. Claude Desktop (`claude_desktop_config.json`)
+### 5. IDE Cursor (`.cursor/mcp.json`)
+Adicione ao `.cursor/mcp.json` (ou execute `jev-harness init --cursor`):
 ```json
 {
   "mcpServers": {
@@ -349,18 +387,48 @@ Para um guia passo a passo completo, veja o [**Guia Universal de Integração pa
 }
 ```
 
-### 3. IDE Google Antigravity (`mcp_config.json` e `hooks.json`)
+### 6. Claude Desktop (`claude_desktop_config.json`)
+```json
+{
+  "mcpServers": {
+    "jev-harness": {
+      "command": "npx",
+      "args": ["-y", "@ismaelsoilet/jev-harness", "mcp"]
+    }
+  }
+}
+```
+
+### 7. IDE Google Antigravity (`mcp_config.json` e `hooks.json`)
 Conecte como servidor MCP:
 ```json
 {
   "mcpServers": {
     "jev-harness": {
-      "command": "npx",
-      "args": ["-y", "@ismaelsoilet/jev-harness", "mcp"]
+      "command": "jev-mcp",
+      "args": []
     }
   }
 }
 ```
+Ou vincule diretamente ao ciclo de vida em `~/.gemini/config/hooks.json`:
+```json
+{
+  "jev-guard": {
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "echo '{\"injectSteps\": [{\"ephemeralMessage\": \"[JEV ACTIVE] Faça a triagem de erros com jev-harness test-gate antes de chamar LLMs. Se skip_llm=true, resolva deterministicamente.\"}]}'"
+      }
+    ]
+  }
+}
+```
+
+### 8. OpenCode, Windsurf & Zed
+- **OpenCode:** Adicione o gate de triagem do Jev ao `.opencode/config.json`.
+- **Windsurf:** Adicione ao `~/.codeium/windsurf/mcp_config.json`.
+- **Zed:** Adicione ao `~/.config/zed/settings.json` em `context_servers`.
 
 ---
 

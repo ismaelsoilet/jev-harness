@@ -17,8 +17,8 @@ export async function triageTestFailure(
   const activeClient = client || new JevClient();
 
   let cleanLog = failureLog.trim();
-  if (cleanLog.length > 8000) {
-    cleanLog = cleanLog.slice(0, 2500) + "\n...[truncated]...\n" + cleanLog.slice(-5000);
+  if (cleanLog.length > 6000) {
+    cleanLog = cleanLog.slice(0, 1500) + "\n...[truncated]...\n" + cleanLog.slice(-4000);
   }
 
   const questions = {
@@ -248,13 +248,21 @@ export function buildProviderParams(
     "gpt-5.5",
     "gpt-4o",
     "gpt-4o-mini",
+    "gpt-4-turbo",
+    "gpt-4",
     "gemini-3.8-live",
     "gemini-2.5-flash",
     "gemini-2.0-flash",
     "gemini-1.5-flash",
+    "claude-3-5-sonnet",
     "claude-3-5-haiku",
+    "claude-3-haiku",
+    "deepseek-chat",
     "qwen-3.8-flash-standard",
     "qwen-2.5-coder",
+    "qwen-2.5-72b",
+    "codestral",
+    "mistral",
     "llama-3.3",
     "llama-3.1",
   ];
@@ -399,7 +407,11 @@ export async function modulateReasoningEffort(
     },
   };
 
-  const cleanContext = context.trim().slice(0, 4000);
+  const trimmed = context.trim();
+  const cleanContext =
+    trimmed.length > 4000
+      ? trimmed.slice(0, 1500) + "\n... [context truncated] ...\n" + trimmed.slice(-2500)
+      : trimmed;
   const resp = await activeClient.systemOne(cleanContext, questions);
 
   const effortAns = resp.answers.effort as ChoiceAnswer | undefined;

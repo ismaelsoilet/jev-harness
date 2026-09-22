@@ -229,6 +229,7 @@ export class JevClient {
 
     const isExplicitAssertion = /(?:assertionerror|assert\b|expect\(.*?\)\.to|assert_eq!|failures?:|expected:.*received:|^fail\s+|^failed\s+test)/i.test(stateLower);
     const hasHeavyKeywords = /(?:kernel|distributed|architecture|refactor|concurrency|deadlock|multi-file|consensus)/i.test(stateLower);
+    const hasDeadlockOrLoop = /(?:infinite\s+loop|loop\s+infinito|deadlock|dead\s+lock|livelock|hung|mutex|spin\s*lock)/i.test(stateLower);
     const isNegatedAbort = /\b(?:not|do\s+not|don't|não|nao|never|sem|evitar|avoid)\s+(?:\w+\s+){0,3}(?:abort|abortar|stop|parar|falhar|fail|deadlock|circular|dead\s*end)/i.test(stateLower);
 
     for (const [qid, q] of Object.entries(questions)) {
@@ -250,14 +251,15 @@ export class JevClient {
 
           if (
             opt === "deep_logic" &&
+            (hasDeadlockOrLoop ||
             [
               "assertionerror", "assert ", "panicked at", "panic:", "panic",
               "deadlock", "goroutines are asleep", "segmentation fault",
               "nullpointerexception", "nil pointer dereference", "index out of bounds",
               "falha de asserção", "asserção", "erro de lógica", "expect("
-            ].some((k) => stateLower.includes(k))
+            ].some((k) => stateLower.includes(k)))
           ) {
-            matchScore += isExplicitAssertion ? 18 : 8;
+            matchScore += (isExplicitAssertion || hasDeadlockOrLoop) ? 18 : 8;
           } else if (
             opt === "env_missing" &&
             [
@@ -276,7 +278,7 @@ export class JevClient {
               "tempo limite", "tempo limite esgotado", "conexão recusada"
             ].some((k) => stateLower.includes(k))
           ) {
-            matchScore += isExplicitAssertion ? 0 : 7;
+            matchScore += (isExplicitAssertion || hasDeadlockOrLoop) ? 0 : 7;
           } else if (
             opt === "syntax_trivial" &&
             [
@@ -387,7 +389,7 @@ export class JevClient {
             prob = 0.85;
           }
         } else if (inst.includes("deterministically") || inst.includes("skip")) {
-          if (isExplicitAssertion) {
+          if (isExplicitAssertion || hasDeadlockOrLoop) {
             prob = 0.05;
           } else if (
             ["modulenotfounderror", "no module named", "pip install", "npm install", "cannot find module"].some((w) => stateLower.includes(w))
@@ -409,7 +411,8 @@ export class JevClient {
         }
         if (
           ["modulenotfounderror", "no module named", "pip install", "npm install", "cannot find module"].some((w) => stateLower.includes(w)) &&
-          !isExplicitAssertion
+          !isExplicitAssertion &&
+          !hasDeadlockOrLoop
         ) {
           if (inst.includes("deterministically") || inst.includes("skip")) {
             prob = 0.95;

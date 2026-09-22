@@ -2,7 +2,7 @@
 
 **[ 🇬🇧 English ](AGENT_INTEGRATION_GUIDE.md) | [ 🇧🇷 Português ](AGENT_INTEGRATION_GUIDE.pt-BR.md)**
 
-> **Manual de implementação pronta para uso (turnkey) para agentes autônomos de codificação com IA (Cursor, Claude Code, Antigravity, OpenCode, Windsurf, Zed, Devin, Aider) e engenheiros equipando fluxos de agentes em QUALQUER projeto.**
+> **Manual de implementação pronta para uso (turnkey) para agentes autônomos de codificação com IA (Claude Code, OpenAI Codex, Pi, Oh My Pi, CommandCode, Cursor, Antigravity, OpenCode, Windsurf, Zed, Devin, Aider) e engenheiros equipando fluxos de agentes em QUALQUER projeto.**
 
 ---
 
@@ -33,17 +33,38 @@ Escolha o modo mais adequado para o ambiente de execução do seu agente:
              ┌───────────────────────────────┼───────────────────────────────┐
              ▼                               ▼                               ▼
      [Modo 1: Servidor MCP]         [Modo 2: Pipe Shell / CLI]      [Modo 3: SDK Nativo]
-   Cursor, Claude Desktop,            pytest | jev-harness           Python / TS / Rust
-    Antigravity, Windsurf            npm test | npx ...              Loops Customizados
+    Claude Code, Cursor,             Pi, Oh My Pi, Codex,            Python / TS / Rust
+   CommandCode, Antigravity           pytest | jev-harness           Loops Customizados
 ```
 
 ---
 
 ### Modo 1: Servidor MCP Universal (Zero Código, Máxima Capacidade)
 
-Se o seu agente roda em um ambiente compatível com MCP (**Cursor, Claude Desktop, Antigravity IDE, Windsurf, Zed, OpenCode**), exponha as ferramentas do Jev via entrada/saída padrão (stdio) em 30 segundos.
+Se o seu agente roda em um ambiente compatível com MCP (**Claude Code, CommandCode, Cursor, Claude Desktop, Antigravity IDE, Windsurf, Zed, OpenCode**), exponha as ferramentas do Jev via entrada/saída padrão (stdio) em 30 segundos.
 
 #### 1. Configuração Rápida
+
+**Para o Claude Code (`claude` CLI da Anthropic):**
+```bash
+# Registre o MCP do Jev Harness diretamente no Claude Code
+claude mcp add jev-harness -- npx -y @ismaelsoilet/jev-harness mcp
+
+# Ou via Python:
+claude mcp add jev-harness -- jev-mcp
+```
+
+**Para o CommandCode (`.commandcode/config.json`):**
+```json
+{
+  "mcpServers": {
+    "jev-harness": {
+      "command": "npx",
+      "args": ["-y", "@ismaelsoilet/jev-harness", "mcp"]
+    }
+  }
+}
+```
 
 **Para o Cursor (`.cursor/mcp.json` na raiz do projeto ou `~/.cursor/mcp.json` global):**
 ```json
@@ -250,9 +271,145 @@ Para tornar seu agente completamente autônomo e econômico, injete estas 3 regr
 
 ---
 
+## 🔌 Receitas Detalhadas por Harness de Agente
+
+### 1. Claude Code (`claude` CLI da Anthropic)
+O Claude Code é a ferramenta agentic de linha de comando oficial da Anthropic. Ele conecta diretamente a servidores MCP locais e executa comandos bash de forma autônoma.
+
+#### Registro Rápido:
+```bash
+# Registre via npm/npx
+claude mcp add jev-harness -- npx -y @ismaelsoilet/jev-harness mcp
+
+# Ou via Python CLI
+claude mcp add jev-harness -- jev-mcp
+```
+
+#### Como funciona dentro do Claude Code:
+1. Quando o Claude Code executa uma suíte de testes ou comando de compilação via bash e ele falha, o Claude Code chama a ferramenta MCP `jev_triage_test_failure`.
+2. Se `skip_llm == true`, o Claude Code imediatamente executa `triage.action_recommendation` (ex: `pip install pytest-mock` ou `npm install -D vitest`) **sem gerar um único token de raciocínio de fronteira**.
+3. Para falhas repetitivas em refatorações multi-turnos, o Claude Code invoca `jev_should_abort_trajectory` antes de insistir em uma 3ª tentativa fracassada.
+
+---
+
+### 2. OpenAI Codex / Astra-Codex
+Fluxos com OpenAI Codex (executores CLI, scripts autônomos e implementações do Astra-Codex) operam em loops rápidos de ferramentas multi-turnos.
+
+#### Modulação de Raciocínio por Geração (Astra-Jev):
+Conforme demonstrado por Vechen ([@miu21590](https://x.com/miu21590)), modelos de fronteira como o GPT-6 Astra queimam tempo e dólares excessivos quando tarefas puramente mecânicas rodam em esforço máximo de raciocínio.
+```bash
+# No passo anterior à geração do seu Codex:
+jev-harness reasoning-effort \
+  --context "Inspecionar diff do git e identificar imports modificados" \
+  --target-provider openai \
+  --model gpt-6-astra \
+  --json
+```
+
+#### Integração com Zero Invalidação de Cache (KV Cache Preservado):
+Injete o parâmetro resultante diretamente no payload raiz da API da OpenAI:
+```python
+effort = modulate_reasoning_effort(task_step, provider="openai", model="gpt-6-astra")
+
+# A injeção na raiz do payload preserva 100% do prefixo do KV-cache na GPU por mais de 50 turnos:
+response = openai_client.chat.completions.create(
+    model="gpt-6-astra",
+    messages=session_history,     # NUNCA altere o prefixo das mensagens!
+    **effort.provider_params       # Injeta reasoning_effort: "low" | "medium" | "high"
+)
+```
+
+---
+
+### 3. Pi & Oh My Pi (`pi` / `oh-my-pi`)
+O agente minimalista de terminal de Mario Zechner (`pi`) e harnesses comunitários como `oh-my-pi` foram desenhados para velocidade máxima e composição Unix nativa.
+
+#### Execução via Pipes com Códigos de Saída Semânticos:
+No Pi, comandos de teste e verificação são encadeados diretamente no `jev-harness test-gate`:
+```bash
+# Execução no terminal pelo Pi:
+pytest 2>&1 | jev-harness test-gate
+npm test 2>&1 | npx @ismaelsoilet/jev-harness test-gate
+cargo test 2>&1 | jev test-gate
+```
+
+#### Lógica de Bifurcação Autônoma:
+- **Código de Saída `0`** (`skip_llm = true`): O Jev identificou que o erro é uma dependência ausente, teste instável ou erro de ambiente. O Pi executa o comando determinístico automaticamente sem mandar o log para o LLM.
+- **Código de Saída `1`** (`skip_llm = false`): Erro lógico profundo ou loop circular detectado. O Pi repassa o log filtrado de alto sinal para o modelo.
+
+#### Hook de Shell para `oh-my-pi` (`~/.config/oh-my-pi/plugins/jev.sh`):
+```bash
+# Envolva comandos no Oh My Pi
+jev_guard() {
+  local cmd="$*"
+  eval "$cmd" 2>&1 | jev-harness test-gate
+  return ${PIPESTATUS[1]}
+}
+```
+
+---
+
+### 4. CommandCode
+O CommandCode é um assistente autônomo de terminal focado em linha de comando. Ele suporta servidores MCP e hooks pré-comando.
+
+#### Configuração (`.commandcode/config.json`):
+```json
+{
+  "mcpServers": {
+    "jev-harness": {
+      "command": "npx",
+      "args": ["-y", "@ismaelsoilet/jev-harness", "mcp"]
+    }
+  }
+}
+```
+
+#### Regras para CommandCode (`COMMANDCODE.md` na raiz do repositório):
+```markdown
+# Regras Autônomas para CommandCode
+- Sempre passe saídas de build/testes por `jev-harness test-gate`.
+- Se o código de saída for 0 com skip_llm=true, execute a recomendação de ação imediatamente.
+- Execute `jev-harness abort-check` antes de tentar novamente qualquer comando que falhou uma vez.
+```
+
+---
+
 ## 📋 Snippets de Regras Prontos para Copiar e Colar
 
 Copie o snippet adequado diretamente no arquivo de configuração do seu agente no projeto:
+
+### Para o Claude Code (`CLAUDE.md`):
+```markdown
+# Protocolo Jev Harness para Claude Code
+- Faça a triagem de erros de testes com `jev-harness test-gate --log <arquivo>` ou use a ferramenta MCP `jev_triage_test_failure`.
+- Quando `skip_llm` for true, execute o comando determinístico (ex: instalação de pacote) imediatamente. Não delibere.
+- Previna loops circulares checando passos de recuperação com `jev-harness abort-check`.
+- Para comandos mecânicos no terminal ou leitura de arquivos, use `jev_modulate_reasoning_effort` com effort="low".
+```
+
+### Para o OpenAI Codex / Astra-Codex (`CODEX.md` ou `AGENTS.md`):
+```markdown
+# Protocolo de Raciocínio Dinâmico Astra-Jev
+- Module o esforço de raciocínio por geração: use `reasoning_effort="low"` para inspeções mecânicas e `"high"` para arquitetura.
+- Mantenha o prefixo das mensagens intacto: passe parâmetros no payload raiz da API para preservar 100% do prompt cache.
+- Filtre falhas de compilação com `jev-harness test-gate` antes de reenviar para o GPT-6 Astra.
+```
+
+### Para o Pi & Oh My Pi (`PI.md` ou `~/.pi_rules`):
+```markdown
+# Regras Econômicas para Pi / Oh My Pi
+- Encadeie execuções de testes: `npm test 2>&1 | npx @ismaelsoilet/jev-harness test-gate` (ou `pytest 2>&1 | jev-harness test-gate`).
+- Se o código de saída for 0, auto-aplique o comando recomendado.
+- Se o código de saída for 1, resuma a falha com alto sinal para o modelo.
+```
+
+### Para o CommandCode (`COMMANDCODE.md`):
+```markdown
+# Salvaguardas e Gate de Tokens no CommandCode
+- Chame `jev_triage_test_failure` em comandos com código de saída diferente de zero.
+- Siga estritamente o veredito `skip_llm` para preservar cotas de API.
+- Aborte loops circulares quando `jev_should_abort_trajectory` retornar true.
+```
 
 ### Para o Cursor (`.cursorrules` ou `.cursor/rules/jev.mdc`):
 ```markdown
@@ -265,15 +422,7 @@ Antes de gastar tokens com falhas de compilação ou testes:
 4. Se `should_abort` for true, interrompa a execução e relate o bloqueio ao usuário.
 ```
 
-### Para Claude Code / Claude Desktop (`CLAUDE.md`):
-```markdown
-# Protocolo de Otimização e Segurança do Agente
-- Faça a triagem de erros de testes com `jev-harness test-gate --log <arquivo>` ou ferramenta MCP `jev_triage_test_failure`.
-- Quando `skip_llm` for true, execute o comando determinístico (ex: instalação de pacote). Não delibere.
-- Previna loops circulares checando passos de recuperação com `jev-harness abort-check`.
-```
-
-### Para Google Antigravity IDE (`GEMINI.md` ou `.agents/rules/`):
+### Para a IDE Google Antigravity (`GEMINI.md` ou `.agents/rules/`):
 ```markdown
 # Economia de Tokens & Salvaguardas de Decisão
 - Sempre filtre erros de compilação e teste com `jev-harness test-gate`.

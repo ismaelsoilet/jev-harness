@@ -432,15 +432,18 @@ class JevClient:
                     match_score = len(common)
                     if opt in state_lower:
                         match_score += 3
+                    has_deadlock_or_loop = any(k in state_lower for k in [
+                        "infinite loop", "loop infinito", "deadlock", "deadlock!", "goroutines are asleep", "mutex", "thread hung"
+                    ])
                     if opt == "deep_logic":
                         if any(k in state_lower for k in [
                             "assertionerror", "assert ", "panicked at", "panic:", "panic",
-                            "deadlock", "goroutines are asleep", "segmentation fault",
+                            "deadlock", "goroutines are asleep", "infinite loop", "loop infinito", "mutex", "segmentation fault",
                             "nullpointerexception", "nil pointer dereference", "index out of bounds",
                             "falha de asserção", "asserção", "erro de lógica", "expect("
                         ]):
                             match_score += 8
-                        if is_explicit_assertion:
+                        if is_explicit_assertion or has_deadlock_or_loop:
                             match_score += 18
                     elif opt == "env_missing" and any(k in state_lower for k in [
                         "modulenotfounderror", "no module named", "not found", "importerror",
@@ -451,7 +454,7 @@ class JevClient:
                     ]):
                         if not is_explicit_assertion:
                             match_score += 7
-                    elif opt == "flaky_transient" and any(k in state_lower for k in [
+                    elif opt == "flaky_transient" and not has_deadlock_or_loop and any(k in state_lower for k in [
                         "connectionreset", "timeout", "timed out", "econnreset", "econnrefused",
                         "etimedout", "socket hang up", "gateway timeout", "503 service unavailable",
                         "tempo limite", "tempo limite esgotado", "conexão recusada"
@@ -547,9 +550,12 @@ class JevClient:
                         prob = 0.92
                     elif any(w in inst for w in ["abort", "dead", "unviable"]):
                         prob = 0.08
-                if is_explicit_assertion and ("deterministically" in inst or "skip" in inst):
+                has_deadlock_or_loop = any(k in state_lower for k in [
+                    "infinite loop", "loop infinito", "deadlock", "deadlock!", "goroutines are asleep", "mutex"
+                ])
+                if (is_explicit_assertion or has_deadlock_or_loop) and ("deterministically" in inst or "skip" in inst):
                     prob = 0.05
-                elif any(w in state_lower for w in ["modulenotfounderror", "no module named", "pip install", "npm install"]) and not is_explicit_assertion:
+                elif any(w in state_lower for w in ["modulenotfounderror", "no module named", "pip install", "npm install"]) and not (is_explicit_assertion or has_deadlock_or_loop):
                     if "deterministically" in inst or "skip" in inst:
                         prob = 0.95
                 answers[qid] = NoulAnswer(noul=prob)

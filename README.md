@@ -325,37 +325,84 @@ The value of dynamic reasoning modulation fundamentally depends on the provider 
 
 ## 🤖 Universal Agent & IDE Integrations
 
-> 📖 **Looking for a turnkey setup for any project?** Read the [**Universal AI Agent Integration Guide**](docs/AGENT_INTEGRATION_GUIDE.md) ([Português](docs/AGENT_INTEGRATION_GUIDE.pt-BR.md)) with copy-paste configs for Cursor, Claude Desktop, Antigravity, CI/CD, and prompt rules.
+> 📖 **Looking for a turnkey setup for any project?** Read the [**Universal AI Agent Integration Guide**](docs/AGENT_INTEGRATION_GUIDE.md) ([Português](docs/AGENT_INTEGRATION_GUIDE.pt-BR.md)) with copy-paste configs for Claude Code, Codex, Pi, Oh My Pi, CommandCode, Cursor, and CI/CD.
 
-### 1. Cursor IDE (`.cursor/mcp.json`)
+### 1. Claude Code (`claude` CLI by Anthropic)
+Connect Jev to Claude Code in 5 seconds via native MCP:
+```bash
+# Register Jev Harness MCP into Claude Code
+claude mcp add jev-harness -- npx -y @ismaelsoilet/jev-harness mcp
+
+# Or using Python:
+claude mcp add jev-harness -- jev-mcp
+```
+Add to your project's `CLAUDE.md`:
+```markdown
+## Jev Harness Token Governance
+- Before querying LLMs on test/build failures, call `jev_triage_test_failure`. If `skip_llm=true`, execute the deterministic fix directly.
+- If a task retries twice without progress, call `jev_should_abort_trajectory` to break doom loops.
+- For mechanical bash commands or file lookups, call `jev_modulate_reasoning_effort` with effort="low".
+```
+
+### 2. OpenAI Codex / Astra-Codex
+Dynamically modulate GPT-6 Astra reasoning effort per generation step inside Codex without invalidating prefix cache (as featured on X):
+```bash
+# In Codex automation scripts or step pre-hooks:
+jev-harness reasoning-effort \
+  --context "$TASK_STEP_DESCRIPTION" \
+  --target-provider openai --json
+```
+Inject the resulting `reasoning_effort: "low" | "medium" | "high"` into the root API payload. Zero message mutation = 100% prompt cache preserved across 50+ turns.
+
+### 3. Pi & Oh My Pi (`pi` / `oh-my-pi`)
+Equip Mario Zechner's minimalist terminal agent (`pi`) and `oh-my-pi` workflows:
+```bash
+# In your Pi task or terminal prompt:
+npm test 2>&1 | npx @ismaelsoilet/jev-harness test-gate
+pytest 2>&1 | jev-harness test-gate
+```
+If the exit code is `0` (`skip_llm=true`), Pi applies the deterministic package installation or retry command without querying expensive models.
+
+### 4. CommandCode
+In `.commandcode/config.json` or CLI pre-command triggers:
+```json
+{
+  "mcpServers": {
+    "jev-harness": {
+      "command": "npx",
+      "args": ["-y", "@ismaelsoilet/jev-harness", "mcp"]
+    }
+  }
+}
+```
+
+### 5. Cursor IDE (`.cursor/mcp.json`)
 Add to `.cursor/mcp.json` (or run `jev-harness init --cursor` in your repo):
-
 ```json
 {
   "mcpServers": {
     "jev-harness": {
-      "command": "jev-mcp",
-      "args": []
+      "command": "npx",
+      "args": ["-y", "@ismaelsoilet/jev-harness", "mcp"]
     }
   }
 }
 ```
 
-### 2. Claude Desktop (`claude_desktop_config.json`)
-Add to your Claude Desktop configuration:
-
+### 6. Claude Desktop (`claude_desktop_config.json`)
+Add to `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
     "jev-harness": {
-      "command": "jev-mcp",
-      "args": []
+      "command": "npx",
+      "args": ["-y", "@ismaelsoilet/jev-harness", "mcp"]
     }
   }
 }
 ```
 
-### 3. Antigravity IDE (`mcp_config.json` & `hooks.json`)
+### 7. Google Antigravity IDE (`mcp_config.json` & `hooks.json`)
 Connect as an MCP Server:
 ```json
 {
@@ -381,16 +428,8 @@ Or hook into the execution lifecycle in `~/.gemini/config/hooks.json`:
 }
 ```
 
-### 4. OpenCode & Command Code
-In `.opencode/config.json` or agent instructions:
-```markdown
-When running tests or builds:
-1. If a command fails, execute `jev-harness test-gate` on the traceback.
-2. If `skip_llm=true`, execute the recommended deterministic action.
-3. If an error persists across 2 consecutive attempts, run `jev-harness abort-check`.
-```
-
-### 5. Windsurf & Zed
+### 8. OpenCode, Windsurf & Zed
+- **OpenCode:** Add Jev triage gate to `.opencode/config.json`.
 - **Windsurf:** Add to `~/.codeium/windsurf/mcp_config.json`.
 - **Zed:** Add to `~/.config/zed/settings.json` under `context_servers`.
 

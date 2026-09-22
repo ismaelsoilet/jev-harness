@@ -184,5 +184,30 @@ FAIL src/plugin.test.ts
     assert.equal(openrouterClient.model, "google/gemini-2.5-flash");
     assert.equal(openrouterClient.isLive, true);
   });
+
+  test("adversarial: infinite loop timeout is classified as deep_logic and does NOT skip LLM", async () => {
+    const log = "TIMEOUT: Test suite timed out after 30000ms. Possible infinite loop in worker thread while acquiring lock.";
+    const res = await triageTestFailure(log, client);
+    assert.equal(res.category, "deep_logic", "Infinite loops and deadlocks must be deep_logic");
+    assert.equal(res.skipLlm, false, "Must never skip LLM on infinite loop or deadlock");
+  });
+
+  test("adversarial: direct single-pass models safeguards expanded", async () => {
+    const directModels = ["gpt-4", "gpt-4-turbo", "claude-3-5-sonnet", "claude-3-haiku", "deepseek-chat", "qwen-2.5-72b", "codestral", "mistral"];
+    for (const m of directModels) {
+      const res = await modulateReasoningEffort("Fix simple bug", { provider: "openai", model: m, client });
+      assert.equal(res.isReasoningSupported, false, `Model ${m} must be recognized as direct single-pass`);
+      assert.deepEqual(res.providerParams, {}, `Model ${m} must receive empty provider params`);
+    }
+  });
+
+  test("adversarial: modulateReasoningEffort safely handles long context with head-tail truncation", async () => {
+    const head = "Architectural review needed for distributed system.\n";
+    const middle = "A".repeat(5000);
+    const tail = "\nImmediate task: fix concurrency deadlock in transaction coordinator.";
+    const full = head + middle + tail;
+    const res = await modulateReasoningEffort(full, { provider: "openai", client });
+    assert.equal(res.effort, "high", "Must detect high complexity from head/tail even after truncation");
+  });
 });
 

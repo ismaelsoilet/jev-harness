@@ -141,16 +141,17 @@ def record_reasoning_effort_event(effort: str, provider: str = "openai") -> None
     save_session(session)
 
 
-def detect_repeated_failure(error_snippet: str, max_repeats: int = 2) -> bool:
-    """Returns True if the identical error has appeared 2 or more times recently."""
-    if not error_snippet or len(error_snippet.strip()) < 10:
+def detect_repeated_failure(snippet: str, max_repeats: int = 2) -> bool:
+    """Returns True if the identical error snippet or proposed step has appeared 2 or more times recently."""
+    if not snippet or len(snippet.strip()) < 10:
         return False
     session = load_session()
-    clean_err = " ".join(error_snippet.strip().split()[:20]).lower()
+    clean_target = " ".join(snippet.strip().split()[:20]).lower()
     matches = 0
     for h in session.history[-5:]:
         h_err = " ".join(h.error_snippet.strip().split()[:20]).lower()
-        if clean_err and clean_err in h_err:
+        h_step = " ".join(h.step.strip().split()[:20]).lower()
+        if clean_target and (clean_target in h_err or clean_target in h_step):
             matches += 1
     return matches >= max_repeats
 

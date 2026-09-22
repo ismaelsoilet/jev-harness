@@ -29,9 +29,9 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "build:test": "tsc -p tsconfig.test.json",
-    "test": "tsc -p tsconfig.json && tsc -p tsconfig.test.json && node --test dist-test/tests/*.js"
+    "build": "node node_modules/typescript/bin/tsc -p tsconfig.json",
+    "build:test": "node node_modules/typescript/bin/tsc -p tsconfig.test.json",
+    "test": "node node_modules/typescript/bin/tsc -p tsconfig.json && node node_modules/typescript/bin/tsc -p tsconfig.test.json && node --test dist-test/tests/*.js"
   },
   "devDependencies": {
     "@types/node": "^20.17.0",

@@ -194,10 +194,39 @@ Calculation returned 42, expected 100
     def test_adversarial_direct_models_expanded_safeguards(self):
         from jev_harness.gates import modulate_reasoning_effort
 
-        for model in ["gpt-4o", "gpt-4o-mini", "claude-3-5-haiku", "gpt-5.6-luna"]:
+        expanded_direct_models = [
+            "gpt-4o", "gpt-4o-mini", "claude-3-5-haiku", "gpt-5.6-luna",
+            "gpt-4", "gpt-4-turbo", "claude-3-5-sonnet", "claude-3-haiku",
+            "deepseek-chat", "qwen-2.5-72b", "codestral", "mistral"
+        ]
+        for model in expanded_direct_models:
             res = modulate_reasoning_effort("git status", provider="openai", model=model, client=self.client)
             self.assertFalse(res.is_reasoning_supported, f"{model} must be recognized as non-reasoning direct model")
             self.assertEqual(res.provider_params, {})
+
+    def test_adversarial_infinite_loop_timeout_is_deep_logic(self):
+        log = "TIMEOUT: Test suite timed out after 30000ms. Possible infinite loop in worker thread while acquiring lock."
+        res = triage_test_failure(log, client=self.client)
+        self.assertEqual(res.category, "deep_logic", "Infinite loop / deadlock timeout must be classified as deep_logic")
+        self.assertFalse(res.skip_llm, "Must never skip LLM on infinite loop or deadlock timeout")
+
+    def test_detect_repeated_failure_matches_step_text(self):
+        reset_metrics()
+        step = "Rerun pytest with same flags without changing code"
+        record_step_attempt(step)
+        self.assertFalse(detect_repeated_failure(step, max_repeats=2))
+        record_step_attempt(step)
+        self.assertTrue(detect_repeated_failure(step, max_repeats=2), "Repeating step string must trigger repeated failure detection")
+
+    def test_adversarial_modulate_reasoning_effort_head_tail_truncation(self):
+        from jev_harness.gates import modulate_reasoning_effort
+
+        head = "Architectural review needed for distributed system.\n"
+        middle = "A" * 5000
+        tail = "\nImmediate task: fix concurrency deadlock in transaction coordinator."
+        full = head + middle + tail
+        res = modulate_reasoning_effort(full, provider="openai", client=self.client)
+        self.assertEqual(res.effort, "high", "Head and tail instructions must be preserved across truncation")
 
     def test_adversarial_cache_risk_on_high_context(self):
         from jev_harness.gates import modulate_reasoning_effort

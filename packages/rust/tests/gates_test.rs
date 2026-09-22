@@ -372,7 +372,16 @@ async fn test_adversarial_forward_progress_not_aborted() {
 #[tokio::test]
 async fn test_adversarial_direct_models_expanded_safeguards() {
     let client = JevClient::with_mock();
-    for model in &["gpt-4o", "gpt-4o-mini", "claude-3-5-haiku", "gpt-5.6-luna"] {
+    for model in &[
+        "gpt-4o",
+        "gpt-4o-mini",
+        "gpt-4-turbo",
+        "claude-3-5-haiku",
+        "claude-3-5-sonnet",
+        "deepseek-chat",
+        "gpt-5.6-luna",
+        "codestral",
+    ] {
         let res = modulate_reasoning_effort("git status", "openai", Some(model), Some(&client))
             .await
             .expect("Modulation failed");
@@ -399,4 +408,36 @@ async fn test_adversarial_cache_risk_on_high_context() {
     .expect("Modulation failed");
     assert!(res.is_reasoning_supported);
     assert!(res.cache_safe_recommendation.contains("HIGH CACHE RISK"));
+}
+
+#[tokio::test]
+async fn test_modulate_reasoning_effort_utf8_char_boundary() {
+    let client = JevClient::with_mock();
+    // Build string where byte 4000 falls inside multi-byte 🦀 emoji
+    let mut context = "a".repeat(3998);
+    context.push_str("🦀🔥⚡");
+    context.push_str(&"b".repeat(1000));
+
+    let res = modulate_reasoning_effort(&context, "openai", None, Some(&client)).await;
+    assert!(
+        res.is_ok(),
+        "modulate_reasoning_effort must NEVER panic on multi-byte UTF-8 char boundaries"
+    );
+}
+
+#[tokio::test]
+async fn test_adversarial_infinite_loop_timeout_is_deep_logic() {
+    let client = JevClient::with_mock();
+    let trace = "TimeoutError: infinite loop detected in worker thread while waiting on mutex deadlock";
+    let res = triage_test_failure(trace, Some(&client))
+        .await
+        .expect("Triage failed");
+    assert_eq!(
+        res.category, "deep_logic",
+        "Infinite loops and deadlocks must NOT be classified as flaky transient"
+    );
+    assert!(
+        !res.skip_llm,
+        "Deep logic defects must NEVER skip LLM calls"
+    );
 }
