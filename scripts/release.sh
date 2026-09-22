@@ -4,6 +4,8 @@
 # Synchronizes PyPI (Python), npm (TypeScript), Crates.io (Rust), and GitHub.
 # ==============================================================================
 set -euo pipefail
+[ -f "$HOME/.cargo/env" ] && source "$HOME/.cargo/env" || true
+export PATH="$HOME/.cargo/bin:$PATH"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PYPROJECT="${REPO_ROOT}/pyproject.toml"
@@ -49,16 +51,14 @@ run_checks() {
 
     echo "[2/3] Testing TypeScript..."
     cd "${REPO_ROOT}/packages/ts"
-    npx tsc -p tsconfig.json
-    npx tsc -p tsconfig.test.json
-    node --test dist-test/tests/*.js
+    npm test
 
     echo "[3/3] Testing Rust..."
     cd "${REPO_ROOT}/packages/rust"
     cargo test --quiet
 
     echo ""
-    echo "✅ ALL 109 TESTS PASSED ACROSS PYTHON, TYPESCRIPT, AND RUST!"
+    echo "✅ ALL TESTS PASSED ACROSS PYTHON, TYPESCRIPT, AND RUST!"
     echo "================================================================="
 }
 
