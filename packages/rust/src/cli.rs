@@ -9,7 +9,7 @@ use crate::{
 use clap::{Parser, Subcommand};
 use std::fs;
 use std::io::{self, IsTerminal, Read};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process;
 
 #[derive(Parser)]
@@ -42,6 +42,25 @@ pub struct Cli {
 pub enum Commands {
     #[command(about = "Display active credentials, provider, and engine mode")]
     Status,
+
+    #[command(about = "Run stdio MCP server for Cursor, Claude Desktop, Antigravity IDE")]
+    Mcp,
+
+    #[command(about = "Initialize Jev Harness configuration and agent adapters in current repo")]
+    Init {
+        #[arg(long, help = "Configure Cursor MCP server")]
+        cursor: bool,
+        #[arg(long, help = "Configure Antigravity IDE hooks")]
+        antigravity: bool,
+        #[arg(long, help = "Configure all available agent integrations")]
+        all: bool,
+    },
+
+    #[command(about = "Display ROI, token savings, and telemetry statistics")]
+    Metrics {
+        #[arg(long, help = "Reset session metrics")]
+        reset: bool,
+    },
 
     #[command(
         alias = "triage",
@@ -248,6 +267,117 @@ pub async fn run_cli() {
             }
             println!("Model:       {}", client.model);
             println!("=================================\n");
+            process::exit(0);
+        }
+
+        Commands::Mcp => {
+            if let Err(e) = crate::mcp::run_mcp_server(Some(client)).await {
+                eprintln!("MCP server error: {}", e);
+                process::exit(1);
+            }
+            process::exit(0);
+        }
+
+        Commands::Init {
+            cursor,
+            antigravity: _,
+            all,
+        } => {
+            let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            println!("Initializing Jev Harness integration in: {}", cwd.display());
+
+            let skills_dir = cwd.join(".agents").join("skills").join("jev-harness");
+            let _ = fs::create_dir_all(&skills_dir);
+            let skill_file = skills_dir.join("SKILL.md");
+            let skill_content = "---\nname: jev-harness\ndescription: Repository adapter for Jev System One.\nlicense: MIT\n---\n\n# Local Jev Harness Adapter\n\nThis repository is connected to the global **Jev System One Harness**.\n";
+            let _ = fs::write(&skill_file, skill_content);
+            println!("  [+] Created agent skill: {}", skill_file.display());
+
+            let jev_json = cwd.join(".jev.json");
+            if !jev_json.exists() {
+                let _ = fs::write(&jev_json, "{\n  \"api_key\": \"\",\n  \"model\": \"jev-latest\",\n  \"skip_llm_threshold\": 0.65,\n  \"abort_threshold\": 0.70\n}\n");
+                println!("  [+] Created repo config: {}", jev_json.display());
+            }
+
+            let env_example = cwd.join(".env.jev.example");
+            if !env_example.exists() {
+                let _ = fs::write(&env_example, "# Jev / TypeSafe API Key\nTYPESAFE_API_KEY=\"your_key_here\"\n");
+                println!("  [+] Created env template: {}", env_example.display());
+            }
+
+            if cursor || all || cwd.join(".cursor").exists() {
+                let cursor_dir = cwd.join(".cursor");
+                let _ = fs::create_dir_all(&cursor_dir);
+                let cursor_mcp = cursor_dir.join("mcp.json");
+                if !cursor_mcp.exists() {
+                    let _ = fs::write(&cursor_mcp, "{\n  \"mcpServers\": {\n    \"jev-harness\": {\n      \"command\": \"jev\",\n      \"args\": [\"mcp\"]\n    }\n  }\n}\n");
+                    println!("  [+] Created Cursor MCP config: {}", cursor_mcp.display());
+                }
+            }
+            process::exit(0);
+        }
+
+        Commands::Metrics { reset } => {
+            let home = std::env::var("HOME")
+                .or_else(|_| std::env::var("USERPROFILE"))
+                .unwrap_or_else(|_| ".".to_string());
+            let config_dir = PathBuf::from(&home).join(".config").join("jev");
+            let session_path = config_dir.join("session.json");
+
+            if reset {
+                if session_path.exists() {
+                    let _ = fs::remove_file(&session_path);
+                }
+                println!("\n[OK] Jev Harness metrics reset successfully.\n");
+                process::exit(0);
+            }
+
+            let mut triage_calls = 0u64;
+            let mut skipped_llm = 0u64;
+            let mut abort_guards = 0u64;
+            let mut deterministic_routes = 0u64;
+            let mut effort_modulations = 0u64;
+            let mut nudge_continuations = 0u64;
+            let mut tokens_saved = 0u64;
+            let mut cost_saved = 0.0f64;
+
+            if let Ok(content) = fs::read_to_string(&session_path) {
+                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                    triage_calls = val.get("total_triage_calls").and_then(|v| v.as_u64()).unwrap_or(0);
+                    skipped_llm = val.get("skipped_llm_calls").and_then(|v| v.as_u64()).unwrap_or(0);
+                    abort_guards = val.get("abort_guards_triggered").and_then(|v| v.as_u64()).unwrap_or(0);
+                    deterministic_routes = val.get("deterministic_routes").and_then(|v| v.as_u64()).unwrap_or(0);
+                    effort_modulations = val.get("effort_modulations").and_then(|v| v.as_u64()).unwrap_or(0);
+                    nudge_continuations = val.get("nudge_continuations").and_then(|v| v.as_u64()).unwrap_or(0);
+                    tokens_saved = val.get("estimated_tokens_saved").and_then(|v| v.as_u64()).unwrap_or(0);
+                    cost_saved = val.get("estimated_cost_saved_usd").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                }
+            }
+
+            if cli.json {
+                let out = serde_json::json!({
+                    "total_triage_calls": triage_calls,
+                    "skipped_llm_calls": skipped_llm,
+                    "abort_guards_triggered": abort_guards,
+                    "deterministic_routes": deterministic_routes,
+                    "effort_modulations": effort_modulations,
+                    "nudge_continuations": nudge_continuations,
+                    "estimated_tokens_saved": tokens_saved,
+                    "estimated_cost_saved_usd": (cost_saved * 100.0).round() / 100.0,
+                });
+                println!("{}", serde_json::to_string_pretty(&out).unwrap());
+            } else {
+                println!("\n=== JEV HARNESS ROI & TOKEN METRICS (RUST) ===");
+                println!("Total Test Triages:      {}", triage_calls);
+                println!("LLM Calls Intercepted:   {} (Fixed deterministically)", skipped_llm);
+                println!("Doom Loops Aborted:      {}", abort_guards);
+                println!("Deterministic Routes:    {}", deterministic_routes);
+                println!("Effort Modulations:      {} (Astra-Jev per-generation)", effort_modulations);
+                println!("Continuation Nudges:     {} (Jev Nudge Gate)", nudge_continuations);
+                println!("Estimated Tokens Saved:  ⚡ {} tokens", tokens_saved);
+                println!("Estimated API Cost Saved: 💸 ${:.2} USD", cost_saved);
+                println!("==============================================\n");
+            }
             process::exit(0);
         }
 

@@ -35,7 +35,7 @@ function getPackageVersion(): string {
   } catch {
     // fallback
   }
-  return "0.1.9";
+  return "0.1.10";
 }
 
 export async function runCli(argv: string[] = process.argv.slice(2)): Promise<number> {
@@ -120,12 +120,14 @@ Usage: jev-harness <command> [options]
 
 Commands:
   status                                 Show API status & engine mode
+  init                                   Initialize Jev Harness config & adapters in current repo
+  metrics                                Display ROI, token savings & session telemetry
   test-gate --log <file_or_string>       Triage test traceback & gate LLM calls
   abort-check --plan <text>              Guard against doom loops and unviable refactors
   route --task <text>                    Select minimal sufficient model tier
   verify --criteria <c> --output <o>     Calibrate criteria verification
   reasoning-effort --context <text>      Dynamically modulate reasoning effort per-generation (Astra-Jev)
-  nudge-gate --transcript <text>         Evaluate premature stops via SureForge + CommandCode Jev Nudge
+  nudge-gate --transcript <text>         Evaluate premature stops via Jev Nudge Gate
   mcp                                    Run stdio MCP server for Cursor, Claude Desktop, Antigravity IDE
 
 Options:
@@ -149,6 +151,148 @@ Options:
 
   if (command === "mcp") {
     await runMcpServer(client);
+    return 0;
+  }
+
+  if (command === "init") {
+    const cwd = process.cwd();
+    console.log(`Initializing Jev Harness integration in: ${cwd}`);
+
+    const skillsDir = path.join(cwd, ".agents", "skills", "jev-harness");
+    fs.mkdirSync(skillsDir, { recursive: true });
+    const skillFile = path.join(skillsDir, "SKILL.md");
+    const skillContent = `---
+name: jev-harness
+description: Repository adapter for Jev System One.
+license: MIT
+---
+
+# Local Jev Harness Adapter
+
+This repository is connected to the global **Jev System One Harness**.
+`;
+    fs.writeFileSync(skillFile, skillContent, "utf-8");
+    console.log(`  [+] Created agent skill: ${path.relative(cwd, skillFile)}`);
+
+    const jevJson = path.join(cwd, ".jev.json");
+    if (!fs.existsSync(jevJson)) {
+      fs.writeFileSync(
+        jevJson,
+        JSON.stringify(
+          {
+            api_key: "",
+            model: "jev-latest",
+            skip_llm_threshold: 0.65,
+            abort_threshold: 0.7,
+          },
+          null,
+          2
+        ) + "\n",
+        "utf-8"
+      );
+      console.log(`  [+] Created repo config: ${path.relative(cwd, jevJson)}`);
+    }
+
+    const envExample = path.join(cwd, ".env.jev.example");
+    if (!fs.existsSync(envExample)) {
+      fs.writeFileSync(envExample, '# Jev / TypeSafe API Key\nTYPESAFE_API_KEY="your_key_here"\n', "utf-8");
+      console.log(`  [+] Created env template: ${path.relative(cwd, envExample)}`);
+    }
+
+    const hasCursorFlag = args.includes("--cursor") || args.includes("--all") || fs.existsSync(path.join(cwd, ".cursor"));
+    if (hasCursorFlag) {
+      const cursorDir = path.join(cwd, ".cursor");
+      fs.mkdirSync(cursorDir, { recursive: true });
+      const cursorMcp = path.join(cursorDir, "mcp.json");
+      if (!fs.existsSync(cursorMcp)) {
+        fs.writeFileSync(
+          cursorMcp,
+          JSON.stringify(
+            {
+              mcpServers: {
+                "jev-harness": {
+                  command: "npx",
+                  args: ["-y", "@ismaelsoilet/jev-harness", "mcp"],
+                },
+              },
+            },
+            null,
+            2
+          ) + "\n",
+          "utf-8"
+        );
+        console.log(`  [+] Created Cursor MCP config: ${path.relative(cwd, cursorMcp)}`);
+      }
+    }
+    return 0;
+  }
+
+  if (command === "metrics") {
+    const home = process.env.HOME || process.env.USERPROFILE || ".";
+    const sessionPath = path.join(home, ".config", "jev", "session.json");
+
+    if (args.includes("--reset")) {
+      if (fs.existsSync(sessionPath)) {
+        try {
+          fs.unlinkSync(sessionPath);
+        } catch {}
+      }
+      console.log("\n[OK] Jev Harness metrics reset successfully.\n");
+      return 0;
+    }
+
+    let triageCalls = 0;
+    let skippedLlm = 0;
+    let abortGuards = 0;
+    let deterministicRoutes = 0;
+    let effortModulations = 0;
+    let nudgeContinuations = 0;
+    let tokensSaved = 0;
+    let costSaved = 0.0;
+
+    if (fs.existsSync(sessionPath)) {
+      try {
+        const val = JSON.parse(fs.readFileSync(sessionPath, "utf-8"));
+        triageCalls = val.total_triage_calls || 0;
+        skippedLlm = val.skipped_llm_calls || 0;
+        abortGuards = val.abort_guards_triggered || 0;
+        deterministicRoutes = val.deterministic_routes || 0;
+        effortModulations = val.effort_modulations || 0;
+        nudgeContinuations = val.nudge_continuations || 0;
+        tokensSaved = val.estimated_tokens_saved || 0;
+        costSaved = val.estimated_cost_saved_usd || 0.0;
+      } catch {}
+    }
+
+    if (isJson) {
+      console.log(
+        JSON.stringify(
+          {
+            total_triage_calls: triageCalls,
+            skipped_llm_calls: skippedLlm,
+            abort_guards_triggered: abortGuards,
+            deterministic_routes: deterministicRoutes,
+            effort_modulations: effortModulations,
+            nudge_continuations: nudgeContinuations,
+            estimated_tokens_saved: tokensSaved,
+            estimated_cost_saved_usd: Math.round(costSaved * 100) / 100,
+          },
+          null,
+          2
+        )
+      );
+    } else {
+      console.log("\n=== JEV HARNESS ROI & TOKEN METRICS (TS) ===");
+      console.log(`Total Test Triages:      ${triageCalls}`);
+      console.log(`LLM Calls Intercepted:   ${skippedLlm} (Fixed deterministically)`);
+      console.log(`Doom Loops Aborted:      ${abortGuards}`);
+      console.log(`Deterministic Routes:    ${deterministicRoutes}`);
+      console.log(`Effort Modulations:      ${effortModulations} (Astra-Jev per-generation)`);
+      console.log(`Continuation Nudges:     ${nudgeContinuations} (Jev Nudge Gate)`);
+      console.log(`Estimated Tokens Saved:  ⚡ ${tokensSaved.toLocaleString()} tokens`);
+      console.log(`Estimated API Cost Saved: 💸 $${costSaved.toFixed(2)} USD`);
+      console.log("===========================================\n");
+    }
     return 0;
   }
 

@@ -23,7 +23,7 @@ OPENROUTER_API_URL = "https://openrouter.ai/api/alpha/decisions"
 OPENROUTER_CHAT_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 VERCEL_API_URL = "https://ai-gateway.vercel.sh/v1/evaluate"
 DEFAULT_MODEL = "jev-latest"
-DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.1.9; +https://github.com/ismaelsoilet/jev-harness)"
+DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.1.10; +https://github.com/ismaelsoilet/jev-harness)"
 
 
 def _urlopen_with_ipv4_fallback(req: urllib.request.Request, timeout: float):

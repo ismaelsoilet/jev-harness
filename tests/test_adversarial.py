@@ -345,6 +345,40 @@ Calculation returned 42, expected 100
         self.assertNotIn("vck_secret987654", redacted)
         self.assertIn("[REDACTED]", redacted)
 
+    def test_concurrency_file_locking_session(self):
+        import concurrent.futures
+        from jev_harness.session import reset_metrics, record_triage_event, load_session
+
+        reset_metrics()
+        workers = 8
+        total_events = 40
+
+        def _worker(idx):
+            record_triage_event(skip_llm=(idx % 2 == 0), category="env_missing")
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+            list(executor.map(_worker, range(total_events)))
+
+        s = load_session()
+        self.assertEqual(s.total_triage_calls, total_events, f"Expected {total_events} triage calls, found {s.total_triage_calls}")
+        self.assertEqual(s.skipped_llm_calls, total_events // 2)
+
+    def test_json_schema_field_parity_and_unverified_edits(self):
+        from jev_harness.gates import should_nudge_continuation
+
+        # 1. Triage gate recommendations
+        triage = triage_test_failure("AssertionError: 1 != 2", client=self.client)
+        self.assertTrue(hasattr(triage, "action_recommendation"))
+
+        # 2. Abort gate reasoning summary
+        abort = should_abort_trajectory("retry again identical 4a vez", recent_attempts_summary="failed 3 times", client=self.client)
+        self.assertTrue(hasattr(abort, "reasoning_summary"))
+
+        # 3. Nudge gate unverified file edit detection
+        nudge = should_nudge_continuation("Assistant: Updated file test.py. Finished editing.", client=self.client)
+        self.assertTrue(nudge.should_nudge, "Premature stop after editing file without running tests must be nudged")
+        self.assertNotEqual(nudge.sureforge_phase, "complete")
+
 
 if __name__ == "__main__":
     unittest.main()

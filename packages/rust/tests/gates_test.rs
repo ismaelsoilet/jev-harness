@@ -829,5 +829,64 @@ async fn test_commandcode_provider_and_nudge_gate() {
     assert_eq!(res_done.sureforge_phase, "complete");
 }
 
+#[tokio::test]
+async fn test_rust_mcp_server_protocol() {
+    use jev_harness::mcp::process_message;
 
+    let client = JevClient::with_mock();
 
+    // 1. Initialize
+    let init_req = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#;
+    let init_resp = process_message(init_req, &client).await.expect("Expected response");
+    assert_eq!(init_resp["jsonrpc"], "2.0");
+    assert_eq!(init_resp["id"], 1);
+    assert_eq!(init_resp["result"]["serverInfo"]["name"], "jev-harness");
+
+    // 2. Ping
+    let ping_req = r#"{"jsonrpc":"2.0","id":2,"method":"ping"}"#;
+    let ping_resp = process_message(ping_req, &client).await.expect("Expected response");
+    assert_eq!(ping_resp["id"], 2);
+
+    // 3. Tools list
+    let list_req = r#"{"jsonrpc":"2.0","id":3,"method":"tools/list"}"#;
+    let list_resp = process_message(list_req, &client).await.expect("Expected response");
+    let tools = list_resp["result"]["tools"].as_array().expect("Tools array");
+    assert_eq!(tools.len(), 6);
+
+    // 4. Tools call: triage
+    let call_triage = r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"jev_triage_test_failure","arguments":{"failure_log":"ModuleNotFoundError: No module named 'requests'"}}}"#;
+    let triage_resp = process_message(call_triage, &client).await.expect("Expected response");
+    assert_eq!(triage_resp["result"]["isError"], false);
+    let triage_content = triage_resp["result"]["content"][0]["text"].as_str().expect("Content text");
+    assert!(triage_content.contains("env_missing"));
+    assert!(triage_content.contains("skip_llm"));
+
+    // 5. Tools call: missing required argument
+    let call_bad = r#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"jev_triage_test_failure","arguments":{}}}"#;
+    let bad_resp = process_message(call_bad, &client).await.expect("Expected response");
+    assert_eq!(bad_resp["error"]["code"], -32602);
+
+    // 6. Tools call: unknown tool
+    let call_unknown = r#"{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"non_existent_tool","arguments":{}}}"#;
+    let unk_resp = process_message(call_unknown, &client).await.expect("Expected response");
+    assert_eq!(unk_resp["error"]["code"], -32601);
+}
+
+#[tokio::test]
+async fn test_parity_json_fields_and_unverified_file_edits() {
+    let client = JevClient::with_mock();
+
+    // 1. Check recommendation and action_recommendation parity in TestTriageResult
+    let triage = triage_test_failure("AssertionError: 1 != 2", Some(&client)).await.unwrap();
+    assert_eq!(triage.action_recommendation, triage.recommendation);
+
+    // 2. Check summary and reasoning_summary parity in AbortGateResult
+    let abort = should_abort_trajectory("retry again identical 4a vez", "failed 3 times", Some(&client)).await.unwrap();
+    assert_eq!(abort.reasoning_summary, abort.summary);
+
+    // 3. Check unverified file edit in nudge gate does not default to complete
+    let unverified_edit = "Assistant: Updated file client.rs. Finished editing the logic.";
+    let nudge_res = should_nudge_continuation(unverified_edit, "", 0.5, Some(&client)).await.unwrap();
+    assert!(nudge_res.should_nudge);
+    assert_ne!(nudge_res.sureforge_phase, "complete");
+}

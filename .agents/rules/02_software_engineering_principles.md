@@ -1,6 +1,6 @@
 # 🧠 Princípios Fundamentais de Engenharia de Software no Jev Harness
 
-> **Documento Oficial de Engenharia — Versão: v0.1.9**  
+> **Documento Oficial de Engenharia — Versão: v0.1.10**  
 > *Regras inegociáveis para agentes de IA e desenvolvedores.*
 
 ---

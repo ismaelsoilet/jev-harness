@@ -525,7 +525,7 @@ Latência ultra-baixa (< 500µs local, zero-overhead) para Tauri, ferramentas de
 
 ```toml
 [dependencies]
-jev-harness = "0.1.9"
+jev-harness = "0.1.10"
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -549,7 +549,7 @@ async fn main() {
 ```yaml
 repos:
   - repo: https://github.com/ismaelsoilet/jev-harness
-    rev: v0.1.9
+    rev: v0.1.10
     hooks:
       - id: jev-test-gate
 ```
@@ -591,6 +591,25 @@ Quando em modo de simulação offline (`--mock` ou durante partições de rede),
 | | `modulate_reasoning_effort` | **33.7 µs** | **62.6 µs** | **103.7 µs** | 41.0 µs | ✅ **PASS** (< 104 µs) |
 
 > ⚡ **Garantia de Zero-Overhead:** Como as verificações heurísticas operam na escala de dezenas de microssegundos, canalizar os executores de teste ou hooks pré-execução via `jev-harness` introduz overhead imperceptível nos ciclos do agente, evitando queimas fúteis de tokens e loops circulares de falha.
+
+---
+
+## 🌟 O que há de Novo na v0.1.10
+
+- 🛡️ **Servidor MCP Nativo em Rust (`packages/rust/src/mcp.rs`)**: Servidor MCP stdio JSON-RPC 2.0 de alto desempenho para o runtime Rust (`jev mcp` / `jev-harness mcp`), garantindo paridade funcional total com Python e TypeScript nos 6 gates de decisão.
+- ⚡ **Lock Atômico de Concorrência em Sessão (`fcntl.flock`)**: Bloqueio transacional seguro em `session.py` garantindo 0% de corrupção ou perda de contadores sob execução simultânea massiva de processos de agentes.
+- 🔄 **Fallback Seguro no Provedor OpenCode Zen**: Fallback automático e transparente para simulação heurística offline em caso de HTTP 401/403 com chaves comunitárias default (`zen`), eliminando quebras silenciosas.
+- 🛠️ **Unificação de Subcomandos CLI (`init` e `metrics`)**: Disponibilidade uniforme dos comandos `init` (scaffolding de repositório e adaptadores) e `metrics` (telemetria de ROI e economia de tokens) em Python, TypeScript e Rust.
+- 📐 **Paridade Rígida de Esquemas JSON**: Disponibilidade simultânea de `action_recommendation` + `recommendation` e `reasoning_summary` + `summary` nas saídas JSON e ferramentas MCP nos 3 runtimes.
+- 🧪 **Bateria Oficial de 149 Testes**: 100% de aprovação em 149 testes (86 Python, 34 Rust, 29 TypeScript) com latência abaixo de 100µs em Rust.
+
+---
+
+## 🌟 O que há de Novo na v0.1.9
+
+- 🆓 **Integração com Provedor Gratuito Command Code**: Inferência gratuita via Command Code (Acordo de $0.00/M - modelo `typesafe/jev`) com detecção automática em `~/.commandcode/auth.json` (`CMD_API_KEY`).
+- 🚪 **6º Gate de Decisão Semântica (Continuation Nudge)**: Avalia se o agente pausou prematuramente com trabalho pendente ou arquivos modificados sem teste, aplicando nudges inteligentes e respeitando permissões do usuário.
+- 🔌 **Suporte Completo em CLI & MCP**: Subcomando `nudge-gate` (alias: `nudge`) e ferramenta MCP `jev_should_nudge_continuation`.
 
 ---
 

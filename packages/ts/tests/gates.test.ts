@@ -409,6 +409,14 @@ FAIL src/plugin.test.ts
     );
     assert.equal(resDone.shouldNudge, false);
     assert.equal(resDone.sureforgePhase, "complete");
+
+    // 5. Unverified file edit without mentioning test -> shouldNudge = true, phase != complete
+    const resEdit = await shouldNudgeContinuation(
+      "Assistant: Updated file client.ts. Finished editing.",
+      { client }
+    );
+    assert.equal(resEdit.shouldNudge, true);
+    assert.notEqual(resEdit.sureforgePhase, "complete");
   });
 });
 

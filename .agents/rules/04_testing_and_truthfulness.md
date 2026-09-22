@@ -1,6 +1,6 @@
 # 🛡️ Testes Exaustivos, Verificação Adversarial e Honestidade Absoluta
 
-> **Documento Oficial de Engenharia — Versão: v0.1.9**  
+> **Documento Oficial de Engenharia — Versão: v0.1.10**  
 > *Diretrizes Inegociáveis de Qualidade para Agentes de IA.*
 
 ---
@@ -36,9 +36,9 @@ Um **teste tautológico** é um teste que passa unicamente porque o mock local f
 
 ---
 
-## 3. Bateria Oficial Tri-Runtime (122 Testes)
+## 3. Bateria Oficial Tri-Runtime (149 Testes)
 
-O repositório mantém **122 testes exaustivos** com 100% de taxa de aprovação através dos três runtimes:
+O repositório mantém **149 testes exaustivos** com 100% de taxa de aprovação através dos três runtimes:
 
 ```bash
 # Executa a bateria completa unificada:
@@ -46,16 +46,16 @@ O repositório mantém **122 testes exaustivos** com 100% de taxa de aprovação
 ```
 
 ### Distribuição dos Testes:
-1. **Python (`tests/`)**: **73 testes**
-   * `test_gates.py`: Testes unitários dos 5 gates semânticos.
-   * `test_adversarial.py`: Casos de negação em português/inglês, truncamento UTF-8 com emojis de 4 bytes, domínio de palavras-chave arquiteturais sobre typos, telemetria de doom loop com normalização de ponteiros e timestamps, e dialeto limpo Anthropic.
+1. **Python (`tests/`)**: **86 testes**
+   * `test_gates.py`: Testes unitários dos 6 gates semânticos.
+   * `test_adversarial.py`: Casos de concorrência com `fcntl.flock`, paridade de esquemas JSON, negação em português/inglês, truncamento UTF-8 com emojis de 4 bytes, domínio de palavras-chave arquiteturais sobre typos, telemetria de doom loop e dialeto limpo Anthropic.
    * `test_real_tracebacks.py`: Logs reais de Python, Go, Node.js, Rust e TypeScript.
    * `test_cli.py`: Códigos de saída (0, 1, 2), flags de modo `--mock`, `--json`, `--status`, prevenção de hang em stdin pipes e tratamento de SIGPIPE/BrokenPipeError.
    * `test_mcp.py`: Protocolo JSON-RPC 2.0 do MCP Server (`jev-mcp`).
-2. **Rust (`packages/rust/tests/`)**: **25 testes**
-   * Testes assíncronos Tokio cobrindo todos os gates semânticos, simulação local, decodificação JSON, compilação de dialetos de reasoning effort (Anthropic, DeepSeek, Qwen) e safeguards de modelos direct.
-3. **TypeScript (`packages/ts/tests/`)**: **24 testes**
-   * Testes nativos Node.js (`node --test`) cobrindo tipos, resolução de provedores (TypeSafe, OpenCode Zen, OpenRouter), gates, segurança de surrogate pairs UTF-16 e servidor MCP stdio nativo sem dependências externas.
+2. **Rust (`packages/rust/tests/`)**: **34 testes**
+   * Testes assíncronos Tokio cobrindo todos os gates semânticos, simulação local, decodificação JSON, compilação de dialetos de reasoning effort, servidor MCP stdio nativo (`mcp.rs`) e safeguards de modelos direct.
+3. **TypeScript (`packages/ts/tests/`)**: **29 testes**
+   * Testes nativos Node.js (`node --test`) cobrindo tipos, resolução de provedores (TypeSafe, OpenCode Zen, OpenRouter), gates, segurança de surrogate pairs UTF-16, detecção de edições não testadas no Nudge Gate e servidor MCP stdio nativo sem dependências externas.
 
 ---
 
@@ -63,5 +63,5 @@ O repositório mantém **122 testes exaustivos** com 100% de taxa de aprovação
 
 Ao relatar resultados de auditoria, execução ou teste:
 * **Relate o resultado no topo**: Diga imediatamente se os testes passaram, se falharam ou se há ressalvas.
-* **Nunca esconda regressões**: Se uma alteração causou a quebra de um único teste dos 122, pare imediatamente, não faça commit e investigue a causa raiz.
+* **Nunca esconda regressões**: Se uma alteração causou a quebra de um único teste dos 149, pare imediatamente, não faça commit e investigue a causa raiz.
 * **Transparência em Modo Mock**: Sempre evidencie se uma resposta foi gerada via simulação heurística local (`is_mock=true`) ou via chamada real ao Jev System One.

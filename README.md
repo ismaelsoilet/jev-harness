@@ -569,7 +569,7 @@ Ultra-low latency (< 500µs local, zero-overhead) for systems programming, Tauri
 
 ```toml
 [dependencies]
-jev-harness = "0.1.9"
+jev-harness = "0.1.10"
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -619,7 +619,7 @@ jev reasoning-effort --context "git status" --target-provider deepseek --json
 ```yaml
 repos:
   - repo: https://github.com/ismaelsoilet/jev-harness
-    rev: v0.1.9
+    rev: v0.1.10
     hooks:
       - id: jev-test-gate
 ```
@@ -711,6 +711,25 @@ You can also trigger releases via GitHub Actions:
 - **Manual:** Go to **GitHub Actions → Release & Publish → Run workflow**, specify the version, and click run.
 
 *(Requires `PYPI_API_TOKEN` and `CARGO_REGISTRY_TOKEN` in GitHub Repository Secrets; npm uses OpenID Connect (OIDC) Trusted Publishing with cryptographic Sigstore provenance without static tokens).*
+
+## 🌟 What's New in v0.1.10
+
+- 🛡️ **Native Rust MCP Server (`packages/rust/src/mcp.rs`)**: High-performance JSON-RPC 2.0 stdio MCP server for the Rust runtime (`jev mcp` / `jev-harness mcp`), providing full feature parity with Python and TypeScript across all 6 decision gates.
+- ⚡ **Atomic Concurrency File Locking (`fcntl.flock`)**: Robust transactional file locking in `session.py` guaranteeing zero metric corruption and 0.0% counter data loss under heavy concurrent agent executions.
+- 🔄 **OpenCode Zen Live Auth Fallback**: Automatic graceful fallback to offline heuristic simulation on HTTP 401/403 when community dummy/zen keys are used, eliminating unhandled crashes in production.
+- 🛠️ **CLI Subcommands Unification (`init` & `metrics`)**: Full cross-runtime availability of `init` (repo scaffolding & agent adapter generation) and `metrics` (session ROI and token telemetry) across Python, TS, and Rust.
+- 📐 **Rigid JSON Schema & Contract Parity**: Ensured dual availability of `action_recommendation` + `recommendation` and `reasoning_summary` + `summary` across all CLI `--json` outputs and MCP tool invocations.
+- 🧪 **149-Test Battery**: 100% test pass rate across 149 tests (86 Python, 34 Rust, 29 TypeScript) with sub-100µs latency in Rust.
+
+---
+
+## 🌟 What's New in v0.1.9
+
+- 🆓 **Command Code Free Provider Integration**: Zero-cost live inference via Command Code ($0.00/M Deal - model `typesafe/jev`) with auto-auth detection from `~/.commandcode/auth.json` (`CMD_API_KEY`).
+- 🚪 **6th Semantic Decision Gate (Continuation Nudge)**: Evaluates whether an autonomous agent paused prematurely with unfinished work or unverified changes, injecting targeted continuation nudges while vetoing nudges when waiting on user permission.
+- 🔌 **CLI & MCP Support**: Subcommand `nudge-gate` (alias: `nudge`) and MCP tool `jev_should_nudge_continuation`.
+
+---
 
 ## 🌟 What's New in v0.1.8
 

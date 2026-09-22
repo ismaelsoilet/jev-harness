@@ -1,6 +1,6 @@
 # 🏛️ Planta Arquitetural Completa: Jev Harness
 
-> **Documento Oficial de Engenharia — Versão do Projeto: v0.1.9**  
+> **Documento Oficial de Engenharia — Versão do Projeto: v0.1.10**  
 > *Obrigatório para todos os agentes autônomos e desenvolvedores que operam no repositório.*
 
 ---
@@ -81,11 +81,12 @@ jev-harness/
 │   │   │   ├── client.rs             # Cliente HTTP Tokio e simulação heurística local
 │   │   │   ├── gates.rs              # Implementação de todos os gates semânticos
 │   │   │   ├── lib.rs                # Ponto de exportação público da biblioteca Rust
+│   │   │   ├── mcp.rs                # Servidor MCP stdio nativo em Rust
 │   │   │   └── types.rs              # Tipos estruturados e respostas tipadas
 │   │   └── tests/
-│   │       └── gates_test.rs         # 23 testes automatizados (100% pass)
+│   │       └── gates_test.rs         # 34 testes automatizados (100% pass)
 │   └── ts/                           # Pacote oficial npm (`@ismaelsoilet/jev-harness`)
-│       ├── package.json              # Manifesto do pacote npm (v0.1.6)
+│       ├── package.json              # Manifesto do pacote npm
 │       ├── package-lock.json
 │       ├── tsconfig.json             # Configuração TypeScript de produção
 │       ├── tsconfig.test.json        # Configuração de testes Node.js nativos
@@ -96,30 +97,31 @@ jev-harness/
 │       │   ├── client.ts             # Cliente fetch nativo e simulação heurística
 │       │   ├── gates.ts              # Implementação dos gates semânticos
 │       │   ├── index.ts              # Exportações do pacote
+│       │   ├── mcp.ts                # Servidor MCP stdio nativo em TypeScript
 │       │   └── types.ts              # Interfaces TypeScript tipadas
 │       └── tests/
-│           └── gates.test.ts         # 18 testes automatizados (100% pass)
+│           └── gates.test.ts         # 29 testes automatizados (100% pass)
 ├── src/
 │   └── jev_harness/                  # Pacote oficial Python (`pip install jev-harness`)
-│       ├── __init__.py               # Metadados e exports públicos (v0.1.6)
+│       ├── __init__.py               # Metadados e exports públicos
 │       ├── cli.py                    # CLI em Python com argparse
 │       ├── client.py                 # Cliente urllib (zero dependências) e simulação
-│       ├── gates.py                  # Gates semânticos (triage, abort, route, verify, reasoning-effort)
+│       ├── gates.py                  # Gates semânticos (triage, abort, route, verify, reasoning-effort, nudge)
 │       ├── mcp_server.py             # Servidor MCP stdio universal (`jev-mcp`)
-│       └── session.py                # Telemetria, persistência de sessão e cálculo de ROI
-├── tests/                            # Bateria de testes Python (73 testes, 100% pass)
-│   ├── test_adversarial.py           # Testes adversariais, negação, português, emojis UTF-8
+│       └── session.py                # Telemetria, persistência de sessão e lock de concorrência
+├── tests/                            # Bateria de testes Python (86 testes, 100% pass)
+│   ├── test_adversarial.py           # Testes adversariais, concorrência, negação, emojis UTF-8
 │   ├── test_cli.py                   # Testes de argumentos CLI e códigos de saída
 │   ├── test_client.py                # Testes de cliente e perguntas tipadas
 │   ├── test_gates.py                 # Testes unitários dos gates semânticos
 │   ├── test_mcp.py                   # Testes do protocolo MCP Server
-│   └── test_real_tracebacks.py       # Testes com tracebacks reais (Python, Go, Node, Rust)
-├── pyproject.toml                    # Configuração de build Python Hatchling (v0.1.6)
+│   ├── test_real_tracebacks.py       # Testes com tracebacks reais (Python, Go, Node, Rust)
+├── pyproject.toml                    # Configuração de build Python Hatchling
 ├── README.md                         # Documentação global oficial do repositório
 ├── AGENTS.md                         # Ponto de entrada obrigatório para agentes de IA
 ├── LICENSE                           # Licença MIT
 └── scripts/
-    └── release.sh                    # Script mestre de release, check (122 testes) e sync
+    └── release.sh                    # Script mestre de release, check (149 testes) e sync
 ```
 
 ---
