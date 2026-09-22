@@ -83,35 +83,50 @@ Todo agente que operar neste repositório deve pautar suas decisões por cinco p
 
 ---
 
-## 🚀 4. Protocolo de Release e Sincronização nos 4 Locais (Quad-Sync)
+## 🚀 4. Protocolo Rígido de Release e Verificação Pré-Push (Quad-Sync)
 
-Ao criar novas builds, adicionar features ou corrigir bugs, o agente deve seguir o fluxo completo:
+> [!CAUTION]
+> **REGRA DE OURO INVIOLÁVEL DE PRÉ-PUSH:** É expressamente proibido a qualquer agente ou desenvolvedor realizar `git push` (de commits ou tags) sem antes executar a verificação obrigatória de paridade de versões:
+> ```bash
+> ./scripts/release.sh --verify-sync
+> ```
+> Se houver qualquer divergência entre `pyproject.toml`, `packages/ts/package.json`, `packages/rust/Cargo.toml` ou `src/jev_harness/__init__.py`, o push é **sumariamente abortado**.
+
+### Fluxo Completo de Release em 6 Etapas:
 
 ```
-[Alteração de Código]
+[Alteração de Código ou Docs]
         │
         ▼
-[Executar 109 Testes: ./scripts/release.sh --check]
+[1. Executar 109 Testes: ./scripts/release.sh --check]
         │ (Se 100% OK)
         ▼
-[Bump Síncrono de Versão: ./scripts/release.sh --bump <versao>]
+[2. Bump Síncrono de Versão: ./scripts/release.sh --bump <versao>]
         │
         ▼
-[Recompilar Artefatos: npm run build (TS) & cargo build --release (Rust)]
+[3. Recompilar Artefatos: npm run build (TS) & cargo build --release (Rust)]
         │
         ▼
-[Atualizar Documentações (README.md, AGENTS.md, etc.)]
+[4. Verificação Rígida de Paridade: ./scripts/release.sh --verify-sync]
+        │ (Se 100% OK)
+        ▼
+[5. Commit Detalhado + Git Tag + Git Push origin main --tags]
         │
         ▼
-[Commit Detalhado + Git Tag + Git Push origin main]
-        │
-        ▼
-[Verificação Pós-Release nos 4 Locais]:
-  1. GitHub: https://github.com/ismaelsoilet/jev-harness
-  2. PyPI: https://pypi.org/project/jev-harness/
-  3. npm: https://www.npmjs.com/package/@ismaelsoilet/jev-harness
-  4. Crates.io: https://crates.io/crates/jev-harness
-```
+[6. Criação e Polimento do GitHub Release + Monitoramento Ativo]:
+    - Criar Release via `gh release create v<versao>` com notas limpas e profissionais
+    - Proibição de espaçamentos defeituosos em markdown ou textos descuidados
+    - Acompanhar GitHub Actions (`gh run list --workflow=release.yml`) até conclusão verde
+    - Validar disponibilidade nos 4 canais:
+        1. GitHub: https://github.com/ismaelsoilet/jev-harness/releases
+        2. PyPI: https://pypi.org/project/jev-harness/
+        3. npm: https://www.npmjs.com/package/@ismaelsoilet/jev-harness
+        4. Crates.io: https://crates.io/crates/jev-harness
+
+> [!IMPORTANT]
+> **PROIBIÇÃO DE BUMPS ÓRFÃOS E BADGES DESALINHADOS:**
+> 1. É proibido alterar versão em arquivos manifestos sem criar a tag git (`vX.Y.Z`) e o respectivo release no GitHub. O repositório nunca deve exibir commits de versão nova com a release anterior marcada como "Latest".
+> 2. Os badges no topo do `README.md` devem refletir com precisão e elegância o estado publicado nos 4 registries. Nunca permita badges quebrados, com versões antigas em cache ou links inválidos.
 
 ---
 

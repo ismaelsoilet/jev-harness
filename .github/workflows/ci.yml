@@ -7,6 +7,26 @@ on:
     branches: [main, master]
 
 jobs:
+  check-manifest-sync:
+    name: Strict Quad-Manifest Version Parity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Verify Manifest & Version Parity
+        run: |
+          chmod +x scripts/release.sh
+          ./scripts/release.sh --verify-sync
+
   test-python:
     name: Python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

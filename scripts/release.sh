@@ -16,6 +16,7 @@ usage() {
     echo "Commands:"
     echo "  --check                 Run full test battery across Python, TS, and Rust"
     echo "  --version               Show current versions across all manifests"
+    echo "  --verify-sync           Strictly verify version parity across all manifests and tags (pre-push check)"
     echo "  --bump <version>        Synchronously update version in pyproject.toml, package.json, and Cargo.toml"
     echo "  --publish <target>      Publish to target: 'python', 'npm', 'rust', or 'all'"
     echo "  --git-tag <version>     Create git commit, tag 'v<version>', and push to GitHub"
@@ -153,6 +154,57 @@ git_tag_release() {
     echo "✅ Git tag v${ver} pushed to GitHub!"
 }
 
+verify_sync() {
+    echo "================================================================="
+    echo "🔍 Strict Quad-Manifest & Version Parity Verification"
+    echo "================================================================="
+
+    local py_ver ts_ver rust_ver init_ver
+    py_ver="$(grep '^version = ' "${PYPROJECT}" | cut -d'"' -f2)"
+    ts_ver="$(grep '"version":' "${PACKAGE_JSON}" | head -n1 | cut -d'"' -f4)"
+    rust_ver="$(grep '^version = ' "${CARGO_TOML}" | head -n1 | cut -d'"' -f2)"
+    init_ver="$(grep '^__version__ = ' "${REPO_ROOT}/src/jev_harness/__init__.py" | cut -d'"' -f2)"
+
+    echo "Manifest Versions:"
+    echo "  - Python (pyproject.toml):        ${py_ver}"
+    echo "  - Python (__init__.__version__): ${init_ver}"
+    echo "  - TypeScript (package.json):      ${ts_ver}"
+    echo "  - Rust (Cargo.toml):              ${rust_ver}"
+
+    if [[ "${py_ver}" != "${ts_ver}" || "${py_ver}" != "${rust_ver}" || "${py_ver}" != "${init_ver}" ]]; then
+        echo ""
+        echo "❌ FATAL: Version mismatch detected across manifests!"
+        echo "All manifests must be strictly identical before any push or release."
+        exit 1
+    fi
+    echo "✅ Manifest parity 100% synchronized: v${py_ver}"
+
+    # Build check
+    echo ""
+    echo "Checking TypeScript build..."
+    (cd "${REPO_ROOT}/packages/ts" && npm run build)
+    echo "✅ TypeScript build OK"
+
+    echo ""
+    echo "Checking Rust Cargo check..."
+    (cd "${REPO_ROOT}/packages/rust" && cargo check --quiet)
+    echo "✅ Rust check OK"
+
+    # Git Tag check
+    echo ""
+    echo "Checking Git tags..."
+    if git rev-parse "v${py_ver}" >/dev/null 2>&1; then
+        echo "✅ Git tag 'v${py_ver}' exists locally."
+    else
+        echo "⚠️  INFO: Git tag 'v${py_ver}' has not been tagged yet."
+    fi
+
+    echo ""
+    echo "================================================================="
+    echo "✅ QUAD-MANIFEST SYNC VERIFICATION PASSED (v${py_ver})"
+    echo "================================================================="
+}
+
 # Main routing
 if [[ $# -eq 0 ]]; then
     usage
@@ -164,6 +216,9 @@ case "$1" in
         ;;
     --version)
         show_versions
+        ;;
+    --verify-sync)
+        verify_sync
         ;;
     --bump)
         bump_version "${2:-}"

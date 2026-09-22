@@ -18,9 +18,9 @@ O `jev-harness` é distribuído simultaneamente para três ecossistemas de lingu
 
 ---
 
-## 2. Checklist Obrigatório de Release em 5 Passos
+## 2. Checklist Obrigatório de Release em 6 Passos
 
-Toda nova versão, build ou correção que mereça lançamento deve seguir estritamente estes 5 passos sequenciais:
+Toda nova versão, build ou correção que mereça lançamento deve seguir estritamente estes 6 passos sequenciais:
 
 ### Passo 1: Execução da Bateria Completa de 109 Testes
 Antes de qualquer alteração de versão, todos os 109 testes devem passar nos 3 runtimes:
@@ -59,24 +59,37 @@ cd packages/ts && npm run build && cd ../..
 cd packages/rust && cargo build --release && cd ../..
 ```
 
-### Passo 4: Commit Detalhado e Criação da Git Tag
+### Passo 4: Verificação Rígida Pré-Push de Paridade Quad-Manifest
+> [!CAUTION]
+> **Bloqueio Obrigatório:** Nunca faça push antes de validar que os 4 manifestos estão em 100% de paridade.
+```bash
+./scripts/release.sh --verify-sync
+```
+O Git pre-push hook local (`.git/hooks/pre-push`) e a Action no GitHub (`ci.yml`) abortam automaticamente se qualquer versão divergir.
+
+### Passo 5: Commit Detalhado e Criação da Git Tag
+> [!IMPORTANT]
+> **Proibição de Bumps Órfãos:** Nunca envie um commit de bump de versão para a `main` sem criar a respectiva tag `v<versao>`.
 ```bash
 git add -A
-git commit -m "chore: release v0.1.6 across all runtimes and docs"
-git tag -a v0.1.6 -m "Release v0.1.6: Astra-Jev reasoning effort governance, expanded direct safeguards, and quad-registry sync"
+git commit -m "chore: release v0.1.6 across all runtimes, docs, and manifests"
+git tag -a v0.1.6 -m "Release v0.1.6: AGENTS Constitution, Modular Rules & 2026 Frontier Governance"
 git push origin main
 git push origin v0.1.6
 ```
 
-### Passo 5: Disparo de Publicação nos Registries e Verificação Quad-Sync
-A tag `v*.*.*` aciona o workflow automatizado `.github/workflows/release.yml`, ou a publicação pode ser realizada via script:
-
-```bash
-# Publicação individual via script (quando com credenciais locais):
-./scripts/release.sh --publish python  # Gera wheel/sdist e envia ao PyPI
-./scripts/release.sh --publish npm     # Publica via npm com Sigstore OIDC
-./scripts/release.sh --publish rust    # Executa cargo publish no crates.io
-```
+### Passo 6: Criação, Higiene Editorial do Release e Monitoramento Ativo
+1. **Criação do GitHub Release**:
+   ```bash
+   gh release create v0.1.6 --title "v0.1.6: AGENTS Constitution, Modular Rules & 2026 Frontier Governance" --notes-file <arquivo_notas>
+   ```
+2. **Higiene Editorial das Notas de Release**:
+   - Proibido formatação descuidada (ex: espaços duplos antes e depois de crases de código).
+   - Registrar expressamente a data da pesquisa de modelos de fronteira (ex: *Pesquisa web em 22 de setembro de 2026*).
+   - Listar claramente comandos de instalação nos 4 ecossistemas.
+3. **Acompanhamento Ativo dos Workflows**:
+   - Monitore a execução do `.github/workflows/release.yml` até que todos os jobs concluam com sucesso (`gh run list --workflow=release.yml`).
+   - Não finalize a tarefa antes de certificar que o GitHub exibe a release mais recente como "Latest" e os badges refletem a nova versão.
 
 ---
 
