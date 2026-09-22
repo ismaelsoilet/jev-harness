@@ -84,10 +84,11 @@ class TestCLI(unittest.TestCase):
 
     def test_cli_missing_args(self):
         with patch.object(sys, "argv", ["jev-harness", "test-gate"]):
-            with patch("sys.stderr", new_callable=StringIO):
-                with self.assertRaises(SystemExit) as cm:
-                    main()
-                self.assertEqual(cm.exception.code, 2)
+            with patch("sys.stdin", new=StringIO("")):
+                with patch("sys.stderr", new_callable=StringIO):
+                    with self.assertRaises(SystemExit) as cm:
+                        main()
+                    self.assertEqual(cm.exception.code, 2)
 
     def test_cli_version(self):
         with patch.object(sys, "argv", ["jev-harness", "--version"]):
