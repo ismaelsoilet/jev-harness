@@ -16,7 +16,9 @@
 
 > **Stop burning 50,000 frontier tokens on missing packages, network flakiness, and circular doom loops.**
 >
-> `jev-harness` is a ultra-fast, zero-dependency token optimizer, test failure triage gate, and semantic guardrail for AI coding agents (OpenCode, Command Code, Claude Code, Cursor, Antigravity IDE, Windsurf, Zed, and Pi). Powered by **TypeSafe AI's Jev System One** non-autoregressive decision model.
+> `jev-harness` is an ultra-fast, zero-dependency token optimizer, test failure triage gate, and semantic guardrail for AI coding agents (OpenCode, Command Code, Claude Code, Cursor, Antigravity IDE, Windsurf, Zed, and Pi). Powered by **TypeSafe AI's Jev System One** non-autoregressive decision model.
+>
+> 🤖 **Operating as an AI Agent?** You **MUST** read [`AGENTS.md`](AGENTS.md) before executing tasks (system blueprint, Karpathy & Fable principles, strict 2026 frontier model governance, and quad-registry release protocols).
 
 ---
 
@@ -206,7 +208,7 @@ jev-harness reasoning-effort \
 # Effort: LOW | Dialect: {"extra_body": {"thinking": {"type": "enabled"}}, "reasoning_effort": "low"}
 # Latency eliminated: ~200s internal CoT reduced to 1.5s!
 
-# Evaluate architectural task for Anthropic (Claude Fable 5.1 / Opus 4.8)
+# Evaluate architectural task for Anthropic (Claude Fable 5.1 / Claude Opus 5)
 jev-harness reasoning-effort \
   --context "Architect distributed actor supervision tree with raft consensus" \
   --target-provider anthropic --json

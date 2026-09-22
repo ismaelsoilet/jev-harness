@@ -427,7 +427,7 @@ def build_provider_params(
             )
 
     elif norm_provider in ["anthropic", "claude"]:
-        # Claude Fable 5.1 / Claude 5 Sonnet/Opus / Claude 4.8
+        # Claude Fable 5.1 / Claude 5 Sonnet / Claude Opus 5
         effort_map = {"low": "low", "medium": "medium", "high": "max"}
         chosen = effort_map.get(effort, "medium")
         return (

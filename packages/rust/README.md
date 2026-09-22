@@ -43,7 +43,7 @@ export OPENROUTER_API_KEY="your-openrouter-key"
    - Evaluates consecutive identical test failures and repetition loops to kill runaway agentic runs before burning budget.
 
 3. **Dynamic Model Routing (`route_model_tier`)**:
-   - Routes simple tasks, typos, and lint errors to fast deterministic models, and reserves expensive 2026 reasoning models (**GPT-6 Astra**, **Claude Fable 5.1 / Mythos 5.1**) only for complex architectural asks.
+   - Routes simple tasks, typos, and lint errors to fast deterministic models, and reserves expensive 2026 reasoning models (**GPT-6 Astra**, **Claude Fable 5.1 / Claude Opus 5**) only for complex architectural asks.
 
 4. **Step Completion Verification (`verify_step_completion`)**:
    - Confirms criteria satisfaction before concluding multi-step workflows.
