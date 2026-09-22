@@ -34,7 +34,7 @@ function getPackageVersion(): string {
   } catch {
     // fallback
   }
-  return "0.1.6";
+  return "0.1.7";
 }
 
 export async function runCli(argv: string[] = process.argv.slice(2)): Promise<number> {
@@ -104,7 +104,7 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
     return 0;
   }
 
-  if (!command || command === "help" || args.includes("-h") || args.includes("--help")) {
+  if (command === "help" || args.includes("-h") || args.includes("--help")) {
     console.log(`
 Usage: jev-harness <command> [options]
 
@@ -126,6 +126,12 @@ Options:
   --session-context-tokens <num>         Active prompt tokens in session
 `);
     return 0;
+  }
+
+  if (!command) {
+    console.error("Error: Missing required command.");
+    console.error("Run 'jev-harness --help' for usage information.");
+    return 2;
   }
 
   if (command === "mcp") {
@@ -176,7 +182,26 @@ Options:
     const res = await triageTestFailure(text, client);
 
     if (isJson) {
-      console.log(JSON.stringify(res, null, 2));
+      console.log(
+        JSON.stringify(
+          {
+            category: res.category,
+            confidence: res.confidence,
+            skip_llm: res.skipLlm,
+            skipLlm: res.skipLlm,
+            skip_llm_prob: res.skipLlmProb,
+            skipLlmProb: res.skipLlmProb,
+            severity_score: res.severityScore,
+            severityScore: res.severityScore,
+            recommendation: res.actionRecommendation,
+            actionRecommendation: res.actionRecommendation,
+            is_mock: res.isMock,
+            isMock: res.isMock,
+          },
+          null,
+          2
+        )
+      );
     } else {
       console.log("\n--- JEV TEST TRIAGE VERDICT (TS) ---");
       console.log(`Category:        ${res.category.toUpperCase()}`);
@@ -204,14 +229,32 @@ Options:
     const cleanPlan = readInput(plan, true).trim();
 
     if (!cleanPlan) {
-      console.error("Error: No plan provided. Pass --plan <text> or pipe via stdin.");
+      console.error("Error: No proposed step or plan provided. Pass --plan <text> or positional argument.");
       return 2;
     }
 
     const res = await shouldAbortTrajectory(cleanPlan, history, client);
 
     if (isJson) {
-      console.log(JSON.stringify(res, null, 2));
+      console.log(
+        JSON.stringify(
+          {
+            should_abort: res.shouldAbort,
+            shouldAbort: res.shouldAbort,
+            abort_probability: res.abortProbability,
+            abortProbability: res.abortProbability,
+            action: res.action,
+            viability_score: res.viabilityScore,
+            viabilityScore: res.viabilityScore,
+            reasoning_summary: res.reasoningSummary,
+            reasoningSummary: res.reasoningSummary,
+            is_mock: res.isMock,
+            isMock: res.isMock,
+          },
+          null,
+          2
+        )
+      );
     } else {
       console.log("\n--- JEV ABORT GATE VERDICT (TS) ---");
       console.log(`Should Abort:     ${res.shouldAbort ? "YES - STOP & RECONSIDER" : "NO - PROCEED"}`);
@@ -243,7 +286,24 @@ Options:
     const res = await routeModelTier(cleanTask, client);
 
     if (isJson) {
-      console.log(JSON.stringify(res, null, 2));
+      console.log(
+        JSON.stringify(
+          {
+            selected_tier: res.selectedTier,
+            selectedTier: res.selectedTier,
+            confidence: res.confidence,
+            complexity_score: res.complexityScore,
+            complexityScore: res.complexityScore,
+            recommended_model: res.recommendedModel,
+            recommendedModel: res.recommendedModel,
+            rationale: res.rationale,
+            is_mock: res.isMock,
+            isMock: res.isMock,
+          },
+          null,
+          2
+        )
+      );
     } else {
       console.log("\n--- JEV MODEL ROUTE VERDICT (TS) ---");
       console.log(`Selected Tier:     ${res.selectedTier.toUpperCase()}`);
@@ -272,7 +332,25 @@ Options:
     const res = await verifyStepCompletion(cleanCrit, cleanOut, client);
 
     if (isJson) {
-      console.log(JSON.stringify(res, null, 2));
+      console.log(
+        JSON.stringify(
+          {
+            is_verified: res.isVerified,
+            isVerified: res.isVerified,
+            satisfaction_probability: res.satisfactionProbability,
+            satisfactionProbability: res.satisfactionProbability,
+            rigor_score: res.rigorScore,
+            rigorScore: res.rigorScore,
+            confidence: res.confidence,
+            needs_rework: res.needsRework,
+            needsRework: res.needsRework,
+            is_mock: res.isMock,
+            isMock: res.isMock,
+          },
+          null,
+          2
+        )
+      );
     } else {
       console.log("\n--- JEV VERIFICATION VERDICT (TS) ---");
       console.log(`Verified:          ${res.isVerified ? "PASS" : "REWORK NEEDED"}`);
@@ -316,7 +394,28 @@ Options:
     });
 
     if (isJson) {
-      console.log(JSON.stringify(res, null, 2));
+      console.log(
+        JSON.stringify(
+          {
+            effort: res.effort,
+            confidence: res.confidence,
+            complexity_score: res.complexityScore,
+            complexityScore: res.complexityScore,
+            rationale: res.rationale,
+            provider: res.provider,
+            provider_params: res.providerParams,
+            providerParams: res.providerParams,
+            is_reasoning_supported: res.isReasoningSupported,
+            isReasoningSupported: res.isReasoningSupported,
+            cache_safe_recommendation: res.cacheSafeRecommendation,
+            cacheSafeRecommendation: res.cacheSafeRecommendation,
+            is_mock: res.isMock,
+            isMock: res.isMock,
+          },
+          null,
+          2
+        )
+      );
     } else {
       console.log("\n--- JEV REASONING EFFORT VERDICT (TS) ---");
       console.log(`Effort:            ${res.effort.toUpperCase()}`);

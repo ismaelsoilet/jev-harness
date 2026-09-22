@@ -76,10 +76,11 @@ bump_version() {
     sed -i -E "s/^__version__ = \"[^\"]+\"/__version__ = \"${new_ver}\"/" "${REPO_ROOT}/src/jev_harness/__init__.py"
     sed -i -E "s/JevHarness\/[0-9]+\.[0-9]+\.[0-9]+/JevHarness\/${new_ver}/" "${REPO_ROOT}/src/jev_harness/client.py"
 
-    # 2. Update TypeScript package.json, lockfile, client, and cli fallback
+    # 2. Update TypeScript package.json, lockfile, client, cli fallback, and mcp server
     sed -i -E "s/\"version\": \"[^\"]+\"/\"version\": \"${new_ver}\"/" "${PACKAGE_JSON}"
     sed -i -E "s/JevHarness\/[0-9]+\.[0-9]+\.[0-9]+/JevHarness\/${new_ver}/" "${REPO_ROOT}/packages/ts/src/client.ts"
     sed -i -E "s/return \"[0-9]+\.[0-9]+\.[0-9]+\";/return \"${new_ver}\";/" "${REPO_ROOT}/packages/ts/src/cli.ts"
+    sed -i -E "s/SERVER_VERSION = \"[^\"]+\"/SERVER_VERSION = \"${new_ver}\"/" "${REPO_ROOT}/packages/ts/src/mcp.ts"
     if [[ -f "${REPO_ROOT}/packages/ts/package-lock.json" ]]; then
         cd "${REPO_ROOT}/packages/ts"
         npm version "${new_ver}" --no-git-tag-version --allow-same-version || true
@@ -89,13 +90,23 @@ bump_version() {
     sed -i -E "s/^version = \"[^\"]+\"/version = \"${new_ver}\"/" "${CARGO_TOML}"
     (cd "${REPO_ROOT}/packages/rust" && cargo check --quiet || true)
 
-    # 4. Update README.md, README.pt-BR.md and packages/rust/README.md dependencies & hooks
+    # 4. Update README.md, README.pt-BR.md, packages/rust/README.md, AGENTS constitutions, and rules
     sed -i -E "s/jev-harness = \"[^\"]+\"/jev-harness = \"${new_ver}\"/" "${REPO_ROOT}/README.md"
     sed -i -E "s/jev-harness = \"[^\"]+\"/jev-harness = \"${new_ver}\"/" "${REPO_ROOT}/packages/rust/README.md"
     sed -i -E "s/rev: v[0-9]+\.[0-9]+\.[0-9]+/rev: v${new_ver}/" "${REPO_ROOT}/README.md"
     if [[ -f "${REPO_ROOT}/README.pt-BR.md" ]]; then
         sed -i -E "s/jev-harness = \"[^\"]+\"/jev-harness = \"${new_ver}\"/" "${REPO_ROOT}/README.pt-BR.md"
         sed -i -E "s/rev: v[0-9]+\.[0-9]+\.[0-9]+/rev: v${new_ver}/" "${REPO_ROOT}/README.pt-BR.md"
+    fi
+    if [[ -f "${REPO_ROOT}/AGENTS.md" ]]; then
+        sed -i -E "s/Project Version: v[0-9]+\.[0-9]+\.[0-9]+/Project Version: v${new_ver}/" "${REPO_ROOT}/AGENTS.md"
+    fi
+    if [[ -f "${REPO_ROOT}/AGENTS.pt-BR.md" ]]; then
+        sed -i -E "s/Versão do Projeto: v[0-9]+\.[0-9]+\.[0-9]+/Versão do Projeto: v${new_ver}/" "${REPO_ROOT}/AGENTS.pt-BR.md"
+    fi
+    if compgen -G "${REPO_ROOT}/.agents/rules/*.md" > /dev/null; then
+        sed -i -E "s/Versão: v[0-9]+\.[0-9]+\.[0-9]+/Versão: v${new_ver}/" "${REPO_ROOT}"/.agents/rules/*.md || true
+        sed -i -E "s/Versão do Projeto: v[0-9]+\.[0-9]+\.[0-9]+/Versão do Projeto: v${new_ver}/" "${REPO_ROOT}"/.agents/rules/*.md || true
     fi
 
     show_versions

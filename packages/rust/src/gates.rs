@@ -42,8 +42,14 @@ pub async fn triage_test_failure(
     raw_error_log: &str,
     client: Option<&JevClient>,
 ) -> Result<TestTriageResult, JevError> {
-    let default_client = JevClient::default();
-    let active_client = client.unwrap_or(&default_client);
+    let fallback_client;
+    let active_client = match client {
+        Some(c) => c,
+        None => {
+            fallback_client = JevClient::default();
+            &fallback_client
+        }
+    };
 
     let truncated_log = if raw_error_log.len() > 6000 {
         safe_truncate_head_tail(raw_error_log, 2000, 4000)
@@ -145,8 +151,14 @@ pub async fn should_abort_trajectory(
     recent_attempts_summary: &str,
     client: Option<&JevClient>,
 ) -> Result<AbortGateResult, JevError> {
-    let default_client = JevClient::default();
-    let active_client = client.unwrap_or(&default_client);
+    let fallback_client;
+    let active_client = match client {
+        Some(c) => c,
+        None => {
+            fallback_client = JevClient::default();
+            &fallback_client
+        }
+    };
 
     let state = format!(
         "RECENT ATTEMPTS & CONTEXT:\n{}\n\nPROPOSED NEXT STEP:\n{}",
@@ -242,8 +254,14 @@ pub async fn route_model_tier(
     task_description: &str,
     client: Option<&JevClient>,
 ) -> Result<ModelRouteResult, JevError> {
-    let default_client = JevClient::default();
-    let active_client = client.unwrap_or(&default_client);
+    let fallback_client;
+    let active_client = match client {
+        Some(c) => c,
+        None => {
+            fallback_client = JevClient::default();
+            &fallback_client
+        }
+    };
 
     let mut questions = HashMap::new();
 
@@ -328,8 +346,14 @@ pub async fn verify_step_completion(
     output: &str,
     client: Option<&JevClient>,
 ) -> Result<VerificationResult, JevError> {
-    let default_client = JevClient::default();
-    let active_client = client.unwrap_or(&default_client);
+    let fallback_client;
+    let active_client = match client {
+        Some(c) => c,
+        None => {
+            fallback_client = JevClient::default();
+            &fallback_client
+        }
+    };
 
     let state = format!(
         "CRITERIA TO SATISFY:\n{}\n\nACTUAL STEP OUTPUT:\n{}",
@@ -542,8 +566,14 @@ pub async fn modulate_reasoning_effort_with_tokens(
     session_context_tokens: usize,
     client: Option<&JevClient>,
 ) -> Result<ReasoningEffortResult, JevError> {
-    let default_client = JevClient::default();
-    let active_client = client.unwrap_or(&default_client);
+    let fallback_client;
+    let active_client = match client {
+        Some(c) => c,
+        None => {
+            fallback_client = JevClient::default();
+            &fallback_client
+        }
+    };
 
     let mut questions = HashMap::new();
 

@@ -4,7 +4,7 @@
 
 > **ATTENTION:** ANY autonomous artificial intelligence agent (Claude Code, OpenAI Codex / Astra-Codex, Pi, Oh My Pi, CommandCode, Cursor, Antigravity IDE, OpenCode, Windsurf, Zed, Devin, Aider) opening this repository **MUST READ THIS DOCUMENT** before planning, modifying code, or executing changes.
 > 
-> *Project Version: v0.1.6 — Synchronized across all 4 official registries.*
+> *Project Version: v0.1.7 — Synchronized across all 4 official registries.*
 
 ---
 

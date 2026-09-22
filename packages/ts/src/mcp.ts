@@ -10,7 +10,7 @@ import {
 
 const PROTOCOL_VERSION = "2024-11-05";
 const SERVER_NAME = "jev-harness";
-const SERVER_VERSION = "0.1.6";
+const SERVER_VERSION = "0.1.7";
 
 export const TOOLS_MANIFEST = [
   {
@@ -166,7 +166,21 @@ export async function processMessage(line: string, client: JevClient): Promise<R
             error: { code: -32602, message: "Missing required argument 'failure_log'" },
           };
         }
-        result = await triageTestFailure(args.failure_log, client);
+        const res = await triageTestFailure(args.failure_log, client);
+        result = {
+          category: res.category,
+          confidence: res.confidence,
+          skip_llm: res.skipLlm,
+          skipLlm: res.skipLlm,
+          skip_llm_prob: res.skipLlmProb,
+          skipLlmProb: res.skipLlmProb,
+          severity_score: res.severityScore,
+          severityScore: res.severityScore,
+          recommendation: res.actionRecommendation,
+          actionRecommendation: res.actionRecommendation,
+          is_mock: res.isMock,
+          isMock: res.isMock,
+        };
       } else if (toolName === "jev_abort_check") {
         if (!args.proposed_step) {
           return {
@@ -175,7 +189,20 @@ export async function processMessage(line: string, client: JevClient): Promise<R
             error: { code: -32602, message: "Missing required argument 'proposed_step'" },
           };
         }
-        result = await shouldAbortTrajectory(args.proposed_step, args.recent_attempts_summary || "", client);
+        const res = await shouldAbortTrajectory(args.proposed_step, args.recent_attempts_summary || "", client);
+        result = {
+          should_abort: res.shouldAbort,
+          shouldAbort: res.shouldAbort,
+          abort_probability: res.abortProbability,
+          abortProbability: res.abortProbability,
+          action: res.action,
+          viability_score: res.viabilityScore,
+          viabilityScore: res.viabilityScore,
+          reasoning_summary: res.reasoningSummary,
+          reasoningSummary: res.reasoningSummary,
+          is_mock: res.isMock,
+          isMock: res.isMock,
+        };
       } else if (toolName === "jev_route_task") {
         if (!args.task_description) {
           return {
@@ -184,7 +211,19 @@ export async function processMessage(line: string, client: JevClient): Promise<R
             error: { code: -32602, message: "Missing required argument 'task_description'" },
           };
         }
-        result = await routeModelTier(args.task_description, client);
+        const res = await routeModelTier(args.task_description, client);
+        result = {
+          selected_tier: res.selectedTier,
+          selectedTier: res.selectedTier,
+          confidence: res.confidence,
+          complexity_score: res.complexityScore,
+          complexityScore: res.complexityScore,
+          recommended_model: res.recommendedModel,
+          recommendedModel: res.recommendedModel,
+          rationale: res.rationale,
+          is_mock: res.isMock,
+          isMock: res.isMock,
+        };
       } else if (toolName === "jev_verify_completion") {
         if (!args.acceptance_criteria || !args.produced_output) {
           return {
@@ -193,7 +232,20 @@ export async function processMessage(line: string, client: JevClient): Promise<R
             error: { code: -32602, message: "Missing required arguments 'acceptance_criteria' or 'produced_output'" },
           };
         }
-        result = await verifyStepCompletion(args.acceptance_criteria, args.produced_output, client);
+        const res = await verifyStepCompletion(args.acceptance_criteria, args.produced_output, client);
+        result = {
+          is_verified: res.isVerified,
+          isVerified: res.isVerified,
+          satisfaction_probability: res.satisfactionProbability,
+          satisfactionProbability: res.satisfactionProbability,
+          rigor_score: res.rigorScore,
+          rigorScore: res.rigorScore,
+          confidence: res.confidence,
+          needs_rework: res.needsRework,
+          needsRework: res.needsRework,
+          is_mock: res.isMock,
+          isMock: res.isMock,
+        };
       } else if (toolName === "jev_modulate_reasoning_effort") {
         if (!args.context) {
           return {
@@ -202,12 +254,28 @@ export async function processMessage(line: string, client: JevClient): Promise<R
             error: { code: -32602, message: "Missing required argument 'context'" },
           };
         }
-        result = await modulateReasoningEffort(args.context, {
+        const res = await modulateReasoningEffort(args.context, {
           provider: args.provider,
           model: args.model,
           sessionContextTokens: args.session_context_tokens,
           client,
         });
+        result = {
+          effort: res.effort,
+          confidence: res.confidence,
+          complexity_score: res.complexityScore,
+          complexityScore: res.complexityScore,
+          rationale: res.rationale,
+          provider: res.provider,
+          provider_params: res.providerParams,
+          providerParams: res.providerParams,
+          is_reasoning_supported: res.isReasoningSupported,
+          isReasoningSupported: res.isReasoningSupported,
+          cache_safe_recommendation: res.cacheSafeRecommendation,
+          cacheSafeRecommendation: res.cacheSafeRecommendation,
+          is_mock: res.isMock,
+          isMock: res.isMock,
+        };
       } else {
         return {
           jsonrpc: "2.0",

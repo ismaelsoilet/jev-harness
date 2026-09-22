@@ -88,6 +88,7 @@ class ReasoningEffortResult:
 def triage_test_failure(
     failure_log: str,
     client: Optional[JevClient] = None,
+    record_session: bool = False,
 ) -> TestTriageResult:
     """
     Evaluates a test error or traceback to determine whether calling a heavy System 2 LLM
@@ -155,10 +156,11 @@ def triage_test_failure(
         is_mock=resp.is_mock,
         details={"model": resp.model, "usage": resp.usage},
     )
-    try:
-        record_triage_step(result.skip_llm, result.category, error_snippet=clean_log[:200], action=rec)
-    except Exception:
-        pass
+    if record_session:
+        try:
+            record_triage_step(result.skip_llm, result.category, error_snippet=clean_log[:200], action=rec)
+        except Exception:
+            pass
     return result
 
 
@@ -166,6 +168,7 @@ def should_abort_trajectory(
     proposed_step: str,
     recent_attempts_summary: str = "",
     client: Optional[JevClient] = None,
+    record_session: bool = False,
 ) -> AbortGateResult:
     """
     Early-abort check: Determines if the agent's proposed plan or refactor direction
@@ -174,7 +177,7 @@ def should_abort_trajectory(
     client = client or JevClient()
 
     auto_history = recent_attempts_summary
-    if not auto_history:
+    if not auto_history and record_session:
         try:
             if detect_repeated_failure(proposed_step):
                 auto_history = "WARNING: Identical failure or refactor pattern repeated across recent agent turns."
@@ -228,10 +231,11 @@ def should_abort_trajectory(
         reasoning_summary=summary,
         is_mock=resp.is_mock,
     )
-    try:
-        record_abort_step(abort_res.should_abort, proposed_step, action=abort_res.action)
-    except Exception:
-        pass
+    if record_session:
+        try:
+            record_abort_step(abort_res.should_abort, proposed_step, action=abort_res.action)
+        except Exception:
+            pass
     return abort_res
 
 
@@ -505,6 +509,7 @@ def modulate_reasoning_effort(
     model: Optional[str] = None,
     session_context_tokens: int = 0,
     client: Optional[JevClient] = None,
+    record_session: bool = False,
 ) -> ReasoningEffortResult:
     """
     Dynamically decides the optimal reasoning effort ('low', 'medium', 'high')
@@ -561,9 +566,10 @@ def modulate_reasoning_effort(
         is_mock=resp.is_mock,
     )
 
-    try:
-        record_reasoning_effort_event(result.effort, provider=provider)
-    except Exception:
-        pass
+    if record_session:
+        try:
+            record_reasoning_effort_event(result.effort, provider=provider)
+        except Exception:
+            pass
 
     return result

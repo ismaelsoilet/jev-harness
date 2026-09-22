@@ -270,7 +270,7 @@ def cmd_test_gate(args: argparse.Namespace) -> int:
     provider = getattr(args, "provider", None)
     is_json = getattr(args, "json", False)
     client = JevClient(force_mock=force_mock, provider=provider)
-    res = triage_test_failure(text, client=client)
+    res = triage_test_failure(text, client=client, record_session=True)
 
     if is_json:
         print(
@@ -316,7 +316,7 @@ def cmd_abort_check(args: argparse.Namespace) -> int:
     provider = getattr(args, "provider", None)
     is_json = getattr(args, "json", False)
     client = JevClient(force_mock=force_mock, provider=provider)
-    res = should_abort_trajectory(plan, recent_attempts_summary=history, client=client)
+    res = should_abort_trajectory(plan, recent_attempts_summary=history, client=client, record_session=True)
 
     if is_json:
         print(
@@ -454,6 +454,7 @@ def cmd_reasoning_effort(args: argparse.Namespace) -> int:
         model=model,
         session_context_tokens=session_context_tokens,
         client=client,
+        record_session=True,
     )
 
     if is_json:

@@ -441,3 +441,82 @@ async fn test_adversarial_infinite_loop_timeout_is_deep_logic() {
         "Deep logic defects must NEVER skip LLM calls"
     );
 }
+
+#[tokio::test]
+async fn test_benchmark_heuristic_latency() {
+    let client = JevClient::with_mock();
+    let test_err = "Traceback (most recent call last):\n  File \"test.py\", line 10\nModuleNotFoundError: No module named 'numpy'";
+
+    // Warmup
+    for _ in 0..50 {
+        let _ = triage_test_failure(test_err, Some(&client)).await;
+        let _ = should_abort_trajectory("implement feature", "", Some(&client)).await;
+        let _ = modulate_reasoning_effort("git status check", "openai", None, Some(&client)).await;
+    }
+
+    fn calc_percentile(mut vals: Vec<f64>, p: f64) -> f64 {
+        vals.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let k = (vals.len() - 1) as f64 * (p / 100.0);
+        let f = k.floor() as usize;
+        let c = k.ceil() as usize;
+        if f == c {
+            vals[f]
+        } else {
+            vals[f] * (c as f64 - k) + vals[c] * (k - f as f64)
+        }
+    }
+
+    // Triage
+    let mut triage_lats = Vec::with_capacity(1000);
+    for _ in 0..1000 {
+        let t0 = std::time::Instant::now();
+        let _ = triage_test_failure(test_err, Some(&client)).await;
+        triage_lats.push(t0.elapsed().as_nanos() as f64 / 1000.0);
+    }
+
+    // Abort
+    let mut abort_lats = Vec::with_capacity(1000);
+    for _ in 0..1000 {
+        let t0 = std::time::Instant::now();
+        let _ = should_abort_trajectory("implement feature", "", Some(&client)).await;
+        abort_lats.push(t0.elapsed().as_nanos() as f64 / 1000.0);
+    }
+
+    // Modulate
+    let mut mod_lats = Vec::with_capacity(1000);
+    for _ in 0..1000 {
+        let t0 = std::time::Instant::now();
+        let _ = modulate_reasoning_effort("git status check", "openai", None, Some(&client)).await;
+        mod_lats.push(t0.elapsed().as_nanos() as f64 / 1000.0);
+    }
+
+    println!("Rust triage_test_failure: p50={:.1}µs, p95={:.1}µs, p99={:.1}µs, mean={:.1}µs",
+        calc_percentile(triage_lats.clone(), 50.0), calc_percentile(triage_lats.clone(), 95.0), calc_percentile(triage_lats.clone(), 99.0), triage_lats.iter().sum::<f64>() / 1000.0);
+
+    // Pure system_one simulation benchmark directly on client
+    let mut sim_lats = Vec::with_capacity(1000);
+    let mut questions = std::collections::HashMap::new();
+    questions.insert("q".to_string(), jev_harness::types::Question::Choice(jev_harness::types::ChoiceQuestion {
+        instructions: "test".to_string(),
+        criteria: [("a".to_string(), "b".to_string())].into_iter().collect(),
+    }));
+    for _ in 0..1000 {
+        let t0 = std::time::Instant::now();
+        let _ = client.simulate_system_one("some state", &questions, "mock");
+        sim_lats.push(t0.elapsed().as_nanos() as f64 / 1000.0);
+    }
+    println!("Rust pure simulate_system_one: p50={:.1}µs, p95={:.1}µs, p99={:.1}µs, mean={:.1}µs",
+        calc_percentile(sim_lats.clone(), 50.0), calc_percentile(sim_lats.clone(), 95.0), calc_percentile(sim_lats.clone(), 99.0), sim_lats.iter().sum::<f64>() / 1000.0);
+
+
+    println!("Rust should_abort_trajectory: p50={:.1}µs, p95={:.1}µs, p99={:.1}µs, mean={:.1}µs",
+        calc_percentile(abort_lats.clone(), 50.0), calc_percentile(abort_lats.clone(), 95.0), calc_percentile(abort_lats.clone(), 99.0), abort_lats.iter().sum::<f64>() / 1000.0);
+
+    println!("Rust modulate_reasoning_effort: p50={:.1}µs, p95={:.1}µs, p99={:.1}µs, mean={:.1}µs",
+        calc_percentile(mod_lats.clone(), 50.0), calc_percentile(mod_lats.clone(), 95.0), calc_percentile(mod_lats.clone(), 99.0), mod_lats.iter().sum::<f64>() / 1000.0);
+
+    assert!(calc_percentile(triage_lats, 99.0) < 500.0, "Rust triage p99 must be under 500µs");
+    assert!(calc_percentile(abort_lats, 99.0) < 500.0, "Rust abort p99 must be under 500µs");
+    assert!(calc_percentile(mod_lats, 99.0) < 500.0, "Rust modulate p99 must be under 500µs");
+}
+

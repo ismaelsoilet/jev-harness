@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::LazyLock;
 use std::time::Duration;
 
 pub const DEFAULT_MODEL: &str = "jev-latest";
@@ -17,6 +18,14 @@ pub const DEFAULT_USER_AGENT: &str = concat!(
     env!("CARGO_PKG_VERSION"),
     "; +https://github.com/ismaelsoilet/jev-harness)"
 );
+
+static ASSERTION_REGEX: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"(?i)(?:assertionerror|assert\b|expect\(.*?\)\.to|assert_eq!|failures?:|expected:.*received:|^fail\s+|^failed\s+test)").expect("Invalid assertion regex")
+});
+
+static NEGATION_REGEX: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"(?i)\b(not|do\s+not|don't|não|nao|never|sem|evitar|avoid)\s+(\w+\s+){0,3}(abort|abortar|stop|parar|falhar|fail|deadlock|circular|dead\s*end)").expect("Invalid negation regex")
+});
 
 #[derive(Debug, Clone)]
 pub struct JevClient {
@@ -72,7 +81,15 @@ impl JevClient {
     }
 
     pub fn with_mock() -> Self {
-        Self::new(None, None, None, None, true)
+        Self {
+            api_key: None,
+            base_url: TYPESAFE_API_URL.to_string(),
+            model: DEFAULT_MODEL.to_string(),
+            provider: "mock".to_string(),
+            timeout_ms: DEFAULT_TIMEOUT_MS,
+            force_mock: true,
+            http_client: reqwest::Client::new(),
+        }
     }
 
     fn resolve_credentials(explicit_key: Option<String>) -> (Option<String>, String, String) {
@@ -279,15 +296,11 @@ impl JevClient {
             .map(|s| s.to_string())
             .collect();
 
-        let assertion_regex = regex::Regex::new(r"(?i)(?:assertionerror|assert\b|expect\(.*?\)\.to|assert_eq!|failures?:|expected:.*received:|^fail\s+|^failed\s+test)").ok();
         let is_explicit_assertion = state_lower.lines().any(|line| {
             let t = line.trim();
             t.starts_with("panicked at")
                 || t.starts_with("panic:")
-                || assertion_regex
-                    .as_ref()
-                    .map(|re| re.is_match(t))
-                    .unwrap_or(false)
+                || ASSERTION_REGEX.is_match(t)
         });
 
         let heavy_kw = [
@@ -303,14 +316,7 @@ impl JevClient {
         ];
         let has_heavy_keywords = heavy_kw.iter().any(|k| state_lower.contains(k));
 
-        let negation_regex = regex::Regex::new(
-            r"(?i)\b(not|do\s+not|don't|não|nao|never|sem|evitar|avoid)\s+(\w+\s+){0,3}(abort|abortar|stop|parar|falhar|fail|deadlock|circular|dead\s*end)",
-        )
-        .ok();
-        let is_negated_abort = negation_regex
-            .as_ref()
-            .map(|re| re.is_match(state))
-            .unwrap_or(false);
+        let is_negated_abort = NEGATION_REGEX.is_match(state);
 
         let mut answers = HashMap::new();
 

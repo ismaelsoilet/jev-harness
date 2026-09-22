@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "jev-harness"
-version = "0.1.6"
+version = "0.1.7"
 description = "Zero-dependency System One decision harness, token optimizer, and semantic guardrails for AI coding agents."
 readme = "README.md"
 license = "MIT"
