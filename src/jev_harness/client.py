@@ -18,11 +18,12 @@ import urllib.request
 
 TYPESAFE_API_URL = "https://api.typesafe.ai/v1/systemone"
 OPENCODE_API_URL = "https://opencode.ai/zen/v1/systemone"
+COMMANDCODE_API_URL = "https://api.commandcode.ai/provider/v1/systemone"
 OPENROUTER_API_URL = "https://openrouter.ai/api/alpha/decisions"
 OPENROUTER_CHAT_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 VERCEL_API_URL = "https://ai-gateway.vercel.sh/v1/evaluate"
 DEFAULT_MODEL = "jev-latest"
-DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.1.8; +https://github.com/ismaelsoilet/jev-harness)"
+DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.1.9; +https://github.com/ismaelsoilet/jev-harness)"
 
 
 def _urlopen_with_ipv4_fallback(req: urllib.request.Request, timeout: float):
@@ -158,6 +159,8 @@ class JevClient:
             self.base_url = base_url
         elif self.provider == "opencode":
             self.base_url = OPENCODE_API_URL
+        elif self.provider == "commandcode":
+            self.base_url = COMMANDCODE_API_URL
         elif self.provider == "openrouter":
             self.base_url = OPENROUTER_API_URL
         elif self.provider == "vercel":
@@ -169,6 +172,8 @@ class JevClient:
             self.model = model
         elif self.provider == "opencode":
             self.model = "jev-1.13-free"
+        elif self.provider == "commandcode":
+            self.model = "typesafe/jev"
         elif self.provider == "openrouter":
             self.model = "typesafe/jev-1.13"
         elif self.provider == "vercel":
@@ -182,8 +187,17 @@ class JevClient:
         # 1. Environment variables
         if os.getenv("JEV_PROVIDER") == "opencode":
             return os.getenv("OPENCODE_API_KEY"), "opencode"
+        if os.getenv("JEV_PROVIDER") == "commandcode":
+            return (
+                os.getenv("CMD_API_KEY") or os.getenv("COMMAND_CODE_API_KEY"),
+                "commandcode",
+            )
         if os.getenv("TYPESAFE_API_KEY"):
             return os.getenv("TYPESAFE_API_KEY"), "typesafe"
+        if os.getenv("CMD_API_KEY"):
+            return os.getenv("CMD_API_KEY"), "commandcode"
+        if os.getenv("COMMAND_CODE_API_KEY"):
+            return os.getenv("COMMAND_CODE_API_KEY"), "commandcode"
         if os.getenv("VERCEL_AI_GATEWAY_API_KEY"):
             return os.getenv("VERCEL_AI_GATEWAY_API_KEY"), "vercel"
         if os.getenv("VERCEL_API_KEY"):
@@ -220,6 +234,8 @@ class JevClient:
                                 return None, "opencode"
                             if line.startswith("TYPESAFE_API_KEY="):
                                 return line.split("=", 1)[1].strip(" '\""), "typesafe"
+                            if line.startswith(("CMD_API_KEY=", "COMMAND_CODE_API_KEY=")):
+                                return line.split("=", 1)[1].strip(" '\""), "commandcode"
                             if line.startswith(("VERCEL_AI_GATEWAY_API_KEY=", "VERCEL_API_KEY=", "AI_GATEWAY_API_KEY=")):
                                 return line.split("=", 1)[1].strip(" '\""), "vercel"
                             if line.startswith("OPENCODE_API_KEY="):
@@ -231,7 +247,7 @@ class JevClient:
         except Exception:
             pass
 
-        # 3. Global user config (~/.config/jev/credentials.env)
+        # 3. Global user config (~/.config/jev/credentials.env or ~/.commandcode/auth.json)
         try:
             global_creds = Path.home() / ".config" / "jev" / "credentials.env"
             if global_creds.exists():
@@ -240,12 +256,24 @@ class JevClient:
                     line = line.strip()
                     if line.startswith("TYPESAFE_API_KEY="):
                         return line.split("=", 1)[1].strip(" '\""), "typesafe"
+                    if line.startswith(("CMD_API_KEY=", "COMMAND_CODE_API_KEY=")):
+                        return line.split("=", 1)[1].strip(" '\""), "commandcode"
                     if line.startswith(("VERCEL_AI_GATEWAY_API_KEY=", "VERCEL_API_KEY=", "AI_GATEWAY_API_KEY=")):
                         return line.split("=", 1)[1].strip(" '\""), "vercel"
                     if line.startswith("OPENCODE_API_KEY="):
                         return line.split("=", 1)[1].strip(" '\""), "opencode"
                     if line.startswith("OPENROUTER_API_KEY="):
                         return line.split("=", 1)[1].strip(" '\""), "openrouter"
+        except Exception:
+            pass
+
+        try:
+            cmd_auth = Path.home() / ".commandcode" / "auth.json"
+            if cmd_auth.exists():
+                data = json.loads(cmd_auth.read_text(encoding="utf-8"))
+                cmd_key = data.get("apiKey") or data.get("api_key")
+                if cmd_key and str(cmd_key).strip():
+                    return str(cmd_key).strip(), "commandcode"
         except Exception:
             pass
 
@@ -314,6 +342,7 @@ class JevClient:
             err_body = self._redact_secrets(err_body, self.api_key)
             provider_map = {
                 "opencode": "OpenCode Zen",
+                "commandcode": "Command Code",
                 "openrouter": "OpenRouter",
                 "vercel": "Vercel AI Gateway",
             }
@@ -322,6 +351,7 @@ class JevClient:
         except (urllib.error.URLError, TimeoutError) as e:
             provider_map = {
                 "opencode": "OpenCode Zen",
+                "commandcode": "Command Code",
                 "openrouter": "OpenRouter",
                 "vercel": "Vercel AI Gateway",
             }
@@ -629,6 +659,37 @@ class JevClient:
                         best_choice = list(q.criteria.keys())[0]
                     probs = {k: (0.88 if k == best_choice else 0.12 / max(1, len(q.criteria) - 1)) for k in q.criteria}
 
+                elif qid == "sureforge_phase" or ("execute" in q.criteria and "complete" in q.criteria):
+                    is_waiting_user = any(k in state_lower for k in [
+                        "waiting for your", "wait for my go-ahead", "please confirm", "which option",
+                        "do you approve", "need your api key", "aguardando sua aprovação",
+                        "qual opção você prefere", "preciso que você confirme", "need clarification"
+                    ])
+                    is_unfinished = any(k in state_lower for k in [
+                        "next i'll", "next i will", "1 of 5", "2 of 5", "3 of 5", "4 of 5",
+                        "step 1 done", "unfinished", "a seguir vou", "próximo passo farei",
+                        "falta implementar", "todo:", "remaining steps", "continuarei", "now i will"
+                    ])
+                    is_done = any(k in state_lower for k in [
+                        "all done", "100% passing", "all criteria satisfied", "tudo concluído",
+                        "todas as etapas concluídas", "task complete", "konnichiwa! all done"
+                    ])
+                    if is_waiting_user and "ask" in q.criteria:
+                        best_choice = "ask"
+                    elif is_done and "complete" in q.criteria:
+                        best_choice = "complete"
+                    elif is_unfinished and "execute" in q.criteria:
+                        best_choice = "execute"
+                    elif any(k in state_lower for k in ["verify", "test", "fable-judge", "verificar", "testar"]) and "verify" in q.criteria:
+                        best_choice = "verify"
+                    elif any(k in state_lower for k in ["plan", "blueprint", "plano", "planejar"]) and "plan" in q.criteria:
+                        best_choice = "plan"
+                    elif any(k in state_lower for k in ["research", "investigate", "pesquisar", "investigar"]) and "research" in q.criteria:
+                        best_choice = "research"
+                    elif "execute" in q.criteria:
+                        best_choice = "execute"
+                    probs = {k: (0.88 if k == best_choice else 0.12 / max(1, len(q.criteria) - 1)) for k in q.criteria}
+
                 answers[qid] = ChoiceAnswer(choice=best_choice, confidence=0.88, probabilities=probs)
 
             elif isinstance(q, ScoreQuestion):
@@ -674,7 +735,42 @@ class JevClient:
                 is_repetitive_loop = any(w in proposed_part for w in ["same", "repetir", "tentar novamente", "intentar de nuevo", "4a vez", "again", "identical"])
                 is_fatal_deadlock = any(k in state_lower for k in ["impossible", "impossivel", "imposible", "circular", "deadlock", "dead end", "inviavel", "inviable", "hopeless", "fatal"])
 
-                if has_explicit_failure and any(w in inst for w in ["pass", "valid", "satisfy", "complete", "verif"]):
+                if qid == "nudge" or "gentle nudge" in inst or "advance useful work" in inst:
+                    is_waiting_user = any(k in state_lower for k in [
+                        "waiting for your", "wait for my go-ahead", "please confirm", "which option",
+                        "do you approve", "need your api key", "aguardando sua aprovação",
+                        "qual opção você prefere", "preciso que você confirme", "need clarification"
+                    ])
+                    is_done = any(k in state_lower for k in [
+                        "all done", "100% passing", "all criteria satisfied", "tudo concluído",
+                        "todas as etapas concluídas", "task complete", "konnichiwa! all done"
+                    ])
+                    is_unfinished = any(k in state_lower for k in [
+                        "next i'll", "next i will", "1 of 5", "2 of 5", "3 of 5", "4 of 5",
+                        "step 1 done", "unfinished", "a seguir vou", "próximo passo farei",
+                        "falta implementar", "todo:", "remaining", "continuarei", "now i will",
+                        "partial", "parcial"
+                    ])
+                    if is_waiting_user or is_done:
+                        prob = 0.06
+                    elif is_unfinished:
+                        prob = 0.82
+                    else:
+                        prob = 0.20
+                elif qid == "waiting" or "waiting on the user" in inst:
+                    is_waiting_user = any(k in state_lower for k in [
+                        "waiting for your", "wait for my go-ahead", "please confirm", "which option",
+                        "do you approve", "need your api key", "aguardando sua aprovação",
+                        "qual opção você prefere", "preciso que você confirme", "need clarification"
+                    ])
+                    prob = 0.88 if is_waiting_user else 0.08
+                elif qid == "progress" or "last nudge produce" in inst:
+                    no_prog = any(k in state_lower for k in [
+                        "0 tool calls", "no progress", "sem progresso", "nothing done",
+                        "tool_calls_after: 0", "toolcallsafter: 0", "identical reply"
+                    ])
+                    prob = 0.12 if no_prog else 0.85
+                elif has_explicit_failure and any(w in inst for w in ["pass", "valid", "satisfy", "complete", "verif"]):
                     prob = 0.05
                 elif is_negated_abort and any(w in inst for w in ["abort", "dead", "unviable", "destructive"]):
                     prob = 0.08
@@ -689,7 +785,7 @@ class JevClient:
                         prob = 0.85
                     else:
                         prob = 0.15
-                if not has_explicit_failure and any(w in state_lower for w in positive_signals) and not any(neg in state_lower for neg in ["not ok", "failed", "falhou"]):
+                if qid not in ("nudge", "waiting", "progress") and not has_explicit_failure and any(w in state_lower for w in positive_signals) and not any(neg in state_lower for neg in ["not ok", "failed", "falhou"]):
                     if any(w in inst for w in ["pass", "valid", "satisfy", "complete", "verif"]):
                         prob = 0.92
                     elif any(w in inst for w in ["abort", "dead", "unviable"]):

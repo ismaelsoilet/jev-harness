@@ -271,7 +271,7 @@ jev-harness init --all
 
 ## ⚡ Astra-Jev: Governança Dinâmica de Esforço de Raciocínio (Modelos de Fronteira 2026)
 
-Inspirado pelo trabalho pioneiro de Vechen ([@miu21590](https://x.com/miu21590)) com *Astra-Codex*, o **Astra-Jev** introduz modulação de esforço de raciocínio por geração, governada pelo TypeSafe Jev System One.
+Inspirado pelo trabalho pioneiro de Vechen ([@miu21590](https://x.com/miu21590)) com *Astra-Codex* e o framework **[Astra-Ares](https://github.com/miuuyy/Astra-Ares)**, o **Astra-Jev** introduz modulação de esforço de raciocínio por geração, governada pelo TypeSafe Jev System One.
 
 Em vez de prender uma sessão inteira de agente em raciocínio pesado e lento (ou arriscar bugs rodando exclusivamente em raciocínio baixo), o Astra-Jev avalia a demanda cognitiva do próximo passo em **< 500µs localmente (70ms remoto)**.
 
@@ -605,6 +605,13 @@ Quando em modo de simulação offline (`--mock` ou durante partições de rede),
 - 🧠 **Aviso de Risco de Cache no Contexto da Sessão**: Novo parâmetro `--session-context-tokens` na CLI e ferramenta MCP emite alerta preventivo de `HIGH CACHE RISK` quando o contexto excede 30.000 tokens.
 - 💻 **CLI TypeScript `reasoning-effort` & Servidor MCP Nativo Zero-Dependency**: Suporte nativo completo na linha de comando TypeScript via `npx @ismaelsoilet/jev-harness reasoning-effort` e servidor MCP stdio nativo via `npx @ismaelsoilet/jev-harness mcp`.
 - 🧪 **Heurísticas Adversariais Reforçadas & Bateria de 122 Testes**: 100% de aprovação em 122 testes (73 Python, 25 Rust, 24 TypeScript).
+
+---
+
+## 🙏 Agradecimentos
+
+- **[Astra-Ares](https://github.com/miuuyy/Astra-Ares)** por Vechen ([@miu21590](https://x.com/miu21590)): Inspiração para a governança dinâmica de esforço de raciocínio por geração, leasing multi-geração (`lease_steps`), compilação de dialetos de provedores e redação de segredos zero-trust em mensagens de erro.
+- **TypeSafe AI**: Criadores da arquitetura de decisão Jev System One.
 
 ---
 

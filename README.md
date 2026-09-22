@@ -271,7 +271,7 @@ jev-harness init --all
 
 ## ⚡ Astra-Jev: Dynamic Reasoning Effort Governance (2026 Frontier Models)
 
-Inspired by Vechen's ([@miu21590](https://x.com/miu21590)) groundbreaking work on *Astra-Codex*, **Astra-Jev** introduces autonomous, per-generation reasoning effort modulation governed by TypeSafe Jev System One.
+Inspired by Vechen's ([@miu21590](https://x.com/miu21590)) groundbreaking work on *Astra-Codex* and the **[Astra-Ares](https://github.com/miuuyy/Astra-Ares)** framework, **Astra-Jev** introduces autonomous, per-generation reasoning effort modulation governed by TypeSafe Jev System One.
 
 Instead of locking an entire multi-turn coding session into heavy, slow reasoning (or risking bugs by running exclusively in low reasoning), Astra-Jev evaluates the cognitive demand of the immediate next generation in **< 500µs locally (70ms remote)**.
 
@@ -746,6 +746,13 @@ You can also trigger releases via GitHub Actions:
 - 🧪 **Comprehensive 82-Test Battery**: 100% test pass rate across Python (54), TypeScript (13), and Rust (15), covering adversarial inputs, Portuguese & English tracebacks, and UTF-8 truncations.
 - 📦 **Tri-Registry Synchronization**: Crates.io, npm, and PyPI synchronized with automated GitHub Actions CD release.
 - 🛡️ **Cross-Platform Test & Runtime Hardening**: Resilient HTTP/network handling across Python 3.9 through 3.13, Node 18 through 22, and Rust stable.
+
+---
+
+## 🙏 Acknowledgements
+
+- **[Astra-Ares](https://github.com/miuuyy/Astra-Ares)** by Vechen ([@miu21590](https://x.com/miu21590)): Inspiration for per-generation reasoning effort modulation, multi-generation effort leasing (`lease_steps`), provider dialect mapping, and zero-trust secret redaction in error messages.
+- **TypeSafe AI**: Creators of the Jev System One decision architecture.
 
 ---
 
