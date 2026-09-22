@@ -155,6 +155,63 @@ class TestAdversarialAndTelemetry(unittest.TestCase):
         self.assertEqual(res.category, "deep_logic")
         self.assertFalse(res.skip_llm)
 
+    def test_adversarial_jest_assertion_with_modulenotfound(self):
+        jest_log = """
+FAIL src/plugin.test.ts
+  ● Plugin Loader › handles failure gracefully
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "READY"
+    Received: "ModuleNotFoundError: No module named 'foo'"
+
+      18 |     const res = await loader.load();
+    > 19 |     expect(res.status).toBe("READY");
+"""
+        res = triage_test_failure(jest_log, client=self.client)
+        self.assertEqual(res.category, "deep_logic", "Jest assertion failure must be classified as deep_logic")
+        self.assertFalse(res.skip_llm, "Deep logic failure must NEVER skip LLM")
+
+    def test_adversarial_warning_with_transient_string_does_not_mask_assertion(self):
+        log = """
+test_service.py:10: UserWarning: transient network timeout was safely handled by retry handler
+FAILED test_service.py::test_calculation
+Calculation returned 42, expected 100
+"""
+        res = triage_test_failure(log, client=self.client)
+        self.assertEqual(res.category, "deep_logic")
+        self.assertFalse(res.skip_llm)
+
+    def test_adversarial_forward_progress_not_aborted(self):
+        res = should_abort_trajectory(
+            proposed_step="Implement the missing function to fix the error",
+            recent_attempts_summary="Previous attempt had a compilation error",
+            client=self.client,
+        )
+        self.assertFalse(res.should_abort, "Forward progress implementation must NOT be aborted")
+        self.assertLess(res.abort_probability, 0.50)
+
+    def test_adversarial_direct_models_expanded_safeguards(self):
+        from jev_harness.gates import modulate_reasoning_effort
+
+        for model in ["gpt-4o", "gpt-4o-mini", "claude-3-5-haiku", "gpt-5.6-luna"]:
+            res = modulate_reasoning_effort("git status", provider="openai", model=model, client=self.client)
+            self.assertFalse(res.is_reasoning_supported, f"{model} must be recognized as non-reasoning direct model")
+            self.assertEqual(res.provider_params, {})
+
+    def test_adversarial_cache_risk_on_high_context(self):
+        from jev_harness.gates import modulate_reasoning_effort
+
+        res = modulate_reasoning_effort(
+            "git status",
+            provider="openai",
+            model="o3-mini",
+            session_context_tokens=45000,
+            client=self.client,
+        )
+        self.assertTrue(res.is_reasoning_supported)
+        self.assertIn("HIGH CACHE RISK", res.cache_safe_recommendation)
+
 
 if __name__ == "__main__":
     unittest.main()

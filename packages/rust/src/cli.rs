@@ -1,8 +1,11 @@
-use clap::{Parser, Subcommand};
 use crate::{
     client::JevClient,
-    gates::{route_model_tier, should_abort_trajectory, triage_test_failure, verify_step_completion},
+    gates::{
+        modulate_reasoning_effort_with_tokens, route_model_tier, should_abort_trajectory,
+        triage_test_failure, verify_step_completion,
+    },
 };
+use clap::{Parser, Subcommand};
 use std::fs;
 use std::io::{self, IsTerminal, Read};
 use std::path::Path;
@@ -23,7 +26,11 @@ pub struct Cli {
     #[arg(long, global = true, help = "Output results in machine-readable JSON")]
     pub json: bool,
 
-    #[arg(long, global = true, help = "Override backend provider (typesafe, opencode, openrouter)")]
+    #[arg(
+        long,
+        global = true,
+        help = "Override backend provider (typesafe, opencode, openrouter)"
+    )]
     pub provider: Option<String>,
 
     #[command(subcommand)]
@@ -58,7 +65,12 @@ pub enum Commands {
         #[arg(short, long, help = "Proposed next step plan")]
         plan: Option<String>,
 
-        #[arg(short = 'H', long, default_value = "", help = "Recent attempts or error history")]
+        #[arg(
+            short = 'H',
+            long,
+            default_value = "",
+            help = "Recent attempts or error history"
+        )]
         history: String,
     },
 
@@ -78,6 +90,40 @@ pub enum Commands {
 
         #[arg(short, long, help = "Actual output to verify")]
         output: String,
+    },
+
+    #[command(
+        alias = "astra-jev",
+        alias = "effort",
+        about = "Dynamically modulate reasoning effort per-generation (Astra-Jev)"
+    )]
+    ReasoningEffort {
+        #[arg(help = "Immediate step context or prompt description")]
+        context_pos: Option<String>,
+
+        #[arg(short, long, help = "Immediate step context or prompt description")]
+        context: Option<String>,
+
+        #[arg(
+            long = "target-provider",
+            default_value = "openai",
+            help = "Target model provider (openai, deepseek, qwen, anthropic, gemini)"
+        )]
+        target_provider: String,
+
+        #[arg(
+            short,
+            long,
+            help = "Target model name (e.g. gpt-5.6-luna, deepseek-v4.1-flash)"
+        )]
+        model: Option<String>,
+
+        #[arg(
+            long = "session-context-tokens",
+            default_value = "0",
+            help = "Active prompt tokens in session context"
+        )]
+        session_context_tokens: usize,
     },
 }
 
@@ -113,7 +159,8 @@ pub async fn run_cli() {
     match cli.command {
         Commands::Status => {
             println!("\n=== JEV HARNESS (RUST) STATUS ===");
-            let is_live = !client.force_mock && (client.provider == "opencode" || client.api_key.is_some());
+            let is_live =
+                !client.force_mock && (client.provider == "opencode" || client.api_key.is_some());
             if is_live {
                 if client.provider == "opencode" {
                     println!("Provider:    OPENCODE ZEN (Free Tier)");
@@ -192,7 +239,9 @@ pub async fn run_cli() {
             let plan_text = match plan.or(plan_pos) {
                 Some(p) if !p.trim().is_empty() => p,
                 _ => {
-                    eprintln!("Error: No plan provided. Pass --plan <text> or positional argument.");
+                    eprintln!(
+                        "Error: No plan provided. Pass --plan <text> or positional argument."
+                    );
                     process::exit(2);
                 }
             };
@@ -290,6 +339,68 @@ pub async fn run_cli() {
                 }
                 Err(e) => {
                     eprintln!("Error verifying step completion: {}", e);
+                    process::exit(2);
+                }
+            }
+        }
+
+        Commands::ReasoningEffort {
+            context_pos,
+            context,
+            target_provider,
+            model,
+            session_context_tokens,
+        } => {
+            let ctx = match read_input(context_pos, context) {
+                Ok(t) if !t.trim().is_empty() => t,
+                _ => {
+                    eprintln!(
+                        "Error: Context/step description must be provided via argument or stdin."
+                    );
+                    process::exit(2);
+                }
+            };
+
+            match modulate_reasoning_effort_with_tokens(
+                &ctx,
+                &target_provider,
+                model.as_deref(),
+                session_context_tokens,
+                Some(&client),
+            )
+            .await
+            {
+                Ok(res) => {
+                    if cli.json {
+                        println!("{}", serde_json::to_string_pretty(&res).unwrap());
+                    } else {
+                        println!("\n--- JEV REASONING EFFORT VERDICT (RUST) ---");
+                        println!("Effort:            {}", res.effort.to_uppercase());
+                        println!("Confidence:        {:.1}%", res.confidence * 100.0);
+                        println!("Complexity Score:  {:.1} / 4.0", res.complexity_score);
+                        println!("Provider:          {}", res.provider);
+                        println!(
+                            "Supported:         {}",
+                            if res.is_reasoning_supported {
+                                "YES"
+                            } else {
+                                "NO (Direct model)"
+                            }
+                        );
+                        println!("Rationale:         {}", res.rationale);
+                        println!("Provider Params:   {}", res.provider_params);
+                        if !res.cache_safe_recommendation.is_empty() {
+                            println!("Cache Advisory:    {}", res.cache_safe_recommendation);
+                        }
+                        if res.is_mock {
+                            println!("Mode:              [SIMULATION/MOCK]");
+                        }
+                        println!("------------------------------------------\n");
+                    }
+                    process::exit(0);
+                }
+                Err(e) => {
+                    eprintln!("Error modulating reasoning effort: {}", e);
                     process::exit(2);
                 }
             }

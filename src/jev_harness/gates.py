@@ -128,7 +128,9 @@ def triage_test_failure(
     skip_prob = skip_ans.noul if skip_ans and hasattr(skip_ans, "noul") else 0.0
     sev_score = sev_ans.score if sev_ans and hasattr(sev_ans, "score") else 3.0
 
-    skip_llm = skip_prob >= 0.65 or category in ["env_missing", "flaky_transient"]
+    skip_llm = (category != "deep_logic") and (
+        skip_prob >= 0.65 or category in ["env_missing", "flaky_transient"]
+    )
 
     if category == "env_missing":
         rec = "AUTO-ACTION: Install missing dependency or check environment configuration (Do NOT call LLM)."
@@ -347,7 +349,21 @@ def build_provider_params(
     norm_model = (model or "").strip().lower()
 
     # Detect non-reasoning direct execution models that would return HTTP 400
-    direct_models = ["gpt-5.6-luna", "gpt-5.5", "gemini-3.8-live", "gemini-1.5-flash", "qwen-3.8-flash-standard"]
+    direct_models = [
+        "gpt-5.6-luna",
+        "gpt-5.5",
+        "gpt-4o",
+        "gpt-4o-mini",
+        "gemini-3.8-live",
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+        "gemini-1.5-flash",
+        "claude-3-5-haiku",
+        "qwen-3.8-flash-standard",
+        "qwen-2.5-coder",
+        "llama-3.3",
+        "llama-3.1",
+    ]
     if any(dm in norm_model for dm in direct_models):
         return (
             {},
@@ -367,7 +383,7 @@ def build_provider_params(
         return (
             {"reasoning_effort": effort},
             True,
-            f"Configured OpenAI reasoning_effort='{effort}' for target model.",
+            f"Configured OpenAI reasoning_effort='{effort}' for target model. Note: Ensure temperature=1.0 or omitted to prevent HTTP 400.",
             cache_rec,
         )
 
@@ -387,25 +403,26 @@ def build_provider_params(
 
     elif norm_provider in ["qwen", "alibaba", "dashscope"]:
         # Qwen 3.8 Max (2.4T MoE), Qwen 3.8-Omni-Flash
+        # DashScope native parameters (wrap in extra_body if using OpenAI client)
         if effort == "low":
             return (
                 {"enable_thinking": False},
                 True,
-                "Disabled Qwen thinking CoT for mechanical/terminal step to minimize latency.",
+                "Disabled Qwen thinking CoT for mechanical/terminal step to minimize latency. Wrap in extra_body={'enable_thinking': False} when using OpenAI client.",
                 "Zero tokens spent on reasoning trace.",
             )
         elif effort == "medium":
             return (
                 {"enable_thinking": True, "thinking_budget": 4096},
                 True,
-                "Enabled balanced Qwen thinking budget (4096 tokens).",
+                "Enabled balanced Qwen thinking budget (4096 tokens). Wrap in extra_body when using OpenAI client.",
                 cache_rec,
             )
         else:
             return (
                 {"enable_thinking": True, "thinking_budget": 16384},
                 True,
-                "Enabled frontier deep reasoning budget (16384 tokens) on Qwen 3.8 Max.",
+                "Enabled frontier deep reasoning budget (16384 tokens) on Qwen 3.8 Max. Wrap in extra_body when using OpenAI client.",
                 cache_rec,
             )
 
@@ -483,6 +500,7 @@ def modulate_reasoning_effort(
     context: str,
     provider: str = "openai",
     model: Optional[str] = None,
+    session_context_tokens: int = 0,
     client: Optional[JevClient] = None,
 ) -> ReasoningEffortResult:
     """
@@ -521,6 +539,12 @@ def modulate_reasoning_effort(
     comp_score = comp_ans.score if comp_ans and hasattr(comp_ans, "score") else 2.0
 
     params, is_supported, rationale, cache_rec = build_provider_params(provider, effort, model)
+
+    if session_context_tokens > 30000 and is_supported:
+        cache_rec = (
+            f"HIGH CACHE RISK ({session_context_tokens} tokens active): Modulating reasoning effort across turns "
+            "may invalidate prefix KV cache. Hysteresis recommended: preserve stable reasoning effort across active sub-steps."
+        )
 
     result = ReasoningEffortResult(
         effort=effort,

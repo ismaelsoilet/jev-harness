@@ -129,5 +129,60 @@ describe("Jev System One (TypeScript) Decision Gates", () => {
     const resDirect = await modulateReasoningEffort("cat package.json", { provider: "openai", model: "gpt-5.6-luna", client });
     assert.equal(resDirect.isReasoningSupported, false);
     assert.deepEqual(resDirect.providerParams, {});
+
+    const resGpt4o = await modulateReasoningEffort("git status", { provider: "openai", model: "gpt-4o", client });
+    assert.equal(resGpt4o.isReasoningSupported, false);
+    assert.deepEqual(resGpt4o.providerParams, {});
+
+    const resHaiku = await modulateReasoningEffort("git status", { provider: "anthropic", model: "claude-3-5-haiku", client });
+    assert.equal(resHaiku.isReasoningSupported, false);
+    assert.deepEqual(resHaiku.providerParams, {});
+  });
+
+  test("adversarial: Jest assertion failure with module string is deep_logic", async () => {
+    const jestLog = `
+FAIL src/plugin.test.ts
+  ● Plugin Loader › handles failure gracefully
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "READY"
+    Received: "ModuleNotFoundError: No module named 'foo'"
+
+      18 |     const res = await loader.load();
+    > 19 |     expect(res.status).toBe("READY");
+`;
+    const res = await triageTestFailure(jestLog, client);
+    assert.equal(res.category, "deep_logic");
+    assert.equal(res.skipLlm, false);
+  });
+
+  test("adversarial: forward progress is not falsely aborted", async () => {
+    const res = await shouldAbortTrajectory(
+      "Implement the missing function to fix the error",
+      "Previous attempt had a compilation error",
+      client
+    );
+    assert.equal(res.shouldAbort, false);
+    assert.equal(res.abortProbability < 0.5, true);
+  });
+
+  test("adversarial: high-context prompt cache advisory", async () => {
+    const res = await modulateReasoningEffort("git status", {
+      provider: "openai",
+      model: "o3-mini",
+      sessionContextTokens: 45000,
+      client,
+    });
+    assert.equal(res.isReasoningSupported, true);
+    assert.match(res.cacheSafeRecommendation, /HIGH CACHE RISK/);
+  });
+
+  test("openrouter provider resolves correct baseUrl and default model", () => {
+    const openrouterClient = new JevClient({ provider: "openrouter", apiKey: "test-key" });
+    assert.equal(openrouterClient.baseUrl, "https://openrouter.ai/api/v1/chat/completions");
+    assert.equal(openrouterClient.model, "google/gemini-2.5-flash");
+    assert.equal(openrouterClient.isLive, true);
   });
 });
+

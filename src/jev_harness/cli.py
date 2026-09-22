@@ -445,9 +445,16 @@ def cmd_reasoning_effort(args: argparse.Namespace) -> int:
     model = getattr(args, "model", None)
     force_mock = getattr(args, "mock", False)
     is_json = getattr(args, "json", False)
+    session_context_tokens = getattr(args, "session_context_tokens", 0) or 0
 
     client = JevClient(force_mock=force_mock)
-    res = modulate_reasoning_effort(context, provider=provider, model=model, client=client)
+    res = modulate_reasoning_effort(
+        context,
+        provider=provider,
+        model=model,
+        session_context_tokens=session_context_tokens,
+        client=client,
+    )
 
     if is_json:
         print(
@@ -569,6 +576,14 @@ def main() -> None:
         help="Target model provider (openai, deepseek, qwen, anthropic, gemini, kimi, mimo)",
     )
     p_effort.add_argument("--model", "-m", default=None, help="Specific target model identifier")
+    p_effort.add_argument(
+        "--session-context-tokens",
+        "--tokens",
+        dest="session_context_tokens",
+        type=int,
+        default=0,
+        help="Active prompt tokens in session context",
+    )
     p_effort.set_defaults(func=cmd_reasoning_effort)
 
     # verify

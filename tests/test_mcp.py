@@ -187,6 +187,25 @@ class TestMCPServer(unittest.TestCase):
         self.assertIn("extra_body", content["provider_params"])
         self.assertEqual(content["provider_params"]["reasoning_effort"], "low")
 
+    def test_mcp_tools_call_reasoning_effort_with_tokens(self):
+        req = json.dumps({
+            "jsonrpc": "2.0",
+            "id": 14,
+            "method": "tools/call",
+            "params": {
+                "name": "jev_modulate_reasoning_effort",
+                "arguments": {
+                    "context": "git status",
+                    "provider": "openai",
+                    "session_context_tokens": 45000,
+                },
+            },
+        })
+        resp = process_message(req, self.client)
+        self.assertIsNotNone(resp)
+        content = json.loads(resp["result"]["content"][0]["text"])
+        self.assertIn("HIGH CACHE RISK", content["cache_safe_recommendation"])
+
     def test_mcp_run_server_loop(self):
         from io import StringIO
         from unittest.mock import patch

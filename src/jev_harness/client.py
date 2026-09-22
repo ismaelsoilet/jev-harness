@@ -166,7 +166,7 @@ class JevClient:
         elif self.provider == "opencode":
             self.model = "jev-1.13-free"
         elif self.provider == "openrouter":
-            self.model = "google/gemini-flash-1.5"
+            self.model = "google/gemini-2.5-flash"
         else:
             self.model = DEFAULT_MODEL
 
@@ -405,7 +405,10 @@ class JevClient:
         state_tokens = set(re.findall(r"\w+", state_lower))
 
         is_explicit_assertion = any(
-            re.match(r"^(?:failed\s+.*assertionerror|e\s+assertionerror|assertionerror:|>\s+assert\s+|assert\s+)", line.strip())
+            re.search(
+                r"(?:assertionerror|assert\b|expect\(.*?\)\.to|assert_eq!|failures?:|expected:.*received:|^fail\s+|^failed\s+test)",
+                line.strip(),
+            )
             for line in state_lower.splitlines()
         )
         has_heavy_keywords = any(k in state_lower for k in [
@@ -434,11 +437,11 @@ class JevClient:
                             "assertionerror", "assert ", "panicked at", "panic:", "panic",
                             "deadlock", "goroutines are asleep", "segmentation fault",
                             "nullpointerexception", "nil pointer dereference", "index out of bounds",
-                            "falha de asserção", "asserção", "erro de lógica"
+                            "falha de asserção", "asserção", "erro de lógica", "expect("
                         ]):
                             match_score += 8
                         if is_explicit_assertion:
-                            match_score += 6
+                            match_score += 18
                     elif opt == "env_missing" and any(k in state_lower for k in [
                         "modulenotfounderror", "no module named", "not found", "importerror",
                         "cannot find module", "err_module_not_found", "ts2307", "cannot find crate",
@@ -446,14 +449,15 @@ class JevClient:
                         "cannot find package", "no required module provides package",
                         "módulo não encontrado", "nenhum módulo chamado", "pacote não encontrado"
                     ]):
-                        # If it's just an AssertionError testing module strings, don't over-boost
-                        match_score += 4 if is_explicit_assertion else 7
+                        if not is_explicit_assertion:
+                            match_score += 7
                     elif opt == "flaky_transient" and any(k in state_lower for k in [
                         "connectionreset", "timeout", "timed out", "econnreset", "econnrefused",
                         "etimedout", "socket hang up", "gateway timeout", "503 service unavailable",
                         "tempo limite", "tempo limite esgotado", "conexão recusada"
                     ]):
-                        match_score += 7
+                        if not is_explicit_assertion:
+                            match_score += 7
                     elif opt == "syntax_trivial" and any(k in state_lower for k in [
                         "syntaxerror", "indentationerror", "expected ';'", "ts1005", "missing bracket",
                         "erro de sintaxe", "sintaxe inválida", "indentação inesperada"
@@ -518,11 +522,24 @@ class JevClient:
                 negation_pattern = r"\b(?:not|do\s+not|don't|não|nao|never|sem|evitar|avoid)\s+(?:\w+\s+){0,3}(?:abort|abortar|stop|parar|falhar|fail|deadlock|circular|dead\s*end)"
                 is_negated_abort = bool(re.search(negation_pattern, state_lower))
 
+                proposed_part = state_lower.split("proposed next step:")[-1] if "proposed next step:" in state_lower else state_lower
+                is_forward_progress = any(w in proposed_part for w in [
+                    "implement", "fix", "resolve", "correct", "update", "create", "write", "corrigir", "implementar", "executar", "validar"
+                ])
+                is_repetitive_loop = any(w in proposed_part for w in ["same", "repetir", "tentar novamente", "4a vez", "again", "identical"])
+                is_fatal_deadlock = any(k in state_lower for k in ["impossible", "impossivel", "circular", "deadlock", "dead end", "inviavel", "hopeless", "fatal"])
+
                 if is_negated_abort and any(w in inst for w in ["abort", "dead", "unviable", "destructive"]):
                     prob = 0.08
-                elif any(w in state_lower for w in negative_signals):
-                    if any(w in inst for w in ["abort", "dead", "fail", "urgent", "invalid", "unviable", "destructive", "dead end"]):
+                elif is_fatal_deadlock and any(w in inst for w in ["abort", "dead", "fail", "urgent", "invalid", "unviable", "destructive", "dead end"]):
+                    prob = 0.88
+                elif any(w in inst for w in ["abort", "dead", "fail", "urgent", "invalid", "unviable", "destructive", "dead end"]):
+                    if is_repetitive_loop:
                         prob = 0.88
+                    elif is_forward_progress:
+                        prob = 0.12
+                    elif any(w in state_lower for w in negative_signals):
+                        prob = 0.85
                     else:
                         prob = 0.15
                 if any(w in state_lower for w in positive_signals):
@@ -530,7 +547,9 @@ class JevClient:
                         prob = 0.92
                     elif any(w in inst for w in ["abort", "dead", "unviable"]):
                         prob = 0.08
-                if any(w in state_lower for w in ["modulenotfounderror", "no module named", "pip install", "npm install"]) and not is_explicit_assertion:
+                if is_explicit_assertion and ("deterministically" in inst or "skip" in inst):
+                    prob = 0.05
+                elif any(w in state_lower for w in ["modulenotfounderror", "no module named", "pip install", "npm install"]) and not is_explicit_assertion:
                     if "deterministically" in inst or "skip" in inst:
                         prob = 0.95
                 answers[qid] = NoulAnswer(noul=prob)

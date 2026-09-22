@@ -128,7 +128,23 @@ const result = await verifyStepCompletion(criteria, output);
 console.log(`Verified: ${result.isVerified ? 'PASS' : 'REWORK NEEDED'}`);
 ```
 
-### 5. CLI Usage
+### 5. Dynamic Reasoning Effort Modulation (Astra-Jev)
+
+```typescript
+import { modulateReasoningEffort } from '@ismaelsoilet/jev-harness';
+
+// Modulate mechanical step to low effort and compile target dialect
+const effort = await modulateReasoningEffort("git status and check modified files", {
+  provider: "deepseek",
+  model: "deepseek-v4.1-flash",
+  sessionContextTokens: 45000,
+});
+console.log("Effort:", effort.effort); // 'low'
+console.log("Provider Params:", effort.providerParams); // { extra_body: { thinking: { type: 'enabled' } }, reasoning_effort: 'low' }
+console.log("Cache Advisory:", effort.cacheSafeRecommendation);
+```
+
+### 6. CLI Usage
 
 ```bash
 # Run triage on a test failure
@@ -141,6 +157,14 @@ npx @ismaelsoilet/jev-harness abort-check --plan "Try identical prompt again" --
 
 # Route a task to appropriate model tier
 npx @ismaelsoilet/jev-harness route --task "Refactor full authentication kernel to WebCrypto"
+
+# Dynamically modulate reasoning effort per-step (Astra-Jev)
+npx @ismaelsoilet/jev-harness reasoning-effort --context "git status" --target-provider deepseek --json
+# or alias
+npx @ismaelsoilet/jev-harness astra-jev --context "Architect distributed consensus" --target-provider anthropic
+
+# Evaluate prompt cache risk in long-context sessions
+npx @ismaelsoilet/jev-harness reasoning-effort --context "git status" --session-context-tokens 45000
 
 # System status & provider inspection
 npx @ismaelsoilet/jev-harness status

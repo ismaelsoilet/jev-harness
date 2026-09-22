@@ -75,9 +75,7 @@ impl JevClient {
         Self::new(None, None, None, None, true)
     }
 
-    fn resolve_credentials(
-        explicit_key: Option<String>,
-    ) -> (Option<String>, String, String) {
+    fn resolve_credentials(explicit_key: Option<String>) -> (Option<String>, String, String) {
         if let Some(key) = explicit_key {
             if !key.trim().is_empty() {
                 return (
@@ -129,9 +127,15 @@ impl JevClient {
         // 2. Check local repository .jev.json
         if let Ok(content) = fs::read_to_string(".jev.json") {
             if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
-                let prov = val.get("provider").and_then(|v| v.as_str()).unwrap_or("typesafe");
+                let prov = val
+                    .get("provider")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("typesafe");
                 if prov == "opencode" {
-                    let k = val.get("api_key").and_then(|v| v.as_str()).map(|s| s.to_string());
+                    let k = val
+                        .get("api_key")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
                     return (k, "opencode".to_string(), OPENCODE_API_URL.to_string());
                 }
                 if let Some(k) = val.get("api_key").and_then(|v| v.as_str()) {
@@ -156,7 +160,9 @@ impl JevClient {
                         return (None, "opencode".to_string(), OPENCODE_API_URL.to_string());
                     }
                     if trimmed.starts_with("OPENCODE_API_KEY=") {
-                        let k = trimmed.trim_start_matches("OPENCODE_API_KEY=").trim_matches('"');
+                        let k = trimmed
+                            .trim_start_matches("OPENCODE_API_KEY=")
+                            .trim_matches('"');
                         if !k.is_empty() {
                             return (
                                 Some(k.to_string()),
@@ -166,7 +172,9 @@ impl JevClient {
                         }
                     }
                     if trimmed.starts_with("TYPESAFE_API_KEY=") {
-                        let k = trimmed.trim_start_matches("TYPESAFE_API_KEY=").trim_matches('"');
+                        let k = trimmed
+                            .trim_start_matches("TYPESAFE_API_KEY=")
+                            .trim_matches('"');
                         if !k.is_empty() {
                             return (
                                 Some(k.to_string()),
@@ -179,11 +187,7 @@ impl JevClient {
             }
         }
 
-        (
-            None,
-            "mock".to_string(),
-            TYPESAFE_API_URL.to_string(),
-        )
+        (None, "mock".to_string(), TYPESAFE_API_URL.to_string())
     }
 
     pub async fn system_one(
@@ -275,20 +279,27 @@ impl JevClient {
             .map(|s| s.to_string())
             .collect();
 
+        let assertion_regex = regex::Regex::new(r"(?i)(?:assertionerror|assert\b|expect\(.*?\)\.to|assert_eq!|failures?:|expected:.*received:|^fail\s+|^failed\s+test)").ok();
         let is_explicit_assertion = state_lower.lines().any(|line| {
             let t = line.trim();
-            (t.starts_with("failed") && t.contains("assertionerror"))
-                || t.starts_with("e   assertionerror")
-                || t.starts_with("assertionerror:")
-                || t.starts_with(">       assert ")
-                || t.starts_with("assert ")
-                || t.starts_with("panicked at")
+            t.starts_with("panicked at")
                 || t.starts_with("panic:")
+                || assertion_regex
+                    .as_ref()
+                    .map(|re| re.is_match(t))
+                    .unwrap_or(false)
         });
 
         let heavy_kw = [
-            "kernel", "distributed", "architecture", "refactor", "concurrency", "deadlock",
-            "multi-file", "consensus", "supervision tree",
+            "kernel",
+            "distributed",
+            "architecture",
+            "refactor",
+            "concurrency",
+            "deadlock",
+            "multi-file",
+            "consensus",
+            "supervision tree",
         ];
         let has_heavy_keywords = heavy_kw.iter().any(|k| state_lower.contains(k));
 
@@ -336,47 +347,87 @@ impl JevClient {
                         // Domain heuristics
                         if opt == "deep_logic" {
                             let triggers = [
-                                "assertionerror", "assert ", "panicked at", "panic:", "panic",
-                                "deadlock", "goroutines are asleep", "segmentation fault",
-                                "nullpointerexception", "nil pointer dereference", "index out of bounds",
-                                "falha de asserção", "asserção", "erro de lógica",
+                                "assertionerror",
+                                "assert ",
+                                "panicked at",
+                                "panic:",
+                                "panic",
+                                "deadlock",
+                                "goroutines are asleep",
+                                "segmentation fault",
+                                "nullpointerexception",
+                                "nil pointer dereference",
+                                "index out of bounds",
+                                "falha de asserção",
+                                "asserção",
+                                "erro de lógica",
+                                "expect(",
                             ];
                             if triggers.iter().any(|t| state_lower.contains(t)) {
                                 score += 8;
                             }
                             if is_explicit_assertion {
-                                score += 6;
+                                score += 18;
                             }
                         } else if opt == "env_missing" {
                             let triggers = [
-                                "modulenotfounderror", "no module named", "not found", "importerror",
-                                "cannot find module", "err_module_not_found", "ts2307", "cannot find crate",
-                                "can't find crate", "find crate", "e0463", "cannot find package",
+                                "modulenotfounderror",
+                                "no module named",
+                                "not found",
+                                "importerror",
+                                "cannot find module",
+                                "err_module_not_found",
+                                "ts2307",
+                                "cannot find crate",
+                                "can't find crate",
+                                "find crate",
+                                "e0463",
+                                "cannot find package",
                                 "no required module provides package",
-                                "módulo não encontrado", "nenhum módulo chamado", "pacote não encontrado",
+                                "módulo não encontrado",
+                                "nenhum módulo chamado",
+                                "pacote não encontrado",
                             ];
                             if triggers.iter().any(|t| state_lower.contains(t)) {
-                                score += if is_explicit_assertion { 4 } else { 7 };
+                                score += if is_explicit_assertion { 0 } else { 7 };
                             }
                         } else if opt == "flaky_transient" {
                             let triggers = [
-                                "connectionreset", "timeout", "timed out", "econnreset", "econnrefused",
-                                "etimedout", "socket hang up", "gateway timeout", "503 service unavailable",
-                                "tempo limite", "tempo limite esgotado", "conexão recusada",
+                                "connectionreset",
+                                "timeout",
+                                "timed out",
+                                "econnreset",
+                                "econnrefused",
+                                "etimedout",
+                                "socket hang up",
+                                "gateway timeout",
+                                "503 service unavailable",
+                                "tempo limite",
+                                "tempo limite esgotado",
+                                "conexão recusada",
                             ];
                             if triggers.iter().any(|t| state_lower.contains(t)) {
-                                score += 7;
+                                score += if is_explicit_assertion { 0 } else { 7 };
                             }
                         } else if opt == "syntax_trivial" {
                             let triggers = [
-                                "syntaxerror", "indentationerror", "expected ';'", "ts1005", "missing bracket",
-                                "erro de sintaxe", "sintaxe inválida", "indentação inesperada",
+                                "syntaxerror",
+                                "indentationerror",
+                                "expected ';'",
+                                "ts1005",
+                                "missing bracket",
+                                "erro de sintaxe",
+                                "sintaxe inválida",
+                                "indentação inesperada",
                             ];
                             if triggers.iter().any(|t| state_lower.contains(t)) {
                                 score += 6;
                             }
                         } else if opt == "deterministic" {
-                            let triggers = ["typo", "format", "black", "prettier", "eslint", "lint", "bash", "regex", "script", "renomear"];
+                            let triggers = [
+                                "typo", "format", "black", "prettier", "eslint", "lint", "bash",
+                                "regex", "script", "renomear",
+                            ];
                             if triggers.iter().any(|t| state_lower.contains(t)) {
                                 score += if has_heavy_keywords { 2 } else { 7 };
                             }
@@ -384,21 +435,50 @@ impl JevClient {
                             if has_heavy_keywords {
                                 score += 15;
                             } else {
-                                let triggers = ["refactor", "kernel", "distributed", "architecture", "concurrency", "deadlock", "multi-file"];
+                                let triggers = [
+                                    "refactor",
+                                    "kernel",
+                                    "distributed",
+                                    "architecture",
+                                    "concurrency",
+                                    "deadlock",
+                                    "multi-file",
+                                ];
                                 if triggers.iter().any(|t| state_lower.contains(t)) {
                                     score += 7;
                                 }
                             }
                         } else if opt == "abort_and_ask" {
                             if !is_negated_abort {
-                                let triggers = ["repeat", "circular", "deadlock", "same", "tentar novamente", "mesma", "abort"];
+                                let triggers = [
+                                    "repeat",
+                                    "circular",
+                                    "deadlock",
+                                    "same",
+                                    "tentar novamente",
+                                    "mesma",
+                                    "abort",
+                                ];
                                 if triggers.iter().any(|t| state_lower.contains(t)) {
                                     score += 8;
                                 }
                             }
                         } else if opt == "proceed" {
-                            let triggers = ["proceed", "unit test", "test", "verify", "verifying", "incremental", "progress", "implement", "add", "adicionar", "migration"];
-                            if is_negated_abort || triggers.iter().any(|t| state_lower.contains(t)) {
+                            let triggers = [
+                                "proceed",
+                                "unit test",
+                                "test",
+                                "verify",
+                                "verifying",
+                                "incremental",
+                                "progress",
+                                "implement",
+                                "add",
+                                "adicionar",
+                                "migration",
+                            ];
+                            if is_negated_abort || triggers.iter().any(|t| state_lower.contains(t))
+                            {
                                 score += 8;
                             }
                         }
@@ -413,8 +493,15 @@ impl JevClient {
                     if criteria.contains_key("low") && criteria.contains_key("high") {
                         if has_heavy_keywords
                             || [
-                                "deadlock", "race condition", "distributed", "concurrency",
-                                "kernel", "supervision", "architectural", "complex", "algorithmic",
+                                "deadlock",
+                                "race condition",
+                                "distributed",
+                                "concurrency",
+                                "kernel",
+                                "supervision",
+                                "architectural",
+                                "complex",
+                                "algorithmic",
                             ]
                             .iter()
                             .any(|k| state_lower.contains(k))
@@ -448,15 +535,40 @@ impl JevClient {
                     let n_levels = sq.criteria.len() as i32;
                     let mut matched_idx = 2;
 
-                    let positive_words = ["satisfy", "satisfaz", "atende", "passed", "passou", "sucesso", "pass", "success", "excellent", "exhaustively", "complete", "concluido", "proceed"];
+                    let positive_words = [
+                        "satisfy",
+                        "satisfaz",
+                        "atende",
+                        "passed",
+                        "passou",
+                        "sucesso",
+                        "pass",
+                        "success",
+                        "excellent",
+                        "exhaustively",
+                        "complete",
+                        "concluido",
+                        "proceed",
+                    ];
                     let trivial_words = ["trivial", "minor", "typo", "pequeno"];
-                    let critical_words = ["critical", "critico", "fatal", "disaster", "destrutivo", "complex"];
+                    let critical_words = [
+                        "critical",
+                        "critico",
+                        "fatal",
+                        "disaster",
+                        "destrutivo",
+                        "complex",
+                    ];
 
                     if is_negated_abort || positive_words.iter().any(|w| state_lower.contains(w)) {
                         matched_idx = n_levels;
-                    } else if trivial_words.iter().any(|w| state_lower.contains(w)) && !has_heavy_keywords {
+                    } else if trivial_words.iter().any(|w| state_lower.contains(w))
+                        && !has_heavy_keywords
+                    {
                         matched_idx = 1;
-                    } else if has_heavy_keywords || critical_words.iter().any(|w| state_lower.contains(w)) {
+                    } else if has_heavy_keywords
+                        || critical_words.iter().any(|w| state_lower.contains(w))
+                    {
                         matched_idx = n_levels;
                     }
 
@@ -474,28 +586,154 @@ impl JevClient {
                     let mut prob = 0.15;
 
                     let negative_signals = [
-                        "abort", "abortar", "fail", "falha", "error", "erro", "impossible", "impossivel",
-                        "fatal", "circular", "deadlock", "dead end", "broken", "quebrado", "unviable",
-                        "inviavel", "deletar", "apagar", "destrutivo",
+                        "abort",
+                        "abortar",
+                        "fail",
+                        "falha",
+                        "error",
+                        "erro",
+                        "impossible",
+                        "impossivel",
+                        "fatal",
+                        "circular",
+                        "deadlock",
+                        "dead end",
+                        "broken",
+                        "quebrado",
+                        "unviable",
+                        "inviavel",
+                        "deletar",
+                        "apagar",
+                        "destrutivo",
                     ];
                     let positive_signals = [
-                        "pass", "passed", "passou", "success", "sucesso", "resolved", "resolvido",
-                        "good", "bom", "valid", "valido", "satisfy", "satisfaz", "atende",
-                        "all criteria", "todos os criterios", "concluido", "complete", "proceed", "linear",
+                        "pass",
+                        "passed",
+                        "passou",
+                        "success",
+                        "sucesso",
+                        "resolved",
+                        "resolvido",
+                        "good",
+                        "bom",
+                        "valid",
+                        "valido",
+                        "satisfy",
+                        "satisfaz",
+                        "atende",
+                        "all criteria",
+                        "todos os criterios",
+                        "concluido",
+                        "complete",
+                        "proceed",
+                        "linear",
                     ];
 
-                    if is_negated_abort && ["abort", "dead", "unviable", "destructive"].iter().any(|w| inst.contains(w)) {
+                    let proposed_part = if state_lower.contains("proposed next step:") {
+                        state_lower
+                            .split("proposed next step:")
+                            .nth(1)
+                            .unwrap_or(&state_lower)
+                    } else {
+                        &state_lower
+                    };
+                    let is_forward_progress = [
+                        "implement",
+                        "fix",
+                        "resolve",
+                        "correct",
+                        "update",
+                        "create",
+                        "write",
+                        "corrigir",
+                        "implementar",
+                        "executar",
+                        "validar",
+                    ]
+                    .iter()
+                    .any(|w| proposed_part.contains(w));
+                    let is_repetitive_loop = [
+                        "same",
+                        "repetir",
+                        "tentar novamente",
+                        "4a vez",
+                        "again",
+                        "identical",
+                    ]
+                    .iter()
+                    .any(|w| proposed_part.contains(w));
+                    let is_fatal_deadlock = [
+                        "impossible",
+                        "impossivel",
+                        "circular",
+                        "deadlock",
+                        "dead end",
+                        "inviavel",
+                        "hopeless",
+                        "fatal",
+                    ]
+                    .iter()
+                    .any(|w| state_lower.contains(w));
+
+                    if is_negated_abort
+                        && ["abort", "dead", "unviable", "destructive"]
+                            .iter()
+                            .any(|w| inst.contains(w))
+                    {
                         prob = 0.08;
-                    } else if ["abort", "dead", "unviable", "destructive", "dead end", "circular"].iter().any(|w| inst.contains(w)) {
-                        if negative_signals.iter().any(|s| state_lower.contains(s)) {
+                    } else if is_fatal_deadlock
+                        && [
+                            "abort",
+                            "dead",
+                            "fail",
+                            "urgent",
+                            "invalid",
+                            "unviable",
+                            "destructive",
+                            "dead end",
+                        ]
+                        .iter()
+                        .any(|w| inst.contains(w))
+                    {
+                        prob = 0.88;
+                    } else if [
+                        "abort",
+                        "dead",
+                        "unviable",
+                        "destructive",
+                        "dead end",
+                        "circular",
+                    ]
+                    .iter()
+                    .any(|w| inst.contains(w))
+                    {
+                        if is_repetitive_loop {
                             prob = 0.88;
+                        } else if is_forward_progress {
+                            prob = 0.12;
+                        } else if negative_signals.iter().any(|s| state_lower.contains(s)) {
+                            prob = 0.85;
                         } else {
                             prob = 0.15;
                         }
                     } else if inst.contains("deterministically") || inst.contains("skip") {
-                        if ["modulenotfounderror", "no module named", "pip install", "npm install", "ts2307", "cannot find crate"].iter().any(|w| state_lower.contains(w)) && !is_explicit_assertion {
+                        if is_explicit_assertion {
+                            prob = 0.05;
+                        } else if [
+                            "modulenotfounderror",
+                            "no module named",
+                            "pip install",
+                            "npm install",
+                            "ts2307",
+                            "cannot find crate",
+                        ]
+                        .iter()
+                        .any(|w| state_lower.contains(w))
+                        {
                             prob = 0.95;
-                        } else if is_explicit_assertion || state_lower.contains("assertionerror") || state_lower.contains("panicked") {
+                        } else if state_lower.contains("assertionerror")
+                            || state_lower.contains("panicked")
+                        {
                             prob = 0.05;
                         } else {
                             prob = 0.20;
@@ -503,17 +741,20 @@ impl JevClient {
                     }
 
                     if positive_signals.iter().any(|s| state_lower.contains(s)) {
-                        if ["pass", "valid", "satisfy", "complete", "verif"].iter().any(|w| inst.contains(w)) {
+                        if ["pass", "valid", "satisfy", "complete", "verif"]
+                            .iter()
+                            .any(|w| inst.contains(w))
+                        {
                             prob = 0.92;
-                        } else if ["abort", "dead", "unviable"].iter().any(|w| inst.contains(w)) {
+                        } else if ["abort", "dead", "unviable"]
+                            .iter()
+                            .any(|w| inst.contains(w))
+                        {
                             prob = 0.08;
                         }
                     }
 
-                    answers.insert(
-                        qid.clone(),
-                        Answer::Noul(NoulAnswer { noul: prob }),
-                    );
+                    answers.insert(qid.clone(), Answer::Noul(NoulAnswer { noul: prob }));
                 }
             }
         }

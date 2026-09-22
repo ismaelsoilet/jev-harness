@@ -55,7 +55,8 @@ export async function triageTestFailure(
   const skipProb = skipAns?.noul ?? 0.0;
   const sevScore = sevAns?.score ?? 3.0;
 
-  const skipLlm = skipProb >= 0.65 || category === "env_missing" || category === "flaky_transient";
+  const skipLlm =
+    category !== "deep_logic" && (skipProb >= 0.65 || category === "env_missing" || category === "flaky_transient");
 
   let rec: string;
   if (category === "env_missing") {
@@ -242,7 +243,21 @@ export function buildProviderParams(
   const normProvider = provider.trim().toLowerCase();
   const normModel = (model || "").trim().toLowerCase();
 
-  const directModels = ["gpt-5.6-luna", "gpt-5.5", "gemini-3.8-live", "gemini-1.5-flash", "qwen-3.8-flash-standard"];
+  const directModels = [
+    "gpt-5.6-luna",
+    "gpt-5.5",
+    "gpt-4o",
+    "gpt-4o-mini",
+    "gemini-3.8-live",
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+    "claude-3-5-haiku",
+    "qwen-3.8-flash-standard",
+    "qwen-2.5-coder",
+    "llama-3.3",
+    "llama-3.1",
+  ];
   if (directModels.some((dm) => normModel.includes(dm))) {
     return {
       providerParams: {},
@@ -261,7 +276,7 @@ export function buildProviderParams(
     return {
       providerParams: { reasoning_effort: effort },
       isSupported: true,
-      rationale: `Configured OpenAI reasoning_effort='${effort}' for target model.`,
+      rationale: `Configured OpenAI reasoning_effort='${effort}' for target model. Note: Ensure temperature=1.0 or omitted to prevent HTTP 400.`,
       cacheSafeRecommendation: cacheRec,
     };
   } else if (normProvider === "deepseek" || normProvider === "deepseek-ai") {
@@ -275,12 +290,12 @@ export function buildProviderParams(
       rationale: `DeepSeek Thinking mode configured with effort='${effortVal}'. Preserves reasoning_content in multi-turn tool calling.`,
       cacheSafeRecommendation: effort === "low" ? "Cuts latency by ~200s in mechanical steps when set to low." : cacheRec,
     };
-  } else if (normProvider === "qwen" || normProvider === "alibaba") {
+  } else if (normProvider === "qwen" || normProvider === "alibaba" || normProvider === "dashscope") {
     if (effort === "low") {
       return {
         providerParams: { enable_thinking: false },
         isSupported: true,
-        rationale: "Disabled Qwen thinking CoT for mechanical/terminal step to minimize latency.",
+        rationale: "Disabled Qwen thinking CoT for mechanical/terminal step to minimize latency. Wrap in extra_body={'enable_thinking': false} when using OpenAI client.",
         cacheSafeRecommendation: "Zero tokens spent on reasoning trace.",
       };
     } else {
@@ -288,7 +303,7 @@ export function buildProviderParams(
       return {
         providerParams: { enable_thinking: true, thinking_budget: budget },
         isSupported: true,
-        rationale: `Enabled Qwen thinking budget (${budget} tokens).`,
+        rationale: `Enabled Qwen thinking budget (${budget} tokens). Wrap in extra_body when using OpenAI client.`,
         cacheSafeRecommendation: cacheRec,
       };
     }
@@ -360,11 +375,12 @@ export function buildProviderParams(
 
 export async function modulateReasoningEffort(
   context: string,
-  options: { provider?: string; model?: string; client?: JevClient } = {}
+  options: { provider?: string; model?: string; sessionContextTokens?: number; client?: JevClient } = {}
 ): Promise<ReasoningEffortResult> {
   const activeClient = options.client || new JevClient();
   const provider = options.provider || "openai";
   const model = options.model;
+  const sessionContextTokens = options.sessionContextTokens || 0;
 
   const questions = {
     effort: {
@@ -396,11 +412,15 @@ export async function modulateReasoningEffort(
   const confidence = effortAns?.confidence ?? 0.85;
   const complexityScore = compAns?.score ?? 2.0;
 
-  const { providerParams, isSupported, rationale, cacheSafeRecommendation } = buildProviderParams(
+  let { providerParams, isSupported, rationale, cacheSafeRecommendation } = buildProviderParams(
     provider,
     effort,
     model
   );
+
+  if (sessionContextTokens > 30000 && isSupported) {
+    cacheSafeRecommendation = `HIGH CACHE RISK (${sessionContextTokens} tokens active): Modulating reasoning effort across turns may invalidate prefix KV cache. Hysteresis recommended: preserve stable reasoning effort across active sub-steps.`;
+  }
 
   return {
     effort,

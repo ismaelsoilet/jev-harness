@@ -57,7 +57,7 @@ run_checks() {
     cargo test --quiet
 
     echo ""
-    echo "✅ ALL 94 TESTS PASSED ACROSS PYTHON, TYPESCRIPT, AND RUST!"
+    echo "✅ ALL 109 TESTS PASSED ACROSS PYTHON, TYPESCRIPT, AND RUST!"
     echo "================================================================="
 }
 

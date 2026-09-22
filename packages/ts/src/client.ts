@@ -16,6 +16,7 @@ import type {
 
 export const TYPESAFE_API_URL = "https://api.typesafe.ai/v1/systemone";
 export const OPENCODE_API_URL = "https://opencode.ai/zen/v1/systemone";
+export const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 export const DEFAULT_MODEL = "jev-latest";
 export const DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.1.5; +https://github.com/ismaelsoilet/jev-harness)";
 
@@ -33,12 +34,14 @@ export class JevClient {
 
     const { key, provider } = this.resolveCredentials(options.apiKey);
     this.apiKey = key;
-    this.provider = provider;
+    this.provider = options.provider || provider;
 
     if (options.baseUrl) {
       this.baseUrl = options.baseUrl;
     } else if (this.provider === "opencode") {
       this.baseUrl = OPENCODE_API_URL;
+    } else if (this.provider === "openrouter") {
+      this.baseUrl = OPENROUTER_API_URL;
     } else {
       this.baseUrl = TYPESAFE_API_URL;
     }
@@ -47,6 +50,8 @@ export class JevClient {
       this.model = options.model;
     } else if (this.provider === "opencode") {
       this.model = "jev-1.13-free";
+    } else if (this.provider === "openrouter") {
+      this.model = "google/gemini-2.5-flash";
     } else {
       this.model = DEFAULT_MODEL;
     }
@@ -222,7 +227,7 @@ export class JevClient {
     const stateTokens = new Set(stateLower.match(/\w+/g) || []);
     const answers: Record<string, Answer> = {};
 
-    const isExplicitAssertion = /(?:assertionerror|assert\s+)/i.test(stateLower);
+    const isExplicitAssertion = /(?:assertionerror|assert\b|expect\(.*?\)\.to|assert_eq!|failures?:|expected:.*received:|^fail\s+|^failed\s+test)/i.test(stateLower);
     const hasHeavyKeywords = /(?:kernel|distributed|architecture|refactor|concurrency|deadlock|multi-file|consensus)/i.test(stateLower);
     const isNegatedAbort = /\b(?:not|do\s+not|don't|não|nao|never|sem|evitar|avoid)\s+(?:\w+\s+){0,3}(?:abort|abortar|stop|parar|falhar|fail|deadlock|circular|dead\s*end)/i.test(stateLower);
 
@@ -249,10 +254,10 @@ export class JevClient {
               "assertionerror", "assert ", "panicked at", "panic:", "panic",
               "deadlock", "goroutines are asleep", "segmentation fault",
               "nullpointerexception", "nil pointer dereference", "index out of bounds",
-              "falha de asserção", "asserção", "erro de lógica"
+              "falha de asserção", "asserção", "erro de lógica", "expect("
             ].some((k) => stateLower.includes(k))
           ) {
-            matchScore += isExplicitAssertion ? 14 : 8;
+            matchScore += isExplicitAssertion ? 18 : 8;
           } else if (
             opt === "env_missing" &&
             [
@@ -262,7 +267,7 @@ export class JevClient {
               "módulo não encontrado", "nenhum módulo chamado", "pacote não encontrado"
             ].some((k) => stateLower.includes(k))
           ) {
-            matchScore += isExplicitAssertion ? 4 : 7;
+            matchScore += isExplicitAssertion ? 0 : 7;
           } else if (
             opt === "flaky_transient" &&
             [
@@ -271,7 +276,7 @@ export class JevClient {
               "tempo limite", "tempo limite esgotado", "conexão recusada"
             ].some((k) => stateLower.includes(k))
           ) {
-            matchScore += 7;
+            matchScore += isExplicitAssertion ? 0 : 7;
           } else if (
             opt === "syntax_trivial" &&
             [
@@ -364,26 +369,39 @@ export class JevClient {
         const negativeSignals = ["abort", "abortar", "fail", "falha", "error", "erro", "impossible", "impossivel", "fatal", "circular", "deadlock", "broken", "unviable", "destrutivo"];
         const positiveSignals = ["pass", "passed", "passou", "success", "sucesso", "resolved", "valid", "satisfy", "complete", "proceed", "linear"];
 
+        const proposedPart = stateLower.includes("proposed next step:") ? stateLower.split("proposed next step:")[1] : stateLower;
+        const isForwardProgress = ["implement", "fix", "resolve", "correct", "update", "create", "write", "corrigir", "implementar", "executar", "validar"].some((w) => proposedPart.includes(w));
+        const isRepetitiveLoop = ["same", "repetir", "tentar novamente", "4a vez", "again", "identical"].some((w) => proposedPart.includes(w));
+        const isFatalDeadlock = ["impossible", "impossivel", "circular", "deadlock", "dead end", "inviavel", "hopeless", "fatal"].some((w) => stateLower.includes(w));
+
         if (isNegatedAbort && ["abort", "dead", "unviable", "destructive"].some((w) => inst.includes(w))) {
           prob = 0.08;
+        } else if (isFatalDeadlock && ["abort", "dead", "fail", "urgent", "invalid", "unviable", "destructive", "dead end"].some((w) => inst.includes(w))) {
+          prob = 0.88;
         } else if (["abort", "dead", "unviable", "destructive", "dead end", "circular"].some((w) => inst.includes(w))) {
-          if (negativeSignals.some((w) => stateLower.includes(w))) {
+          if (isRepetitiveLoop) {
             prob = 0.88;
+          } else if (isForwardProgress) {
+            prob = 0.12;
+          } else if (negativeSignals.some((w) => stateLower.includes(w))) {
+            prob = 0.85;
           }
         } else if (inst.includes("deterministically") || inst.includes("skip")) {
-          if (
-            ["modulenotfounderror", "no module named", "pip install", "npm install", "cannot find module"].some((w) => stateLower.includes(w)) &&
-            !isExplicitAssertion
+          if (isExplicitAssertion) {
+            prob = 0.05;
+          } else if (
+            ["modulenotfounderror", "no module named", "pip install", "npm install", "cannot find module"].some((w) => stateLower.includes(w))
           ) {
             prob = 0.95;
-          } else if (isExplicitAssertion || stateLower.includes("assertionerror") || stateLower.includes("panicked")) {
+          } else if (stateLower.includes("assertionerror") || stateLower.includes("panicked")) {
             prob = 0.05;
           } else {
             prob = 0.20;
           }
         }
+
         if (positiveSignals.some((w) => stateLower.includes(w))) {
-          if (["pass", "valid", "satisfy", "complete"].some((w) => inst.includes(w))) {
+          if (["pass", "valid", "satisfy", "complete", "verif"].some((w) => inst.includes(w))) {
             prob = 0.92;
           } else if (["abort", "dead", "unviable"].some((w) => inst.includes(w))) {
             prob = 0.08;

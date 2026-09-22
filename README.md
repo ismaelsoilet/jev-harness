@@ -491,6 +491,9 @@ npx @ismaelsoilet/jev-harness abort-check --plan "Try identical prompt again"
 
 # Model router
 npx @ismaelsoilet/jev-harness route "Architect distributed consensus protocol"
+
+# Dynamic reasoning effort modulation (Astra-Jev)
+npx @ismaelsoilet/jev-harness reasoning-effort --context "git status" --target-provider deepseek --json
 ```
 
 ---
@@ -540,6 +543,7 @@ cargo install jev-harness
 # Or use directly in shell pipelines
 cargo test 2>&1 | jev test-gate
 jev route --task "Architect enterprise distributed consensus"
+jev reasoning-effort --context "git status" --target-provider deepseek --json
 ```
 
 ---

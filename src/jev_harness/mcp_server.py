@@ -141,6 +141,10 @@ TOOLS_MANIFEST: List[Dict[str, Any]] = [
                     "type": "string",
                     "description": "Optional model identifier to check for direct non-reasoning compatibility.",
                 },
+                "session_context_tokens": {
+                    "type": "integer",
+                    "description": "Optional active prompt tokens in session context to evaluate prompt cache risk.",
+                },
             },
             "required": ["context"],
         },
@@ -294,7 +298,14 @@ def handle_tools_call(req_id: Any, params: Dict[str, Any], client: JevClient) ->
                 }
             prov = args.get("provider", "openai")
             mdl = args.get("model", None)
-            res = modulate_reasoning_effort(str(ctx), provider=str(prov), model=mdl, client=client)
+            tokens = int(args.get("session_context_tokens", 0) or 0)
+            res = modulate_reasoning_effort(
+                str(ctx),
+                provider=str(prov),
+                model=mdl,
+                session_context_tokens=tokens,
+                client=client,
+            )
             text_content = json.dumps(
                 {
                     "effort": res.effort,

@@ -1,17 +1,20 @@
 use jev_harness::{
     client::JevClient,
     gates::{
-        build_provider_params, modulate_reasoning_effort, route_model_tier,
-        should_abort_trajectory, triage_test_failure, verify_step_completion,
+        build_provider_params, modulate_reasoning_effort, modulate_reasoning_effort_with_tokens,
+        route_model_tier, should_abort_trajectory, triage_test_failure, verify_step_completion,
     },
 };
 
 #[tokio::test]
 async fn test_triage_detects_python_missing_module() {
     let client = JevClient::with_mock();
-    let res = triage_test_failure("ModuleNotFoundError: No module named 'pandas'", Some(&client))
-        .await
-        .expect("Triage failed");
+    let res = triage_test_failure(
+        "ModuleNotFoundError: No module named 'pandas'",
+        Some(&client),
+    )
+    .await
+    .expect("Triage failed");
 
     assert_eq!(res.category, "env_missing");
     assert!(res.skip_llm);
@@ -49,12 +52,9 @@ async fn test_triage_detects_rust_cant_find_crate() {
 #[tokio::test]
 async fn test_triage_detects_flaky_transient_network() {
     let client = JevClient::with_mock();
-    let res = triage_test_failure(
-        "Error: connect ETIMEDOUT 127.0.0.1:5432",
-        Some(&client),
-    )
-    .await
-    .expect("Triage failed");
+    let res = triage_test_failure("Error: connect ETIMEDOUT 127.0.0.1:5432", Some(&client))
+        .await
+        .expect("Triage failed");
 
     assert_eq!(res.category, "flaky_transient");
     assert!(res.skip_llm);
@@ -157,7 +157,10 @@ async fn test_adversarial_negated_abort() {
     .await
     .expect("Abort check failed");
 
-    assert!(!res.should_abort, "Negated abort statement must NOT trigger abort");
+    assert!(
+        !res.should_abort,
+        "Negated abort statement must NOT trigger abort"
+    );
     assert_eq!(res.action, "proceed");
 }
 
@@ -171,7 +174,10 @@ async fn test_adversarial_assertion_testing_module() {
     .await
     .expect("Triage failed");
 
-    assert_eq!(res.category, "deep_logic", "AssertionError must take precedence over substring module names");
+    assert_eq!(
+        res.category, "deep_logic",
+        "AssertionError must take precedence over substring module names"
+    );
     assert!(!res.skip_llm, "Logic failure must NOT skip LLM");
 }
 
@@ -185,7 +191,10 @@ async fn test_adversarial_heavy_priority_over_typo() {
     .await
     .expect("Route failed");
 
-    assert_eq!(res.selected_tier, "heavy_system2", "Heavy architectural keywords must override typo in routing");
+    assert_eq!(
+        res.selected_tier, "heavy_system2",
+        "Heavy architectural keywords must override typo in routing"
+    );
 }
 
 #[tokio::test]
@@ -205,16 +214,22 @@ async fn test_safe_utf8_truncation() {
     // Also verify via triage_test_failure
     let client = JevClient::with_mock();
     let triage_res = triage_test_failure(&s, Some(&client)).await;
-    assert!(triage_res.is_ok(), "triage_test_failure must never panic on multi-byte UTF-8 boundaries");
+    assert!(
+        triage_res.is_ok(),
+        "triage_test_failure must never panic on multi-byte UTF-8 boundaries"
+    );
 }
 
 #[tokio::test]
 async fn test_adversarial_portuguese_and_safe_fallback() {
     let client = JevClient::with_mock();
 
-    let res_assert = triage_test_failure("Falha de asserção: esperava 10 mas obteve 20", Some(&client))
-        .await
-        .expect("Triage failed");
+    let res_assert = triage_test_failure(
+        "Falha de asserção: esperava 10 mas obteve 20",
+        Some(&client),
+    )
+    .await
+    .expect("Triage failed");
     assert_eq!(res_assert.category, "deep_logic");
     assert!(!res_assert.skip_llm);
 
@@ -224,9 +239,12 @@ async fn test_adversarial_portuguese_and_safe_fallback() {
     assert_eq!(res_mod.category, "env_missing");
     assert!(res_mod.skip_llm);
 
-    let res_fallback = triage_test_failure("xyz123 uninformative random text with no keywords", Some(&client))
-        .await
-        .expect("Triage failed");
+    let res_fallback = triage_test_failure(
+        "xyz123 uninformative random text with no keywords",
+        Some(&client),
+    )
+    .await
+    .expect("Triage failed");
     assert_eq!(res_fallback.category, "deep_logic");
     assert!(!res_fallback.skip_llm);
 }
@@ -269,7 +287,8 @@ async fn test_modulate_reasoning_effort_heavy_architecture() {
 #[tokio::test]
 async fn test_build_provider_params_dialects() {
     // DeepSeek
-    let (ds_low, ds_sup, _, _) = build_provider_params("deepseek", "low", Some("deepseek-v4.1-flash"));
+    let (ds_low, ds_sup, _, _) =
+        build_provider_params("deepseek", "low", Some("deepseek-v4.1-flash"));
     assert!(ds_sup);
     assert_eq!(ds_low["reasoning_effort"], "low");
 
@@ -286,9 +305,98 @@ async fn test_build_provider_params_dialects() {
     assert_eq!(qw_high["thinking_budget"], 16384);
 
     // Unsupported model (direct single-pass)
-    let (direct_params, direct_sup, rationale, _) = build_provider_params("openai", "low", Some("gpt-5.6-luna"));
+    let (direct_params, direct_sup, rationale, _) =
+        build_provider_params("openai", "low", Some("gpt-5.6-luna"));
     assert!(!direct_sup);
     assert_eq!(direct_params, serde_json::json!({}));
     assert!(rationale.contains("direct single-pass model"));
 }
 
+#[tokio::test]
+async fn test_adversarial_jest_assertion_with_modulenotfound() {
+    let client = JevClient::with_mock();
+    let jest_log = r#"
+FAIL src/plugin.test.ts
+  ● Plugin Loader › handles failure gracefully
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "READY"
+    Received: "ModuleNotFoundError: No module named 'foo'"
+
+      18 |     const res = await loader.load();
+    > 19 |     expect(res.status).toBe("READY");
+"#;
+    let res = triage_test_failure(jest_log, Some(&client))
+        .await
+        .expect("Triage failed");
+    assert_eq!(
+        res.category, "deep_logic",
+        "Jest assertion failure must be classified as deep_logic"
+    );
+    assert!(!res.skip_llm, "Deep logic failure must NEVER skip LLM");
+}
+
+#[tokio::test]
+async fn test_adversarial_warning_with_transient_string_does_not_mask_assertion() {
+    let client = JevClient::with_mock();
+    let log = r#"
+test_service.py:10: UserWarning: transient network timeout was safely handled by retry handler
+FAILED test_service.py::test_calculation
+Calculation returned 42, expected 100
+"#;
+    let res = triage_test_failure(log, Some(&client))
+        .await
+        .expect("Triage failed");
+    assert_eq!(res.category, "deep_logic");
+    assert!(!res.skip_llm);
+}
+
+#[tokio::test]
+async fn test_adversarial_forward_progress_not_aborted() {
+    let client = JevClient::with_mock();
+    let res = should_abort_trajectory(
+        "Implement the missing function to fix the error",
+        "Previous attempt had a compilation error",
+        Some(&client),
+    )
+    .await
+    .expect("Abort check failed");
+    assert!(
+        !res.should_abort,
+        "Forward progress implementation must NOT be aborted"
+    );
+    assert!(res.abort_probability < 0.50);
+}
+
+#[tokio::test]
+async fn test_adversarial_direct_models_expanded_safeguards() {
+    let client = JevClient::with_mock();
+    for model in &["gpt-4o", "gpt-4o-mini", "claude-3-5-haiku", "gpt-5.6-luna"] {
+        let res = modulate_reasoning_effort("git status", "openai", Some(model), Some(&client))
+            .await
+            .expect("Modulation failed");
+        assert!(
+            !res.is_reasoning_supported,
+            "{} must be recognized as non-reasoning direct model",
+            model
+        );
+        assert_eq!(res.provider_params, serde_json::json!({}));
+    }
+}
+
+#[tokio::test]
+async fn test_adversarial_cache_risk_on_high_context() {
+    let client = JevClient::with_mock();
+    let res = modulate_reasoning_effort_with_tokens(
+        "git status",
+        "openai",
+        Some("o3-mini"),
+        45000,
+        Some(&client),
+    )
+    .await
+    .expect("Modulation failed");
+    assert!(res.is_reasoning_supported);
+    assert!(res.cache_safe_recommendation.contains("HIGH CACHE RISK"));
+}

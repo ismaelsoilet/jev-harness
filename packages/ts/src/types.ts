@@ -108,6 +108,7 @@ export type StepVerificationResult = VerificationResult;
 
 export interface JevClientOptions {
   apiKey?: string;
+  provider?: string;
   baseUrl?: string;
   model?: string;
   timeoutMs?: number;

@@ -3,6 +3,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { JevClient, OPENCODE_API_URL } from "./client.js";
 import {
+  modulateReasoningEffort,
   routeModelTier,
   shouldAbortTrajectory,
   triageTestFailure,
@@ -70,7 +71,14 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
           args[i] === "--criteria" ||
           args[i] === "-c" ||
           args[i] === "--output" ||
-          args[i] === "-o") &&
+          args[i] === "-o" ||
+          args[i] === "--context" ||
+          args[i] === "-C" ||
+          args[i] === "--target-provider" ||
+          args[i] === "--model" ||
+          args[i] === "-m" ||
+          args[i] === "--session-context-tokens" ||
+          args[i] === "--tokens") &&
         i + 1 < args.length &&
         !args[i + 1].startsWith("-")
       ) {
@@ -105,11 +113,15 @@ Commands:
   abort-check --plan <text>              Guard against doom loops and unviable refactors
   route --task <text>                    Select minimal sufficient model tier
   verify --criteria <c> --output <o>     Calibrate criteria verification
+  reasoning-effort --context <text>      Dynamically modulate reasoning effort per-generation (Astra-Jev)
 
 Options:
   --mock                                 Force offline heuristic simulation
   --json                                 Output machine-readable JSON
   --provider <typesafe|opencode|...>     Override backend provider
+  --target-provider <openai|deepseek|..> Target provider for reasoning effort
+  --model <name>                         Target model name
+  --session-context-tokens <num>         Active prompt tokens in session
 `);
     return 0;
   }
@@ -263,6 +275,57 @@ Options:
       console.log("-------------------------------------\n");
     }
     return res.isVerified ? 0 : 1;
+  }
+
+  if (command === "reasoning-effort" || command === "astra-jev" || command === "effort") {
+    const ctxIdx = args.findIndex((a) => a === "--context" || a === "-C");
+    let ctx = ctxIdx !== -1 ? args[ctxIdx + 1] : undefined;
+    if (!ctx) {
+      const cmdIdx = args.indexOf(command);
+      if (cmdIdx !== -1 && args[cmdIdx + 1] && !args[cmdIdx + 1].startsWith("-")) {
+        ctx = args[cmdIdx + 1];
+      }
+    }
+    const cleanContext = (ctx ? readInput(ctx) : "").trim();
+    if (!cleanContext) {
+      console.error("Error: Context/step description must be provided via argument or stdin.");
+      return 2;
+    }
+
+    const targetProviderIdx = args.findIndex((a) => a === "--target-provider" || a === "--provider");
+    const targetProvider = targetProviderIdx !== -1 ? args[targetProviderIdx + 1] : "openai";
+
+    const modelIdx = args.findIndex((a) => a === "--model" || a === "-m");
+    const targetModel = modelIdx !== -1 ? args[modelIdx + 1] : undefined;
+
+    const tokensIdx = args.findIndex((a) => a === "--session-context-tokens" || a === "--tokens");
+    const sessionContextTokens = tokensIdx !== -1 ? parseInt(args[tokensIdx + 1], 10) || 0 : 0;
+
+    const res = await modulateReasoningEffort(cleanContext, {
+      provider: targetProvider,
+      model: targetModel,
+      sessionContextTokens,
+      client,
+    });
+
+    if (isJson) {
+      console.log(JSON.stringify(res, null, 2));
+    } else {
+      console.log("\n--- JEV REASONING EFFORT VERDICT (TS) ---");
+      console.log(`Effort:            ${res.effort.toUpperCase()}`);
+      console.log(`Confidence:        ${(res.confidence * 100).toFixed(1)}%`);
+      console.log(`Complexity Score:  ${res.complexityScore.toFixed(1)} / 4.0`);
+      console.log(`Provider:          ${res.provider}`);
+      console.log(`Supported:         ${res.isReasoningSupported ? "YES" : "NO (Direct model)"}`);
+      console.log(`Rationale:         ${res.rationale}`);
+      console.log(`Provider Params:   ${JSON.stringify(res.providerParams)}`);
+      if (res.cacheSafeRecommendation) {
+        console.log(`Cache Advisory:    ${res.cacheSafeRecommendation}`);
+      }
+      if (res.isMock) console.log("Mode:              [SIMULATION/MOCK]");
+      console.log("-----------------------------------------\n");
+    }
+    return 0;
   }
 
   console.error(`Unknown command: ${command}`);

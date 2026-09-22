@@ -64,11 +64,13 @@ pub async fn triage_test_failure(
     );
     cat_criteria.insert(
         "syntax_trivial".to_string(),
-        "Simple syntax error, missing bracket, typo in variable, or formatting linter violation".to_string(),
+        "Simple syntax error, missing bracket, typo in variable, or formatting linter violation"
+            .to_string(),
     );
     cat_criteria.insert(
         "deep_logic".to_string(),
-        "Real semantic bug, failed unit assertion, invariant violation, panic, or unexpected state".to_string(),
+        "Real semantic bug, failed unit assertion, invariant violation, panic, or unexpected state"
+            .to_string(),
     );
     cat_criteria.insert(
         "test_redundant".to_string(),
@@ -109,12 +111,14 @@ pub async fn triage_test_failure(
     let skip_ans = resp.answers.get("skip_llm").and_then(|a| a.as_noul());
     let sev_ans = resp.answers.get("severity").and_then(|a| a.as_score());
 
-    let category = cat_ans.map(|a| a.choice.clone()).unwrap_or_else(|| "deep_logic".to_string());
+    let category = cat_ans
+        .map(|a| a.choice.clone())
+        .unwrap_or_else(|| "deep_logic".to_string());
     let confidence = cat_ans.map(|a| a.confidence).unwrap_or(0.5);
-    let skip_prob = skip_ans.map(|a| a.noul).unwrap_or(0.0);
     let sev_score = sev_ans.map(|a| a.score as f64).unwrap_or(3.0);
-
-    let skip_llm = skip_prob >= 0.65 || category == "env_missing" || category == "flaky_transient";
+    let skip_prob = skip_ans.map(|a| a.noul).unwrap_or(0.0);
+    let skip_llm = category != "deep_logic"
+        && (skip_prob >= 0.65 || category == "env_missing" || category == "flaky_transient");
 
     let rec = match category.as_str() {
         "env_missing" => "AUTO-ACTION: Install missing dependency or check environment configuration (Do NOT call LLM).",
@@ -169,13 +173,15 @@ pub async fn should_abort_trajectory(
     );
     action_criteria.insert(
         "abort_and_ask".to_string(),
-        "The trajectory is circular or contradictory; stop and ask user for clarification".to_string(),
+        "The trajectory is circular or contradictory; stop and ask user for clarification"
+            .to_string(),
     );
 
     questions.insert(
         "action".to_string(),
         Question::Choice(ChoiceQuestion {
-            instructions: "What should the orchestrator do with this proposed trajectory?".to_string(),
+            instructions: "What should the orchestrator do with this proposed trajectory?"
+                .to_string(),
             criteria: action_criteria,
         }),
     );
@@ -200,7 +206,9 @@ pub async fn should_abort_trajectory(
     let viability_ans = resp.answers.get("viability").and_then(|a| a.as_score());
 
     let dead_end_prob = dead_end_ans.map(|a| a.noul).unwrap_or(0.0);
-    let action = action_ans.map(|a| a.choice.clone()).unwrap_or_else(|| "proceed".to_string());
+    let action = action_ans
+        .map(|a| a.choice.clone())
+        .unwrap_or_else(|| "proceed".to_string());
     let viability = viability_ans.map(|a| a.score as f64).unwrap_or(3.0);
 
     let should_abort = dead_end_prob >= 0.70 || action == "abort_and_ask" || viability <= 1.5;
@@ -213,7 +221,10 @@ pub async fn should_abort_trajectory(
     let summary = if should_abort {
         format!("Abort recommended (prob={:.2})", dead_end_prob)
     } else {
-        format!("Safe to proceed (viability={:.1}, action={})", viability, effective_action)
+        format!(
+            "Safe to proceed (viability={:.1}, action={})",
+            viability, effective_action
+        )
     };
 
     Ok(AbortGateResult {
@@ -239,7 +250,8 @@ pub async fn route_model_tier(
     let mut tier_criteria = HashMap::new();
     tier_criteria.insert(
         "deterministic".to_string(),
-        "Can be solved with bash, regex, deterministic script, or pure Jev classification".to_string(),
+        "Can be solved with bash, regex, deterministic script, or pure Jev classification"
+            .to_string(),
     );
     tier_criteria.insert(
         "lightweight_system2".to_string(),
@@ -253,7 +265,8 @@ pub async fn route_model_tier(
     questions.insert(
         "tier".to_string(),
         Question::Choice(ChoiceQuestion {
-            instructions: "Select the minimal sufficient model tier to solve this programming task".to_string(),
+            instructions: "Select the minimal sufficient model tier to solve this programming task"
+                .to_string(),
             criteria: tier_criteria,
         }),
     );
@@ -271,12 +284,16 @@ pub async fn route_model_tier(
         }),
     );
 
-    let resp = active_client.system_one(task_description, questions).await?;
+    let resp = active_client
+        .system_one(task_description, questions)
+        .await?;
 
     let tier_ans = resp.answers.get("tier").and_then(|a| a.as_choice());
     let comp_ans = resp.answers.get("complexity").and_then(|a| a.as_score());
 
-    let selected_tier = tier_ans.map(|a| a.choice.clone()).unwrap_or_else(|| "lightweight_system2".to_string());
+    let selected_tier = tier_ans
+        .map(|a| a.choice.clone())
+        .unwrap_or_else(|| "lightweight_system2".to_string());
     let confidence = tier_ans.map(|a| a.confidence).unwrap_or(0.5);
     let complexity_score = comp_ans.map(|a| a.score as f64).unwrap_or(2.0);
 
@@ -314,7 +331,10 @@ pub async fn verify_step_completion(
     let default_client = JevClient::default();
     let active_client = client.unwrap_or(&default_client);
 
-    let state = format!("CRITERIA TO SATISFY:\n{}\n\nACTUAL STEP OUTPUT:\n{}", criteria, output);
+    let state = format!(
+        "CRITERIA TO SATISFY:\n{}\n\nACTUAL STEP OUTPUT:\n{}",
+        criteria, output
+    );
 
     let mut questions = HashMap::new();
 
@@ -346,7 +366,7 @@ pub async fn verify_step_completion(
     let sat_prob = sat_ans.map(|a| a.noul).unwrap_or(0.0);
     let rig_score = rig_ans.map(|a| a.score as f64).unwrap_or(2.0);
 
-    let is_verified = sat_prob >= 0.70 && rig_score >= 2.5;
+    let is_verified = sat_prob >= 0.80 && rig_score >= 2.5;
 
     Ok(VerificationResult {
         is_verified,
@@ -369,9 +389,17 @@ pub fn build_provider_params(
     let direct_models = [
         "gpt-5.6-luna",
         "gpt-5.5",
+        "gpt-4o",
+        "gpt-4o-mini",
         "gemini-3.8-live",
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
         "gemini-1.5-flash",
+        "claude-3-5-haiku",
         "qwen-3.8-flash-standard",
+        "qwen-2.5-coder",
+        "llama-3.3",
+        "llama-3.1",
     ];
     if direct_models.iter().any(|dm| norm_model.contains(dm)) {
         return (
@@ -392,7 +420,7 @@ pub fn build_provider_params(
         (
             serde_json::json!({ "reasoning_effort": effort }),
             true,
-            format!("Configured OpenAI reasoning_effort='{}' for target model.", effort),
+            format!("Configured OpenAI reasoning_effort='{}' for target model. Note: Ensure temperature=1.0 or omitted to prevent HTTP 400.", effort),
             cache_rec.to_string(),
         )
     } else if norm_provider == "deepseek" || norm_provider == "deepseek-ai" {
@@ -406,12 +434,13 @@ pub fn build_provider_params(
             format!("DeepSeek Thinking mode configured with effort='{}'. Preserves reasoning_content in multi-turn tool calling.", effort_val),
             if effort == "low" { "Cuts latency by ~200s in mechanical steps when set to low.".to_string() } else { cache_rec.to_string() },
         )
-    } else if norm_provider == "qwen" || norm_provider == "alibaba" {
+    } else if norm_provider == "qwen" || norm_provider == "alibaba" || norm_provider == "dashscope"
+    {
         if effort == "low" {
             (
                 serde_json::json!({ "enable_thinking": false }),
                 true,
-                "Disabled Qwen thinking CoT for mechanical/terminal step to minimize latency.".to_string(),
+                "Disabled Qwen thinking CoT for mechanical/terminal step to minimize latency. Wrap in extra_body={'enable_thinking': false} when using OpenAI client.".to_string(),
                 "Zero tokens spent on reasoning trace.".to_string(),
             )
         } else {
@@ -419,7 +448,7 @@ pub fn build_provider_params(
             (
                 serde_json::json!({ "enable_thinking": true, "thinking_budget": budget }),
                 true,
-                format!("Enabled Qwen thinking budget ({} tokens).", budget),
+                format!("Enabled Qwen thinking budget ({} tokens). Wrap in extra_body when using OpenAI client.", budget),
                 cache_rec.to_string(),
             )
         }
@@ -435,7 +464,10 @@ pub fn build_provider_params(
                 "output_config": { "effort": chosen }
             }),
             true,
-            format!("Configured Anthropic Adaptive Thinking with effort='{}'.", chosen),
+            format!(
+                "Configured Anthropic Adaptive Thinking with effort='{}'.",
+                chosen
+            ),
             cache_rec.to_string(),
         )
     } else if norm_provider == "gemini" || norm_provider == "google" {
@@ -457,7 +489,8 @@ pub fn build_provider_params(
             (
                 serde_json::json!({ "extra_body": { "thinking": false } }),
                 true,
-                "Enabled Kimi Instant Mode (thinking disabled) for zero-latency execution.".to_string(),
+                "Enabled Kimi Instant Mode (thinking disabled) for zero-latency execution."
+                    .to_string(),
                 "Eliminates internal CoT overhead.".to_string(),
             )
         } else {
@@ -498,10 +531,11 @@ pub fn build_provider_params(
     }
 }
 
-pub async fn modulate_reasoning_effort(
+pub async fn modulate_reasoning_effort_with_tokens(
     context: &str,
     provider: &str,
     model: Option<&str>,
+    session_context_tokens: usize,
     client: Option<&JevClient>,
 ) -> Result<ReasoningEffortResult, JevError> {
     let default_client = JevClient::default();
@@ -555,11 +589,21 @@ pub async fn modulate_reasoning_effort(
     let effort_ans = resp.answers.get("effort").and_then(|a| a.as_choice());
     let comp_ans = resp.answers.get("complexity").and_then(|a| a.as_score());
 
-    let effort = effort_ans.map(|a| a.choice.clone()).unwrap_or_else(|| "medium".to_string());
+    let effort = effort_ans
+        .map(|a| a.choice.clone())
+        .unwrap_or_else(|| "medium".to_string());
     let confidence = effort_ans.map(|a| a.confidence).unwrap_or(0.85);
     let complexity_score = comp_ans.map(|a| a.score as f64).unwrap_or(2.0);
 
-    let (provider_params, is_supported, rationale, cache_rec) = build_provider_params(provider, &effort, model);
+    let (provider_params, is_supported, rationale, mut cache_rec) =
+        build_provider_params(provider, &effort, model);
+
+    if session_context_tokens > 30000 && is_supported {
+        cache_rec = format!(
+            "HIGH CACHE RISK ({} tokens active): Modulating reasoning effort across turns may invalidate prefix KV cache. Hysteresis recommended: preserve stable reasoning effort across active sub-steps.",
+            session_context_tokens
+        );
+    }
 
     Ok(ReasoningEffortResult {
         effort,
@@ -572,4 +616,13 @@ pub async fn modulate_reasoning_effort(
         cache_safe_recommendation: cache_rec,
         is_mock: resp.is_mock,
     })
+}
+
+pub async fn modulate_reasoning_effort(
+    context: &str,
+    provider: &str,
+    model: Option<&str>,
+    client: Option<&JevClient>,
+) -> Result<ReasoningEffortResult, JevError> {
+    modulate_reasoning_effort_with_tokens(context, provider, model, 0, client).await
 }
