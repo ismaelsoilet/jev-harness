@@ -22,6 +22,9 @@ jobs:
           node-version: "22.x"
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
+      - name: Install TypeScript dependencies
+        working-directory: packages/ts
+        run: npm ci || npm install
       - name: Verify Manifest & Version Parity
         run: |
           chmod +x scripts/release.sh

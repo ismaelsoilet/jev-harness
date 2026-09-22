@@ -182,6 +182,9 @@ verify_sync() {
     # Build check
     echo ""
     echo "Checking TypeScript build..."
+    if [[ ! -d "${REPO_ROOT}/packages/ts/node_modules" ]]; then
+        (cd "${REPO_ROOT}/packages/ts" && (npm ci 2>/dev/null || npm install 2>/dev/null))
+    fi
     (cd "${REPO_ROOT}/packages/ts" && npm run build)
     echo "✅ TypeScript build OK"
 
