@@ -1,6 +1,6 @@
 [package]
 name = "jev-harness"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 authors = ["ISMAEL HOSNI SOILET DE LIMA <soilet.ismael@gmail.com>"]
 description = "Zero-overhead System One decision harness and token optimizer for AI coding agents."

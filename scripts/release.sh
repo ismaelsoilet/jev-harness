@@ -64,7 +64,7 @@ run_checks() {
 bump_version() {
     local new_ver="$1"
     if [[ -z "${new_ver}" ]]; then
-        echo "Error: Version string required (e.g. 0.1.3)"
+        echo "Error: Version string required (e.g. 0.1.4)"
         exit 1
     fi
 
@@ -75,9 +75,10 @@ bump_version() {
     sed -i -E "s/^__version__ = \"[^\"]+\"/__version__ = \"${new_ver}\"/" "${REPO_ROOT}/src/jev_harness/__init__.py"
     sed -i -E "s/JevHarness\/[0-9]+\.[0-9]+\.[0-9]+/JevHarness\/${new_ver}/" "${REPO_ROOT}/src/jev_harness/client.py"
 
-    # 2. Update TypeScript package.json, lockfile, and client
+    # 2. Update TypeScript package.json, lockfile, client, and cli fallback
     sed -i -E "s/\"version\": \"[^\"]+\"/\"version\": \"${new_ver}\"/" "${PACKAGE_JSON}"
     sed -i -E "s/JevHarness\/[0-9]+\.[0-9]+\.[0-9]+/JevHarness\/${new_ver}/" "${REPO_ROOT}/packages/ts/src/client.ts"
+    sed -i -E "s/return \"[0-9]+\.[0-9]+\.[0-9]+\";/return \"${new_ver}\";/" "${REPO_ROOT}/packages/ts/src/cli.ts"
     if [[ -f "${REPO_ROOT}/packages/ts/package-lock.json" ]]; then
         cd "${REPO_ROOT}/packages/ts"
         npm version "${new_ver}" --no-git-tag-version --allow-same-version || true
@@ -87,7 +88,9 @@ bump_version() {
     sed -i -E "s/^version = \"[^\"]+\"/version = \"${new_ver}\"/" "${CARGO_TOML}"
     (cd "${REPO_ROOT}/packages/rust" && cargo check --quiet || true)
 
-    # 4. Update README.md pre-commit hook rev
+    # 4. Update README.md and packages/rust/README.md dependencies & hooks
+    sed -i -E "s/jev-harness = \"[^\"]+\"/jev-harness = \"${new_ver}\"/" "${REPO_ROOT}/README.md"
+    sed -i -E "s/jev-harness = \"[^\"]+\"/jev-harness = \"${new_ver}\"/" "${REPO_ROOT}/packages/rust/README.md"
     sed -i -E "s/rev: v[0-9]+\.[0-9]+\.[0-9]+/rev: v${new_ver}/" "${REPO_ROOT}/README.md"
 
     show_versions
@@ -137,13 +140,13 @@ publish_target() {
 git_tag_release() {
     local ver="$1"
     if [[ -z "${ver}" ]]; then
-        echo "Error: Version string required (e.g. 0.1.3)"
+        echo "Error: Version string required (e.g. 0.1.4)"
         exit 1
     fi
 
     echo "Committing release v${ver} and tagging..."
     cd "${REPO_ROOT}"
-    git add pyproject.toml packages/ts/package.json packages/ts/package-lock.json packages/rust/Cargo.toml packages/rust/Cargo.lock src/jev_harness/__init__.py src/jev_harness/client.py packages/ts/src/client.ts README.md
+    git add -A
     git commit -m "release: v${ver} across Python, TypeScript, and Rust" || true
     git tag -a "v${ver}" -m "Release v${ver}"
     git push origin main --tags

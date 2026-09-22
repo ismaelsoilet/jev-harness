@@ -405,7 +405,7 @@ Ultra-low latency (< 500µs local, zero-overhead) for systems programming, Tauri
 
 ```toml
 [dependencies]
-jev-harness = "0.1.3"
+jev-harness = "0.1.4"
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -449,7 +449,7 @@ jev route --task "Architect enterprise distributed consensus"
 ```yaml
 repos:
   - repo: https://github.com/ismaelsoilet/jev-harness
-    rev: v0.1.3
+    rev: v0.1.4
     hooks:
       - id: jev-test-gate
 ```
@@ -503,7 +503,7 @@ Use the automated multi-runtime script to check, bump versions, and publish:
 ./scripts/release.sh --check
 
 # 2. Synchronously bump version in pyproject.toml, package.json, and Cargo.toml
-./scripts/release.sh --bump 0.1.3
+./scripts/release.sh --bump 0.1.4
 
 # 3. Publish to a specific registry or all at once:
 ./scripts/release.sh --publish rust    # Publishes to crates.io
@@ -511,20 +511,21 @@ Use the automated multi-runtime script to check, bump versions, and publish:
 ./scripts/release.sh --publish python  # Builds wheel/sdist for PyPI
 
 # 4. Create git tag and push to GitHub
-./scripts/release.sh --git-tag 0.1.3
+./scripts/release.sh --git-tag 0.1.4
 ```
 
 ### 2. Automated GitHub Actions CD (`.github/workflows/release.yml`)
 You can also trigger releases via GitHub Actions:
-- **Automatic:** Pushing any tag matching `v*.*.*` (e.g. `git push origin v0.1.3`) triggers the `release.yml` workflow, which tests all runtimes and automatically publishes to PyPI, npm, and Crates.io.
+- **Automatic:** Pushing any tag matching `v*.*.*` (e.g. `git push origin v0.1.4`) triggers the `release.yml` workflow, which tests all runtimes and automatically publishes to PyPI, npm, and Crates.io.
 - **Manual:** Go to **GitHub Actions → Release & Publish → Run workflow**, specify the version, and click run.
 
 *(Requires `PYPI_API_TOKEN` and `CARGO_REGISTRY_TOKEN` in GitHub Repository Secrets; npm uses OpenID Connect (OIDC) Trusted Publishing with cryptographic Sigstore provenance without static tokens).*
 
 ---
 
-## 🌟 What's New in v0.1.3
+## 🌟 What's New in v0.1.4
 
+- 🎨 **100% Visual & Badge Standardization**: Standardized all badges across PyPI, npm, and Crates.io with official logos, official colors, docs.rs and Sigstore provenance links.
 - 🔐 **Zero-Token npm Trusted Publishing**: Fully migrated npm release workflow to OpenID Connect (OIDC) Trusted Publishing with Sigstore signed provenance statements. No expiring tokens required.
 - ⚡ **Cross-Runtime CLI Unification**: Standardized subcommands (`test-gate`, `triage`, `abort-check`, `abort`, `route`, `verify`, `status`) and argument parsing (positional or flags) across Python, TypeScript (`@ismaelsoilet/jev-harness`), and Rust (`jev`).
 - 🧪 **Comprehensive 82-Test Battery**: 100% test pass rate across Python (54), TypeScript (13), and Rust (15), covering adversarial inputs, Portuguese & English tracebacks, and UTF-8 truncations.
