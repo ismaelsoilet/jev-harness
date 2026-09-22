@@ -220,14 +220,14 @@ class TestSemanticGates(unittest.TestCase):
         self.assertEqual(res_exec.sureforge_phase, "execute")
         self.assertGreaterEqual(res_exec.nudge_probability, 0.5)
 
-        # 2. Unverified changes ('verify' phase) -> should_nudge = True with SureForge Verify prompt
+        # 2. Unverified changes ('verify' phase) -> should_nudge = True with Verify prompt
         res_ver = should_nudge_continuation(
-            "Modified gates.py and client.py without running tests yet. Need to verify.",
+            "Assistant: I edited src/auth.py and added the validation logic. I haven't run pytest yet to verify.",
             client=self.client,
         )
         self.assertTrue(res_ver.should_nudge)
         self.assertEqual(res_ver.sureforge_phase, "verify")
-        self.assertIn("SureForge Verify phase", res_ver.suggested_nudge_prompt)
+        self.assertIn("Verify phase", res_ver.suggested_nudge_prompt)
 
         # 3. Waiting on user ('ask' phase / question mark) -> vetoed (should_nudge = False)
         res_wait = should_nudge_continuation(

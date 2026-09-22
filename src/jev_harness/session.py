@@ -7,6 +7,7 @@ Zero external dependencies (pure Python standard library).
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+import contextlib
 import hashlib
 import json
 import os
@@ -56,6 +57,32 @@ def _get_storage_path() -> Path:
         return Path(tempfile.gettempdir()) / "jev_session_default.json"
 
 
+@contextlib.contextmanager
+def _session_lock(storage_path: Path):
+    """Acquires an exclusive file lock to prevent concurrency race conditions."""
+    lock_path = storage_path.with_name(f"{storage_path.stem}.lock")
+    lock_file = None
+    try:
+        lock_file = open(lock_path, "a+")
+        try:
+            import fcntl
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        except Exception:
+            pass
+        yield
+    finally:
+        if lock_file is not None:
+            try:
+                import fcntl
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            except Exception:
+                pass
+            try:
+                lock_file.close()
+            except Exception:
+                pass
+
+
 def load_session() -> SessionState:
     p = _get_storage_path()
     if p.exists():
@@ -103,57 +130,67 @@ def save_session(session: SessionState) -> None:
         pass
 
 
+def update_session(modifier_fn) -> SessionState:
+    """Safely updates session state with an exclusive file lock across concurrent processes."""
+    p = _get_storage_path()
+    with _session_lock(p):
+        session = load_session()
+        modifier_fn(session)
+        save_session(session)
+        return session
+
+
 def record_triage_event(skip_llm: bool, category: str) -> None:
-    session = load_session()
-    session.total_triage_calls += 1
-    if skip_llm:
-        session.skipped_llm_calls += 1
-        tokens = 26200
-        cost = 0.31
-        session.estimated_tokens_saved += tokens
-        session.estimated_cost_saved_usd += cost
-    save_session(session)
+    def _mod(session: SessionState) -> None:
+        session.total_triage_calls += 1
+        if skip_llm:
+            session.skipped_llm_calls += 1
+            tokens = 26200
+            cost = 0.31
+            session.estimated_tokens_saved += tokens
+            session.estimated_cost_saved_usd += cost
+    update_session(_mod)
 
 
 def record_abort_event(triggered: bool) -> None:
-    session = load_session()
-    if triggered:
-        session.abort_guards_triggered += 1
-        tokens = 80000
-        cost = 1.20
-        session.estimated_tokens_saved += tokens
-        session.estimated_cost_saved_usd += cost
-    save_session(session)
+    def _mod(session: SessionState) -> None:
+        if triggered:
+            session.abort_guards_triggered += 1
+            tokens = 80000
+            cost = 1.20
+            session.estimated_tokens_saved += tokens
+            session.estimated_cost_saved_usd += cost
+    update_session(_mod)
 
 
 def record_route_event(selected_tier: str) -> None:
     if selected_tier == "deterministic":
-        session = load_session()
-        session.deterministic_routes += 1
-        tokens = 5000
-        cost = 0.05
-        session.estimated_tokens_saved += tokens
-        session.estimated_cost_saved_usd += cost
-        save_session(session)
+        def _mod(session: SessionState) -> None:
+            session.deterministic_routes += 1
+            tokens = 5000
+            cost = 0.05
+            session.estimated_tokens_saved += tokens
+            session.estimated_cost_saved_usd += cost
+        update_session(_mod)
 
 
 def record_reasoning_effort_event(effort: str, provider: str = "openai") -> None:
-    session = load_session()
-    session.effort_modulations += 1
-    if effort == "low":
-        # Turning high reasoning to low saves ~7,000 reasoning tokens per turn
-        tokens = 7000
-        cost = 0.21
-        session.estimated_tokens_saved += tokens
-        session.estimated_cost_saved_usd += cost
-    save_session(session)
+    def _mod(session: SessionState) -> None:
+        session.effort_modulations += 1
+        if effort == "low":
+            # Turning high reasoning to low saves ~7,000 reasoning tokens per turn
+            tokens = 7000
+            cost = 0.21
+            session.estimated_tokens_saved += tokens
+            session.estimated_cost_saved_usd += cost
+    update_session(_mod)
 
 
 def record_nudge_event(should_nudge: bool) -> None:
-    session = load_session()
     if should_nudge:
-        session.nudge_continuations += 1
-    save_session(session)
+        def _mod(session: SessionState) -> None:
+            session.nudge_continuations += 1
+        update_session(_mod)
 
 
 def _normalize_snippet(text: str) -> str:
@@ -185,63 +222,63 @@ def detect_repeated_failure(snippet: str, max_repeats: int = 2) -> bool:
 
 
 def record_step_attempt(step: str, error_snippet: str = "", diff_content: str = "", action: str = "") -> None:
-    session = load_session()
     diff_hash = hashlib.sha256(diff_content.encode("utf-8")).hexdigest()[:12] if diff_content else ""
-    session.history.append(
-        AttemptRecord(
-            timestamp=time.time(),
-            step=step[:300],
-            error_snippet=error_snippet[:300],
-            diff_hash=diff_hash,
-            action_taken=action[:100],
+    def _mod(session: SessionState) -> None:
+        session.history.append(
+            AttemptRecord(
+                timestamp=time.time(),
+                step=step[:300],
+                error_snippet=error_snippet[:300],
+                diff_hash=diff_hash,
+                action_taken=action[:100],
+            )
         )
-    )
-    if len(session.history) > 20:
-        session.history = session.history[-20:]
-    save_session(session)
+        if len(session.history) > 20:
+            session.history = session.history[-20:]
+    update_session(_mod)
 
 
 def record_triage_step(skip_llm: bool, category: str, error_snippet: str = "", action: str = "") -> None:
     """Single-pass atomic telemetry and history update for test triage."""
-    session = load_session()
-    session.total_triage_calls += 1
-    if skip_llm:
-        session.skipped_llm_calls += 1
-        session.estimated_tokens_saved += 26200
-        session.estimated_cost_saved_usd += 0.31
-    session.history.append(
-        AttemptRecord(
-            timestamp=time.time(),
-            step="test-gate",
-            error_snippet=error_snippet[:300],
-            diff_hash="",
-            action_taken=action[:100],
+    def _mod(session: SessionState) -> None:
+        session.total_triage_calls += 1
+        if skip_llm:
+            session.skipped_llm_calls += 1
+            session.estimated_tokens_saved += 26200
+            session.estimated_cost_saved_usd += 0.31
+        session.history.append(
+            AttemptRecord(
+                timestamp=time.time(),
+                step="test-gate",
+                error_snippet=error_snippet[:300],
+                diff_hash="",
+                action_taken=action[:100],
+            )
         )
-    )
-    if len(session.history) > 20:
-        session.history = session.history[-20:]
-    save_session(session)
+        if len(session.history) > 20:
+            session.history = session.history[-20:]
+    update_session(_mod)
 
 
 def record_abort_step(should_abort: bool, proposed_step: str, action: str = "") -> None:
     """Single-pass atomic telemetry and history update for abort gate."""
-    session = load_session()
-    if should_abort:
-        session.abort_guards_triggered += 1
-        session.estimated_tokens_saved += 80000
-        session.estimated_cost_saved_usd += 1.20
-    session.history.append(
-        AttemptRecord(
-            timestamp=time.time(),
-            step=proposed_step[:300],
-            error_snippet="",
-            diff_hash="",
-            action_taken=action[:100],
+    def _mod(session: SessionState) -> None:
+        if should_abort:
+            session.abort_guards_triggered += 1
+            session.estimated_tokens_saved += 80000
+            session.estimated_cost_saved_usd += 1.20
+        session.history.append(
+            AttemptRecord(
+                timestamp=time.time(),
+                step=proposed_step[:300],
+                error_snippet="",
+                diff_hash="",
+                action_taken=action[:100],
+            )
         )
-    )
-    if len(session.history) > 20:
-        session.history = session.history[-20:]
-    save_session(session)
+        if len(session.history) > 20:
+            session.history = session.history[-20:]
+    update_session(_mod)
 
 
 def reset_metrics() -> None:

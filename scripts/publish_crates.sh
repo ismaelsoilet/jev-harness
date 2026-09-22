@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Jev Harness - Crates.io Publishing Assistant (SureForge Verified)
+# Jev Harness - Crates.io Publishing Assistant
 # ==============================================================================
 set -euo pipefail
 

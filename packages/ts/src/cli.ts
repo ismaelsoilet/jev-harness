@@ -211,8 +211,8 @@ Options:
             skip_llm_prob: res.skipLlmProb,
             skipLlmProb: res.skipLlmProb,
             severity_score: res.severityScore,
-            severityScore: res.severityScore,
             recommendation: res.actionRecommendation,
+            action_recommendation: res.actionRecommendation,
             actionRecommendation: res.actionRecommendation,
             is_mock: res.isMock,
             isMock: res.isMock,
@@ -267,6 +267,7 @@ Options:
             viabilityScore: res.viabilityScore,
             reasoning_summary: res.reasoningSummary,
             reasoningSummary: res.reasoningSummary,
+            summary: res.reasoningSummary,
             is_mock: res.isMock,
             isMock: res.isMock,
           },
@@ -520,7 +521,7 @@ Options:
     } else {
       console.log("\n=== JEV CONTINUATION NUDGE GATE (TS) ===");
       console.log(`Should Nudge:      ${res.shouldNudge ? "YES (Inject Continuation)" : "NO (Stop & Yield to User)"}`);
-      console.log(`SureForge Phase:   ${res.sureforgePhase.toUpperCase()}`);
+      console.log(`Workflow Phase:    ${res.sureforgePhase.toUpperCase()}`);
       console.log(`Nudge Prob:        ${(res.nudgeProbability * 100).toFixed(1)}%`);
       console.log(`Waiting Prob:      ${(res.waitingProbability * 100).toFixed(1)}%`);
       console.log(`Progress Prob:     ${(res.progressProbability * 100).toFixed(1)}%`);

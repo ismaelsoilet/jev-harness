@@ -164,7 +164,7 @@ TOOLS_MANIFEST: List[Dict[str, Any]] = [
         "name": "jev_should_nudge_continuation",
         "description": (
             "Evaluates whether an autonomous agent paused prematurely with unfinished work or unverified changes "
-            "(SureForge phases: research, ask, plan, execute, verify, complete + CommandCode Jev Nudge protocol). "
+            "(Workflow phases: research, ask, plan, execute, verify, complete + CommandCode Jev Nudge protocol). "
             "Vetoes nudges when waiting on user permission/input or when the previous nudge produced no progress."
         ),
         "inputSchema": {

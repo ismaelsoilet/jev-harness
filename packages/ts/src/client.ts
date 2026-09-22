@@ -148,8 +148,9 @@ export class JevClient {
         const cmdAuth = path.join(home, ".commandcode", "auth.json");
         if (fs.existsSync(cmdAuth)) {
           const authData = JSON.parse(fs.readFileSync(cmdAuth, "utf-8"));
-          if (authData && typeof authData.apiKey === "string" && authData.apiKey.trim()) {
-            return { key: authData.apiKey.trim(), provider: "commandcode" };
+          const cmdKey = authData?.apiKey || authData?.api_key;
+          if (cmdKey && typeof cmdKey === "string" && cmdKey.trim()) {
+            return { key: cmdKey.trim(), provider: "commandcode" };
           }
         }
       } catch {
@@ -191,7 +192,7 @@ export class JevClient {
         "Content-Type": "application/json",
         "User-Agent": DEFAULT_USER_AGENT,
       };
-      if (this.apiKey) {
+      if (this.apiKey && this.apiKey !== "zen") {
         headers["Authorization"] = `Bearer ${this.apiKey}`;
       }
       if (this.provider === "openrouter") {
@@ -215,6 +216,10 @@ export class JevClient {
           vercel: "Vercel AI Gateway",
         };
         const providerName = providerMap[this.provider] || "TypeSafe";
+        if ((resp.status === 401 || resp.status === 403) && (this.provider === "opencode" || !this.apiKey || this.apiKey === "zen")) {
+          process.stderr.write(`[JEV WARNING] ${providerName} auth failed (HTTP ${resp.status}); falling back to offline simulation.\n`);
+          return this.simulateSystemOne(stateStr, questions, chosenModel);
+        }
         throw new Error(`${providerName} API HTTP ${resp.status}: ${errText}`);
       }
 
@@ -298,7 +303,7 @@ export class JevClient {
     const stateTokens = new Set(stateLower.match(/\w+/g) || []);
     const answers: Record<string, Answer> = {};
 
-    const isExplicitAssertion = /(?:assertionerror|assertionfailed|assertionfailederror|assert\b|assert_eq!|assertthat|expect\(.*?\)\.to|expected:.*received:|failures?:|fail(?:ed)?\s+test|^fail(?:ed)?\b|falha de asserção|fallo de aserción|opentest4j)/i.test(stateLower);
+    const isExplicitAssertion = /(?:assertionerror|assertionfailed|assertionfailederror|assert\b|assert_eq!|assertthat|expect\(.*?\)\.to|expected:.*received:|failures?:|fail(?:ed)?\s+test|^fail(?:ed)?\b|falha de asserção|fallo de aserción|opentest4j|(?:^|\n)\s*(?:valueerror|runtimeerror|typeerror|keyerror|indexerror|zerodivisionerror|attributeerror|overflowerror|arithmeticerror|illegalargumentexception|illegalstateexception):)/i.test(stateLower);
     const hasExplicitFailure = /(?:assertionerror|assertionfailed|assertionfailederror|failures?:\s*[1-9]|failed\b|falhou\b|\d+\s+failed\b|not\s+ok\b|segmentation\s+fault|sigsegv|panic\b|core\s+dumped)/i.test(stateLower);
     const hasHeavyKeywords = /(?:kernel|distributed|architecture|refactor|concurrency|deadlock|multi-file|consensus|supervision tree|arquitetura|distribuído|distribuída|distribuido|refatorar|refatoração|concorrência|concorrencia|consenso|múltiplos arquivos|condição de corrida|arquitectura|concurrencia|condición de carrera|múltiples archivos)/i.test(stateLower);
     const hasDeadlockOrLoop = /(?:infinite\s+loop|loop\s+infinito|bucle\s+infinito|deadlock|dead\s+lock|bloqueo\s+mutuo|livelock|hung|mutex|spin\s*lock|goroutines\s+are\s+asleep)/i.test(stateLower);
@@ -332,6 +337,7 @@ export class JevClient {
       "mutex", "segmentation fault", "sigsegv", "addresssanitizer", "core dumped",
       "nullpointerexception", "nullreferenceexception", "arrayindexoutofboundsexception",
       "nil pointer dereference", "index out of bounds",
+      "valueerror", "runtimeerror", "typeerror", "keyerror", "indexerror", "attributeerror", "zerodivisionerror",
       "falha de asserção", "asserção", "erro de lógica", "fallo de aserción", "error de lógica", "expect("
     ];
     const singleWordMech = new Set([
@@ -470,7 +476,9 @@ export class JevClient {
           const isUnverified = [
             "without running tests", "tests not run", "unverified", "haven't run pytest",
             "todo: run tests", "falta rodar os testes", "sem testar", "need to verify",
-            "to verify", "run pytest", "run cargo test", "run npm test", "need to run"
+            "to verify", "run pytest", "run cargo test", "run npm test", "need to run",
+            "updated file", "edited file", "finished editing", "modified file", "wrote code",
+            "atualizei o arquivo", "alterei o arquivo", "terminei de editar", "arquivo alterado"
           ].some((w) => stateLower.includes(w));
           const isUnfinished = [
             "todo", "remaining", "next step", "unfinished", "partial", "in progress",
@@ -494,7 +502,7 @@ export class JevClient {
           } else if (["research", "investigat", "search", "pesquisando"].some((w) => stateLower.includes(w)) && "research" in q.criteria) {
             bestChoice = "research";
           } else {
-            bestChoice = "complete" in q.criteria ? "complete" : Object.keys(q.criteria)[0];
+            bestChoice = "execute" in q.criteria ? "execute" : Object.keys(q.criteria)[0];
           }
         } else if (qid === "lease" || ("1" in q.criteria && ["2", "5", "10"].some((x) => x in q.criteria))) {
           // Astra-Ares multi-generation lease question
@@ -613,11 +621,18 @@ export class JevClient {
           "would you like me to", "do you want me to", "aguardando usuário",
           "preciso de permissão", "qual opção"
         ].some((w) => stateLower.includes(w));
+        const isDone = [
+          "all done", "100% passing", "all criteria satisfied", "tudo concluído",
+          "todas as etapas concluídas", "task complete", "konnichiwa! all done",
+          "all tests passed", "tests passed (0 failed)", "completed and verified"
+        ].some((w) => stateLower.includes(w));
         const hasUnfinishedWork = [
           "todo", "remaining", "next step", "unfinished", "partial", "in progress",
           "without running tests", "tests not run", "unverified", "haven't run pytest",
           "falta implementar", "pendente", "falta rodar os testes", "sem testar", "need to verify", "step 1 of",
-          "to verify", "run pytest", "run cargo test", "run npm test", "need to run"
+          "to verify", "run pytest", "run cargo test", "run npm test", "need to run",
+          "updated file", "edited file", "finished editing", "modified file", "wrote code",
+          "atualizei o arquivo", "alterei o arquivo", "terminei de editar", "arquivo alterado"
         ].some((w) => stateLower.includes(w));
         const hasNoProgress = [
           "no progress", "stuck", "same output", "unchanged", "repeated without change",
@@ -629,7 +644,7 @@ export class JevClient {
         } else if (qid === "progress" || inst.includes("last nudge produce real progress")) {
           prob = hasNoProgress ? 0.12 : 0.86;
         } else if (qid === "nudge" || inst.includes("gentle nudge")) {
-          if (isWaitingOnUser || hasNoProgress) {
+          if (isWaitingOnUser || hasNoProgress || isDone) {
             prob = 0.10;
           } else if (hasUnfinishedWork) {
             prob = 0.89;

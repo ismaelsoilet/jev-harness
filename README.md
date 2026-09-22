@@ -226,20 +226,20 @@ jev-harness reasoning-effort \
   --model gpt-5.6-luna
 ```
 
-### 6. SureForge Continuation Nudge Gate (`nudge-gate` / `sureforge`)
-Inspired by [`CommandCodeAI/cmd-mod-jev-nudge`](https://github.com/CommandCodeAI/cmd-mod-jev-nudge), **SureForge** gated phases (`research`, `ask`, `plan`, `execute`, `verify`, `complete`), and **Fable-Judge** adversarial verification, `nudge-gate` evaluates whether an autonomous agent paused prematurely with unfinished work or unverified changes (`should_nudge = true`, exit code `0`), while automatically vetoing nudges when waiting on user input (`waiting >= 0.5` or `phase == "ask"`), when the previous nudge produced no progress (`progress < 0.5`), or when all tests pass (`phase == "complete"`):
+### 6. Continuation Nudge Gate (`nudge-gate` / `nudge`)
+Inspired by [`CommandCodeAI/cmd-mod-jev-nudge`](https://github.com/CommandCodeAI/cmd-mod-jev-nudge), `nudge-gate` combines gated workflow phases (`research`, `ask`, `plan`, `execute`, `verify`, `complete`) with calibrated `Noul` probabilities (`nudge`, `waiting`, `progress`) to evaluate whether an autonomous agent paused prematurely with unfinished work or unverified changes (`should_nudge = true`, exit code `0`), while automatically vetoing nudges when waiting on user input (`waiting >= 0.5` or `phase == "ask"`), when the previous nudge produced no progress (`progress < 0.5`), or when all tests pass (`phase == "complete"`):
 
 ```bash
 # Evaluate if an agent stopped after editing code without running tests
 jev-harness nudge-gate \
   --transcript "Assistant: Edited src/auth.py. Now I need to run pytest to verify." \
   --json
-# -> should_nudge: true | sureforge_phase: "verify" | exit code 0
+# -> should_nudge: true | workflow_phase: "verify" | exit code 0
 
 # Evaluate when waiting on user choice (vetoed automatically)
 jev-harness nudge-gate \
   --transcript "Assistant: Which AWS region should I deploy to? Would you like me to proceed?"
-# -> should_nudge: false | sureforge_phase: "ask" | exit code 1
+# -> should_nudge: false | workflow_phase: "ask" | exit code 1
 ```
 
 ### 7. ROI & Token Savings Telemetry (`metrics`)

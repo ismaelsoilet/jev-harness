@@ -789,7 +789,7 @@ async fn test_commandcode_provider_and_nudge_gate() {
     .expect("Nudge gate failed");
     assert!(res_verify.should_nudge);
     assert_eq!(res_verify.sureforge_phase, "verify");
-    assert!(res_verify.suggested_nudge_prompt.contains("SureForge Verify"));
+    assert!(res_verify.suggested_nudge_prompt.contains("Verify phase"));
 
     // 2. Waiting on user -> should_nudge = false, phase = ask
     let res_wait = should_nudge_continuation(

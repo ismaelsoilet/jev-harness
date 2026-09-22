@@ -123,6 +123,7 @@ pub struct TestTriageResult {
     pub skip_llm_prob: f64,
     pub severity_score: f64,
     pub action_recommendation: String,
+    pub recommendation: String,
     pub is_mock: bool,
 }
 
@@ -134,6 +135,7 @@ pub struct AbortGateResult {
     pub action: String,
     pub viability_score: f64,
     pub reasoning_summary: String,
+    pub summary: String,
     pub is_mock: bool,
 }
 

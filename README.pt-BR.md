@@ -226,20 +226,20 @@ jev-harness reasoning-effort \
   --model gpt-5.6-luna
 ```
 
-### 6. Gate de Continuação SureForge & Jev Nudge (`nudge-gate` / `sureforge`)
-Inspirado no [`CommandCodeAI/cmd-mod-jev-nudge`](https://github.com/CommandCodeAI/cmd-mod-jev-nudge), nas fases verificadas do **SureForge** (`research`, `ask`, `plan`, `execute`, `verify`, `complete`) e na verificação adversarial **Fable-Judge**, o `nudge-gate` avalia se um agente autônomo parou prematuramente com código não verificado ou tarefas incompletas (`should_nudge = true`, exit code `0`), aplicando vetos automáticos caso o agente esteja aguardando resposta do usuário (`waiting >= 0.5` ou `phase == "ask"`), sem progresso após o nudge anterior (`progress < 0.5`) ou com tarefa 100% concluída (`phase == "complete"`):
+### 6. Gate de Continuação & Jev Nudge (`nudge-gate` / `nudge`)
+Inspirado no [`CommandCodeAI/cmd-mod-jev-nudge`](https://github.com/CommandCodeAI/cmd-mod-jev-nudge), o `nudge-gate` combina fases de fluxo de trabalho (`research`, `ask`, `plan`, `execute`, `verify`, `complete`) com probabilidades `Noul` calibradas (`nudge`, `waiting`, `progress`) para avaliar se um agente autônomo parou prematuramente com código não verificado ou tarefas incompletas (`should_nudge = true`, exit code `0`), aplicando vetos automáticos caso o agente esteja aguardando resposta do usuário (`waiting >= 0.5` ou `phase == "ask"`), sem progresso após o nudge anterior (`progress < 0.5`) ou com tarefa 100% concluída (`phase == "complete"`):
 
 ```bash
 # Avaliar se o agente parou após editar código sem rodar a bateria de testes
 jev-harness nudge-gate \
   --transcript "Assistant: Edited src/auth.py. Now I need to run pytest to verify." \
   --json
-# -> should_nudge: true | sureforge_phase: "verify" | exit code 0
+# -> should_nudge: true | workflow_phase: "verify" | exit code 0
 
 # Avaliar quando o agente aguarda decisão do usuário (vetado automaticamente)
 jev-harness nudge-gate \
   --transcript "Assistant: Which AWS region should I deploy to? Would you like me to proceed?"
-# -> should_nudge: false | sureforge_phase: "ask" | exit code 1
+# -> should_nudge: false | workflow_phase: "ask" | exit code 1
 ```
 
 ### 7. Telemetria de ROI e Economia de Tokens (`metrics`)

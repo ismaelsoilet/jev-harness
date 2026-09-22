@@ -141,6 +141,7 @@ pub async fn triage_test_failure(
         skip_llm_prob: skip_prob,
         severity_score: sev_score,
         action_recommendation: rec.to_string(),
+        recommendation: rec.to_string(),
         is_mock: resp.is_mock,
     })
 }
@@ -244,7 +245,8 @@ pub async fn should_abort_trajectory(
         abort_probability: dead_end_prob,
         action: effective_action,
         viability_score: viability,
-        reasoning_summary: summary,
+        reasoning_summary: summary.clone(),
+        summary,
         is_mock: resp.is_mock,
     })
 }
@@ -811,7 +813,7 @@ pub async fn should_nudge_continuation(
     questions.insert(
         "sureforge_phase".to_string(),
         Question::Choice(ChoiceQuestion {
-            instructions: "Identify the active SureForge workflow phase based on the agent's recent transcript.".to_string(),
+            instructions: "Identify the active workflow phase based on the agent's recent transcript.".to_string(),
             criteria: phase_criteria,
         }),
     );
@@ -879,9 +881,9 @@ pub async fn should_nudge_continuation(
     let (suggested_nudge_prompt, rationale) = if should_nudge {
         if phase == "verify" {
             (
-                "Continue with the SureForge Verify phase: run the test suite and build verification to confirm your changes before concluding.".to_string(),
+                "Continue with the Verify phase: run the test suite and build verification to confirm your changes before concluding.".to_string(),
                 format!(
-                    "Agent paused during SureForge 'verify' phase without running verification (nudge={:.2}, waiting={:.2}).",
+                    "Agent paused during 'verify' phase without running verification (nudge={:.2}, waiting={:.2}).",
                     nudge_prob, waiting_prob
                 ),
             )
@@ -889,7 +891,7 @@ pub async fn should_nudge_continuation(
             (
                 "Continue executing the remaining steps in the user's request and verify your changes before stopping.".to_string(),
                 format!(
-                    "Unfinished work detected in SureForge '{}' phase (nudge={:.2}, waiting={:.2}, progress={:.2}).",
+                    "Unfinished work detected in '{}' phase (nudge={:.2}, waiting={:.2}, progress={:.2}).",
                     phase, nudge_prob, waiting_prob, progress_prob
                 ),
             )
@@ -914,7 +916,7 @@ pub async fn should_nudge_continuation(
         (
             String::new(),
             format!(
-                "No nudge needed: SureForge workflow is complete (phase='complete', nudge={:.2}).",
+                "No nudge needed: workflow is complete (phase='complete', nudge={:.2}).",
                 nudge_prob
             ),
         )

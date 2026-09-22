@@ -324,7 +324,7 @@ class JevClient:
             "Content-Type": "application/json",
             "User-Agent": DEFAULT_USER_AGENT,
         }
-        if self.api_key:
+        if self.api_key and self.api_key != "zen":
             headers["Authorization"] = f"Bearer {self.api_key}"
 
         req_data = json.dumps(payload).encode("utf-8")
@@ -347,6 +347,10 @@ class JevClient:
                 "vercel": "Vercel AI Gateway",
             }
             provider_label = provider_map.get(self.provider, "TypeSafe")
+            if e.code in (401, 403) and (self.provider == "opencode" or self.api_key in ("zen", None, "")):
+                import sys
+                sys.stderr.write(f"[JEV WARNING] {provider_label} auth failed (HTTP {e.code}); falling back to offline simulation.\n")
+                return self._simulate_system_one(state_str, questions, chosen_model)
             raise RuntimeError(f"{provider_label} API returned HTTP {e.code}: {err_body}") from e
         except (urllib.error.URLError, TimeoutError) as e:
             provider_map = {
@@ -480,7 +484,7 @@ class JevClient:
 
         is_explicit_assertion = any(
             re.search(
-                r"(?:assertionerror|assertionfailed|assertionfailederror|assert\b|assert_eq!|assertthat|expect\(.*?\)\.to|expected:.*received:|failures?:|fail(?:ed)?\s+test|^fail(?:ed)?\b|falha de asserção|fallo de aserción|opentest4j)",
+                r"(?:assertionerror|assertionfailed|assertionfailederror|assert\b|assert_eq!|assertthat|expect\(.*?\)\.to|expected:.*received:|failures?:|fail(?:ed)?\s+test|^fail(?:ed)?\b|falha de asserção|fallo de aserción|opentest4j|^(?:valueerror|runtimeerror|typeerror|keyerror|indexerror|zerodivisionerror|attributeerror|overflowerror|arithmeticerror|illegalargumentexception|illegalstateexception):)",
                 line.strip(),
             )
             for line in state_lower.splitlines()
@@ -525,6 +529,7 @@ class JevClient:
             "mutex", "segmentation fault", "sigsegv", "addresssanitizer", "core dumped",
             "nullpointerexception", "nullreferenceexception", "arrayindexoutofboundsexception",
             "nil pointer dereference", "index out of bounds",
+            "valueerror", "runtimeerror", "typeerror", "keyerror", "indexerror", "attributeerror", "zerodivisionerror",
             "falha de asserção", "asserção", "erro de lógica", "fallo de aserción", "error de lógica", "expect("
         ]
         single_word_mech = {
@@ -668,7 +673,9 @@ class JevClient:
                     is_unverified = any(k in state_lower for k in [
                         "without running tests", "tests not run", "unverified", "haven't run pytest",
                         "todo: run tests", "falta rodar os testes", "sem testar", "need to verify",
-                        "to verify", "run pytest", "run cargo test", "run npm test", "need to run"
+                        "to verify", "run pytest", "run cargo test", "run npm test", "need to run",
+                        "updated file", "edited file", "finished editing", "modified file", "wrote code",
+                        "atualizei o arquivo", "alterei o arquivo", "terminei de editar", "arquivo alterado"
                     ])
                     is_unfinished = any(k in state_lower for k in [
                         "next i'll", "next i will", "1 of 5", "2 of 5", "3 of 5", "4 of 5",
@@ -761,7 +768,9 @@ class JevClient:
                         "partial", "parcial", "without running tests", "tests not run", "unverified",
                         "haven't run pytest", "todo: run tests", "falta rodar os testes", "sem testar",
                         "need to verify", "to verify", "run pytest", "run cargo test", "run npm test",
-                        "need to run", "next step"
+                        "need to run", "next step",
+                        "updated file", "edited file", "finished editing", "modified file", "wrote code",
+                        "atualizei o arquivo", "alterei o arquivo", "terminei de editar", "arquivo alterado"
                     ])
                     if is_waiting_user or is_done:
                         prob = 0.06

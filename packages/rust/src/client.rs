@@ -22,7 +22,7 @@ pub const DEFAULT_USER_AGENT: &str = concat!(
 );
 
 static ASSERTION_REGEX: LazyLock<regex::Regex> = LazyLock::new(|| {
-    regex::Regex::new(r"(?i)(?:assertionerror|assertionfailed|assertionfailederror|assert\b|assert_eq!|assertthat|expect\(.*?\)\.to|expected:.*received:|failures?:|fail(?:ed)?\s+test|^fail(?:ed)?\b|falha de asserção|fallo de aserción|opentest4j)").expect("Invalid assertion regex")
+    regex::Regex::new(r"(?i)(?:assertionerror|assertionfailed|assertionfailederror|assert\b|assert_eq!|assertthat|expect\(.*?\)\.to|expected:.*received:|failures?:|fail(?:ed)?\s+test|^fail(?:ed)?\b|falha de asserção|fallo de aserción|opentest4j|^(?:valueerror|runtimeerror|typeerror|keyerror|indexerror|zerodivisionerror|attributeerror|overflowerror|arithmeticerror|illegalargumentexception|illegalstateexception):)").expect("Invalid assertion regex")
 });
 
 static FAILURE_REGEX: LazyLock<regex::Regex> = LazyLock::new(|| {
@@ -363,7 +363,8 @@ impl JevClient {
             let cmd_auth = PathBuf::from(&home).join(".commandcode/auth.json");
             if let Ok(content) = fs::read_to_string(cmd_auth) {
                 if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
-                    if let Some(k) = val.get("apiKey").and_then(|v| v.as_str()) {
+                    let key_opt = val.get("apiKey").or_else(|| val.get("api_key")).and_then(|v| v.as_str());
+                    if let Some(k) = key_opt {
                         let kt = k.trim();
                         if !kt.is_empty() {
                             return (
@@ -407,7 +408,9 @@ impl JevClient {
             .header("Content-Type", "application/json");
 
         if let Some(ref key) = self.api_key {
-            req = req.header("Authorization", format!("Bearer {}", key));
+            if key != "zen" {
+                req = req.header("Authorization", format!("Bearer {}", key));
+            }
         }
         if self.provider == "openrouter" {
             req = req
@@ -423,6 +426,10 @@ impl JevClient {
                     let status = resp.status().as_u16();
                     let raw_text = resp.text().await.unwrap_or_default();
                     let text = Self::redact_secrets(&raw_text, self.api_key.as_deref());
+                    if (status == 401 || status == 403) && (self.provider == "opencode" || self.api_key.is_none() || self.api_key.as_deref() == Some("zen")) {
+                        eprintln!("[JEV WARNING] {} auth failed (HTTP {}); falling back to offline simulation.", self.provider, status);
+                        return Ok(self.simulate_system_one(state, &questions, &self.model));
+                    }
                     return Err(JevError::Api {
                         status,
                         message: text,
@@ -605,6 +612,13 @@ impl JevClient {
             "arrayindexoutofboundsexception",
             "nil pointer dereference",
             "index out of bounds",
+            "valueerror",
+            "runtimeerror",
+            "typeerror",
+            "keyerror",
+            "indexerror",
+            "attributeerror",
+            "zerodivisionerror",
             "falha de asserção",
             "asserção",
             "erro de lógica",
@@ -906,6 +920,15 @@ impl JevClient {
                             "run cargo test",
                             "run npm test",
                             "need to run",
+                            "updated file",
+                            "edited file",
+                            "finished editing",
+                            "modified file",
+                            "wrote code",
+                            "atualizei o arquivo",
+                            "alterei o arquivo",
+                            "terminei de editar",
+                            "arquivo alterado",
                         ]
                         .iter()
                         .any(|w| state_lower.contains(w));
@@ -957,8 +980,8 @@ impl JevClient {
                         {
                             best_choice = "research".to_string();
                         } else {
-                            best_choice = if cq.criteria.contains_key("complete") {
-                                "complete".to_string()
+                            best_choice = if cq.criteria.contains_key("execute") {
+                                "execute".to_string()
                             } else {
                                 cq.criteria.keys().next().cloned().unwrap_or_default()
                             };
@@ -1302,6 +1325,20 @@ impl JevClient {
                         ]
                         .iter()
                         .any(|w| state_lower.contains(w));
+                    let is_done = [
+                        "all done",
+                        "100% passing",
+                        "all criteria satisfied",
+                        "tudo concluído",
+                        "todas as etapas concluídas",
+                        "task complete",
+                        "konnichiwa! all done",
+                        "all tests passed",
+                        "tests passed (0 failed)",
+                        "completed and verified",
+                    ]
+                    .iter()
+                    .any(|w| state_lower.contains(w));
                     let has_unfinished_work = [
                         "todo",
                         "remaining",
@@ -1324,6 +1361,15 @@ impl JevClient {
                         "run cargo test",
                         "run npm test",
                         "need to run",
+                        "updated file",
+                        "edited file",
+                        "finished editing",
+                        "modified file",
+                        "wrote code",
+                        "atualizei o arquivo",
+                        "alterei o arquivo",
+                        "terminei de editar",
+                        "arquivo alterado",
                     ]
                     .iter()
                     .any(|w| state_lower.contains(w));
@@ -1345,7 +1391,7 @@ impl JevClient {
                     {
                         prob = if has_no_progress { 0.12 } else { 0.86 };
                     } else if qid == "nudge" || inst.contains("gentle nudge") {
-                        if is_waiting_on_user || has_no_progress {
+                        if is_waiting_on_user || has_no_progress || is_done {
                             prob = 0.10;
                         } else if has_unfinished_work {
                             prob = 0.89;

@@ -118,7 +118,7 @@ def cmd_metrics(args: argparse.Namespace) -> int:
         print(f"Doom Loops Aborted:      {s.abort_guards_triggered}")
         print(f"Deterministic Routes:    {s.deterministic_routes}")
         print(f"Effort Modulations:      {s.effort_modulations} (Astra-Jev per-generation)")
-        print(f"Continuation Nudges:     {s.nudge_continuations} (SureForge + Jev Nudge)")
+        print(f"Continuation Nudges:     {s.nudge_continuations} (Jev Nudge Gate)")
         print(f"Estimated Tokens Saved:  ⚡ {s.estimated_tokens_saved:,} tokens")
         print(f"Estimated API Cost Saved: 💸 ${s.estimated_cost_saved_usd:.2f} USD")
         print("=======================================\n")
@@ -292,6 +292,7 @@ def cmd_test_gate(args: argparse.Namespace) -> int:
                     "skip_llm": res.skip_llm,
                     "skip_llm_prob": res.skip_llm_prob,
                     "severity_score": res.severity_score,
+                    "action_recommendation": res.action_recommendation,
                     "recommendation": res.action_recommendation,
                     "is_mock": res.is_mock,
                 },
@@ -337,6 +338,7 @@ def cmd_abort_check(args: argparse.Namespace) -> int:
                     "abort_probability": res.abort_probability,
                     "action": res.action,
                     "viability_score": res.viability_score,
+                    "reasoning_summary": res.reasoning_summary,
                     "summary": res.reasoning_summary,
                     "is_mock": res.is_mock,
                 },
@@ -370,7 +372,7 @@ def cmd_route(args: argparse.Namespace) -> int:
     provider = getattr(args, "provider", None)
     is_json = getattr(args, "json", False)
     client = JevClient(force_mock=force_mock, provider=provider)
-    res = route_model_tier(task, client=client)
+    res = route_model_tier(task, client=client, record_session=True)
 
     if is_json:
         print(
@@ -554,9 +556,9 @@ def cmd_nudge_gate(args: argparse.Namespace) -> int:
             )
         )
     else:
-        print("\n=== JEV CONTINUATION NUDGE GATE (SureForge) ===")
+        print("\n=== JEV CONTINUATION NUDGE GATE ===")
         print(f"Should Nudge:      {'YES (Inject Continuation)' if res.should_nudge else 'NO (Stop & Yield to User)'}")
-        print(f"SureForge Phase:   {res.sureforge_phase.upper()}")
+        print(f"Workflow Phase:    {res.sureforge_phase.upper()}")
         print(f"Nudge Prob:        {res.nudge_probability * 100:.1f}%")
         print(f"Waiting Prob:      {res.waiting_probability * 100:.1f}%")
         print(f"Progress Prob:     {res.progress_probability * 100:.1f}%")
@@ -689,12 +691,12 @@ def main() -> None:
     p_verify.add_argument("--output", "-o", required=True, help="Produced evidence / output")
     p_verify.set_defaults(func=cmd_verify)
 
-    # nudge-gate (aliases: nudge, sureforge)
+    # nudge-gate (alias: nudge)
     p_nudge = subparsers.add_parser(
         "nudge-gate",
-        aliases=["nudge", "sureforge"],
+        aliases=["nudge"],
         parents=[common_parser],
-        help="Evaluate if agent stopped prematurely with unfinished work or unverified changes (SureForge + Jev Nudge)",
+        help="Evaluate if agent stopped prematurely with unfinished work or unverified changes (Jev Nudge Gate)",
     )
     p_nudge.add_argument("transcript_pos", nargs="?", default=None, help="Recent agent transcript tail or path to transcript file")
     p_nudge.add_argument("--transcript", "-t", default=None, help="Recent agent transcript tail or path to transcript file")

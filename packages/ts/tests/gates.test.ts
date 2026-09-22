@@ -371,7 +371,7 @@ FAIL src/plugin.test.ts
     assert.equal(parsed.skipLlm, true);
   });
 
-  test("commandcode provider and shouldNudgeContinuation SureForge & Fable-Judge verification", async () => {
+  test("commandcode provider and shouldNudgeContinuation verification", async () => {
     const ccClient = new JevClient({ provider: "commandcode", apiKey: "cmd-test-key" });
     assert.equal(ccClient.baseUrl, "https://api.commandcode.ai/provider/v1/systemone");
     assert.equal(ccClient.model, "typesafe/jev");
@@ -383,7 +383,7 @@ FAIL src/plugin.test.ts
     );
     assert.equal(resVerify.shouldNudge, true);
     assert.equal(resVerify.sureforgePhase, "verify");
-    assert.ok(resVerify.suggestedNudgePrompt.includes("SureForge Verify"));
+    assert.ok(resVerify.suggestedNudgePrompt.includes("Verify phase"));
 
     // 2. Waiting on user -> shouldNudge = false, phase = ask
     const resWait = await shouldNudgeContinuation(

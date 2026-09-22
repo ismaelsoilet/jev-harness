@@ -145,8 +145,7 @@ pub enum Commands {
 
     #[command(
         alias = "nudge",
-        alias = "sureforge",
-        about = "Evaluate if agent stopped prematurely with unfinished work or unverified changes (SureForge + Jev Nudge)"
+        about = "Evaluate if agent stopped prematurely with unfinished work or unverified changes (Jev Nudge Gate)"
     )]
     NudgeGate {
         #[arg(help = "Recent agent transcript tail or path to file")]
@@ -516,7 +515,7 @@ pub async fn run_cli() {
                                 "NO (Stop & Yield to User)"
                             }
                         );
-                        println!("SureForge Phase:   {}", res.sureforge_phase.to_uppercase());
+                        println!("Workflow Phase:    {}", res.sureforge_phase.to_uppercase());
                         println!("Nudge Prob:        {:.1}%", res.nudge_probability * 100.0);
                         println!("Waiting Prob:      {:.1}%", res.waiting_probability * 100.0);
                         println!("Progress Prob:     {:.1}%", res.progress_probability * 100.0);

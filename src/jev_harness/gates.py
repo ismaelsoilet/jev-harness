@@ -256,6 +256,7 @@ def should_abort_trajectory(
 def route_model_tier(
     task_description: str,
     client: Optional[JevClient] = None,
+    record_session: bool = False,
 ) -> ModelRouteResult:
     """
     Decides the most cost-effective intelligence tier for a given task.
@@ -304,10 +305,11 @@ def route_model_tier(
         recommended_model=model_rec,
         is_mock=resp.is_mock,
     )
-    try:
-        record_route_event(route_res.selected_tier)
-    except Exception:
-        pass
+    if record_session:
+        try:
+            record_route_event(route_res.selected_tier)
+        except Exception:
+            pass
     return route_res
 
 
@@ -673,7 +675,7 @@ def should_nudge_continuation(
     record_session: bool = False,
 ) -> NudgeGateResult:
     """
-    6th Semantic Decision Gate (inspired by CommandCodeAI/cmd-mod-jev-nudge + SureForge + Fable-Judge):
+    6th Semantic Decision Gate (inspired by CommandCodeAI/cmd-mod-jev-nudge):
     Evaluates whether an autonomous agent paused prematurely with unfinished work or unverified changes,
     and determines if a continuation nudge should be injected without interrupting the user.
     """
@@ -689,7 +691,7 @@ def should_nudge_continuation(
 
     questions: Dict[str, Any] = {
         "sureforge_phase": ChoiceQuestion(
-            instructions="Identify the active SureForge workflow phase based on the agent's recent transcript.",
+            instructions="Identify the active workflow phase based on the agent's recent transcript.",
             criteria={
                 "research": "Investigating codebase, gathering context, or discovering dependencies before planning.",
                 "ask": "Blocked on ambiguous requirements or waiting on user clarification/permission.",
@@ -743,11 +745,11 @@ def should_nudge_continuation(
     if should_nudge:
         if phase == "verify":
             suggested_prompt = (
-                "Continue with the SureForge Verify phase: run the test suite and build verification "
+                "Continue with the Verify phase: run the test suite and build verification "
                 "to confirm your changes before concluding."
             )
             rationale = (
-                f"Agent paused during SureForge 'verify' phase without running verification "
+                f"Agent paused during 'verify' phase without running verification "
                 f"(nudge={nudge_prob:.2f}, waiting={waiting_prob:.2f})."
             )
         else:
@@ -755,7 +757,7 @@ def should_nudge_continuation(
                 "Continue executing the remaining steps in the user's request and verify your changes before stopping."
             )
             rationale = (
-                f"Unfinished work detected in SureForge '{phase}' phase "
+                f"Unfinished work detected in '{phase}' phase "
                 f"(nudge={nudge_prob:.2f}, waiting={waiting_prob:.2f}, progress={progress_prob:.2f})."
             )
     else:
@@ -765,7 +767,7 @@ def should_nudge_continuation(
         elif not made_progress:
             rationale = f"Nudge vetoed: previous nudge did not produce real progress (progress={progress_prob:.2f} < {threshold:.2f})."
         elif is_complete:
-            rationale = f"No nudge needed: SureForge workflow is complete (phase='complete', nudge={nudge_prob:.2f})."
+            rationale = f"No nudge needed: workflow is complete (phase='complete', nudge={nudge_prob:.2f})."
         else:
             rationale = f"No nudge needed: nudge probability ({nudge_prob:.2f}) below threshold ({threshold:.2f})."
 

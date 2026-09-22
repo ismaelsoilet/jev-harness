@@ -570,7 +570,7 @@ export async function shouldNudgeContinuation(
   const questions: Record<string, Question> = {
     sureforge_phase: {
       type: "choice",
-      instructions: "Identify the active SureForge workflow phase based on the agent's recent transcript.",
+      instructions: "Identify the active workflow phase based on the agent's recent transcript.",
       criteria: {
         research: "Investigating codebase, gathering context, or discovering dependencies before planning.",
         ask: "Blocked on ambiguous requirements or waiting on user clarification/permission.",
@@ -626,19 +626,19 @@ export async function shouldNudgeContinuation(
   if (shouldNudge) {
     if (phase === "verify") {
       suggestedNudgePrompt =
-        "Continue with the SureForge Verify phase: run the test suite and build verification to confirm your changes before concluding.";
-      rationale = `Agent paused during SureForge 'verify' phase without running verification (nudge=${nudgeProb.toFixed(2)}, waiting=${waitingProb.toFixed(2)}).`;
+        "Continue with the Verify phase: run the test suite and build verification to confirm your changes before concluding.";
+      rationale = `Agent paused during 'verify' phase without running verification (nudge=${nudgeProb.toFixed(2)}, waiting=${waitingProb.toFixed(2)}).`;
     } else {
       suggestedNudgePrompt =
         "Continue executing the remaining steps in the user's request and verify your changes before stopping.";
-      rationale = `Unfinished work detected in SureForge '${phase}' phase (nudge=${nudgeProb.toFixed(2)}, waiting=${waitingProb.toFixed(2)}, progress=${progressProb.toFixed(2)}).`;
+      rationale = `Unfinished work detected in '${phase}' phase (nudge=${nudgeProb.toFixed(2)}, waiting=${waitingProb.toFixed(2)}, progress=${progressProb.toFixed(2)}).`;
     }
   } else if (isWaiting) {
     rationale = `Nudge vetoed: agent is waiting on user input or permission (waiting=${waitingProb.toFixed(2)}, phase='${phase}').`;
   } else if (!madeProgress) {
     rationale = `Nudge vetoed: previous nudge did not produce real progress (progress=${progressProb.toFixed(2)} < ${threshold.toFixed(2)}).`;
   } else if (isComplete) {
-    rationale = `No nudge needed: SureForge workflow is complete (phase='complete', nudge=${nudgeProb.toFixed(2)}).`;
+    rationale = `No nudge needed: workflow is complete (phase='complete', nudge=${nudgeProb.toFixed(2)}).`;
   } else {
     rationale = `No nudge needed: nudge probability (${nudgeProb.toFixed(2)}) below threshold (${threshold.toFixed(2)}).`;
   }
