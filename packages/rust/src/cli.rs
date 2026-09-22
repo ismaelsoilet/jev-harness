@@ -1,8 +1,8 @@
 use crate::{
     client::JevClient,
     gates::{
-        modulate_reasoning_effort_with_tokens, route_model_tier, should_abort_trajectory,
-        triage_test_failure, verify_step_completion,
+        modulate_reasoning_effort_full, route_model_tier,
+        should_abort_trajectory, triage_test_failure, verify_step_completion,
     },
 };
 use clap::{Parser, Subcommand};
@@ -127,6 +127,19 @@ pub enum Commands {
             help = "Active prompt tokens in session context"
         )]
         session_context_tokens: usize,
+
+        #[arg(
+            long = "supported-efforts",
+            help = "Comma-separated list of supported effort levels"
+        )]
+        supported_efforts: Option<String>,
+
+        #[arg(
+            long = "max-lease-steps",
+            default_value = "10",
+            help = "Maximum generations to lease unchanged effort"
+        )]
+        max_lease_steps: u32,
     },
 }
 
@@ -357,6 +370,8 @@ pub async fn run_cli() {
             target_provider,
             model,
             session_context_tokens,
+            supported_efforts,
+            max_lease_steps,
         } => {
             let ctx = match read_input(context_pos, context) {
                 Ok(t) if !t.trim().is_empty() => t,
@@ -368,11 +383,23 @@ pub async fn run_cli() {
                 }
             };
 
-            match modulate_reasoning_effort_with_tokens(
+            let supported_vec = supported_efforts.map(|s| {
+                s.split(',')
+                    .map(|item| item.trim().to_lowercase())
+                    .filter(|item| !item.is_empty())
+                    .collect::<Vec<String>>()
+            });
+            let supported_refs = supported_vec.as_ref().map(|v| {
+                v.iter().map(|s| s.as_str()).collect::<Vec<&str>>()
+            });
+
+            match modulate_reasoning_effort_full(
                 &ctx,
                 &target_provider,
                 model.as_deref(),
                 session_context_tokens,
+                supported_refs.as_deref(),
+                max_lease_steps,
                 Some(&client),
             )
             .await
@@ -385,6 +412,7 @@ pub async fn run_cli() {
                         println!("Effort:            {}", res.effort.to_uppercase());
                         println!("Confidence:        {:.1}%", res.confidence * 100.0);
                         println!("Complexity Score:  {:.1} / 4.0", res.complexity_score);
+                        println!("Lease Steps:       {}", res.lease_steps);
                         println!("Provider:          {}", res.provider);
                         println!(
                             "Supported:         {}",

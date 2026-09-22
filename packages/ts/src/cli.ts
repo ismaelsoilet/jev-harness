@@ -34,7 +34,7 @@ function getPackageVersion(): string {
   } catch {
     // fallback
   }
-  return "0.1.7";
+  return "0.1.8";
 }
 
 export async function runCli(argv: string[] = process.argv.slice(2)): Promise<number> {
@@ -79,7 +79,9 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
           args[i] === "--model" ||
           args[i] === "-m" ||
           args[i] === "--session-context-tokens" ||
-          args[i] === "--tokens") &&
+          args[i] === "--tokens" ||
+          args[i] === "--supported-efforts" ||
+          args[i] === "--max-lease-steps") &&
         i + 1 < args.length &&
         !args[i + 1].startsWith("-")
       ) {
@@ -124,6 +126,8 @@ Options:
   --target-provider <openai|deepseek|..> Target provider for reasoning effort
   --model <name>                         Target model name
   --session-context-tokens <num>         Active prompt tokens in session
+  --supported-efforts <list>             Comma-separated allowed effort levels (e.g. low,medium,high)
+  --max-lease-steps <num>                Maximum generation stability lease steps (default: 10)
 `);
     return 0;
   }
@@ -386,10 +390,20 @@ Options:
     const tokensIdx = args.findIndex((a) => a === "--session-context-tokens" || a === "--tokens");
     const sessionContextTokens = tokensIdx !== -1 ? parseInt(args[tokensIdx + 1], 10) || 0 : 0;
 
+    const effIdx = args.findIndex((a) => a === "--supported-efforts");
+    const supportedEfforts = effIdx !== -1 && args[effIdx + 1]
+      ? args[effIdx + 1].split(",").map((s) => s.trim().toLowerCase()).filter(Boolean)
+      : undefined;
+
+    const leaseIdx = args.findIndex((a) => a === "--max-lease-steps");
+    const maxLeaseSteps = leaseIdx !== -1 ? parseInt(args[leaseIdx + 1], 10) || 10 : 10;
+
     const res = await modulateReasoningEffort(cleanContext, {
       provider: targetProvider,
       model: targetModel,
       sessionContextTokens,
+      supportedEfforts,
+      maxLeaseSteps,
       client,
     });
 
@@ -409,6 +423,8 @@ Options:
             isReasoningSupported: res.isReasoningSupported,
             cache_safe_recommendation: res.cacheSafeRecommendation,
             cacheSafeRecommendation: res.cacheSafeRecommendation,
+            lease_steps: res.leaseSteps,
+            leaseSteps: res.leaseSteps,
             is_mock: res.isMock,
             isMock: res.isMock,
           },
@@ -421,6 +437,7 @@ Options:
       console.log(`Effort:            ${res.effort.toUpperCase()}`);
       console.log(`Confidence:        ${(res.confidence * 100).toFixed(1)}%`);
       console.log(`Complexity Score:  ${res.complexityScore.toFixed(1)} / 4.0`);
+      console.log(`Lease Steps:       ${res.leaseSteps}`);
       console.log(`Provider:          ${res.provider}`);
       console.log(`Supported:         ${res.isReasoningSupported ? "YES" : "NO (Direct model)"}`);
       console.log(`Rationale:         ${res.rationale}`);

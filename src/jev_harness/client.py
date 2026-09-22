@@ -18,9 +18,11 @@ import urllib.request
 
 TYPESAFE_API_URL = "https://api.typesafe.ai/v1/systemone"
 OPENCODE_API_URL = "https://opencode.ai/zen/v1/systemone"
-OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
+OPENROUTER_API_URL = "https://openrouter.ai/api/alpha/decisions"
+OPENROUTER_CHAT_API_URL = "https://openrouter.ai/api/v1/chat/completions"
+VERCEL_API_URL = "https://ai-gateway.vercel.sh/v1/evaluate"
 DEFAULT_MODEL = "jev-latest"
-DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.1.7; +https://github.com/ismaelsoilet/jev-harness)"
+DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.1.8; +https://github.com/ismaelsoilet/jev-harness)"
 
 
 def _urlopen_with_ipv4_fallback(req: urllib.request.Request, timeout: float):
@@ -158,6 +160,8 @@ class JevClient:
             self.base_url = OPENCODE_API_URL
         elif self.provider == "openrouter":
             self.base_url = OPENROUTER_API_URL
+        elif self.provider == "vercel":
+            self.base_url = VERCEL_API_URL
         else:
             self.base_url = TYPESAFE_API_URL
 
@@ -166,7 +170,9 @@ class JevClient:
         elif self.provider == "opencode":
             self.model = "jev-1.13-free"
         elif self.provider == "openrouter":
-            self.model = "google/gemini-2.5-flash"
+            self.model = "typesafe/jev-1.13"
+        elif self.provider == "vercel":
+            self.model = "typesafe-ai/jev"
         else:
             self.model = DEFAULT_MODEL
 
@@ -178,6 +184,12 @@ class JevClient:
             return os.getenv("OPENCODE_API_KEY"), "opencode"
         if os.getenv("TYPESAFE_API_KEY"):
             return os.getenv("TYPESAFE_API_KEY"), "typesafe"
+        if os.getenv("VERCEL_AI_GATEWAY_API_KEY"):
+            return os.getenv("VERCEL_AI_GATEWAY_API_KEY"), "vercel"
+        if os.getenv("VERCEL_API_KEY"):
+            return os.getenv("VERCEL_API_KEY"), "vercel"
+        if os.getenv("AI_GATEWAY_API_KEY"):
+            return os.getenv("AI_GATEWAY_API_KEY"), "vercel"
         if os.getenv("OPENCODE_API_KEY"):
             return os.getenv("OPENCODE_API_KEY"), "opencode"
         if os.getenv("OPENROUTER_API_KEY"):
@@ -208,6 +220,8 @@ class JevClient:
                                 return None, "opencode"
                             if line.startswith("TYPESAFE_API_KEY="):
                                 return line.split("=", 1)[1].strip(" '\""), "typesafe"
+                            if line.startswith(("VERCEL_AI_GATEWAY_API_KEY=", "VERCEL_API_KEY=", "AI_GATEWAY_API_KEY=")):
+                                return line.split("=", 1)[1].strip(" '\""), "vercel"
                             if line.startswith("OPENCODE_API_KEY="):
                                 return line.split("=", 1)[1].strip(" '\""), "opencode"
                             if line.startswith("OPENROUTER_API_KEY="):
@@ -226,6 +240,8 @@ class JevClient:
                     line = line.strip()
                     if line.startswith("TYPESAFE_API_KEY="):
                         return line.split("=", 1)[1].strip(" '\""), "typesafe"
+                    if line.startswith(("VERCEL_AI_GATEWAY_API_KEY=", "VERCEL_API_KEY=", "AI_GATEWAY_API_KEY=")):
+                        return line.split("=", 1)[1].strip(" '\""), "vercel"
                     if line.startswith("OPENCODE_API_KEY="):
                         return line.split("=", 1)[1].strip(" '\""), "opencode"
                     if line.startswith("OPENROUTER_API_KEY="):
@@ -263,14 +279,18 @@ class JevClient:
         if not self.is_live:
             return self._simulate_system_one(state_str, questions, chosen_model)
 
-        if self.provider == "openrouter":
+        if self.provider == "openrouter" and "chat/completions" in self.base_url:
             return self._call_openrouter(state_str, questions, chosen_model)
 
-        payload = {
+        payload: Dict[str, Any] = {
             "model": chosen_model,
             "state": state_str,
             "questions": {qid: q.to_dict() for qid, q in questions.items()},
         }
+        if self.provider == "openrouter":
+            payload["provider"] = {"only": ["typesafe"], "allow_fallbacks": False}
+        elif self.provider == "vercel":
+            payload["providerOptions"] = {"gateway": {"only": ["typesafe-ai"]}}
 
         headers = {
             "Content-Type": "application/json",
@@ -291,12 +311,34 @@ class JevClient:
                 err_body = e.read().decode("utf-8", errors="replace") if getattr(e, "fp", None) is not None else str(e)
             except Exception:
                 err_body = str(e)
-            provider_label = "OpenCode Zen" if self.provider == "opencode" else "TypeSafe"
+            err_body = self._redact_secrets(err_body, self.api_key)
+            provider_map = {
+                "opencode": "OpenCode Zen",
+                "openrouter": "OpenRouter",
+                "vercel": "Vercel AI Gateway",
+            }
+            provider_label = provider_map.get(self.provider, "TypeSafe")
             raise RuntimeError(f"{provider_label} API returned HTTP {e.code}: {err_body}") from e
         except (urllib.error.URLError, TimeoutError) as e:
-            provider_label = "OpenCode Zen" if self.provider == "opencode" else "TypeSafe"
-            reason = e.reason if hasattr(e, "reason") else e
+            provider_map = {
+                "opencode": "OpenCode Zen",
+                "openrouter": "OpenRouter",
+                "vercel": "Vercel AI Gateway",
+            }
+            provider_label = provider_map.get(self.provider, "TypeSafe")
+            reason = self._redact_secrets(str(e.reason if hasattr(e, "reason") else e), self.api_key)
             raise RuntimeError(f"Failed to connect to {provider_label} API ({self.base_url}): {reason}") from e
+
+    @staticmethod
+    def _redact_secrets(text: str, secret: Optional[str] = None) -> str:
+        """Redacts API keys and Bearer tokens from error payloads (Astra-Ares provider-error parity)."""
+        if not text:
+            return ""
+        cleaned = text
+        if secret and len(secret) >= 4:
+            cleaned = cleaned.replace(secret, "[REDACTED]")
+        cleaned = re.sub(r"(?:Bearer\s+|(?:vck_|sk-))[A-Za-z0-9._-]+", "[REDACTED]", cleaned, flags=re.IGNORECASE)
+        return cleaned[:400]
 
     def _call_openrouter(
         self, state_str: str, questions: Dict[str, QuestionType], model: str
@@ -346,9 +388,11 @@ class JevClient:
 
     def _parse_response(self, data: Dict[str, Any], model: str, is_mock: bool) -> JevResponse:
         parsed_answers: Dict[str, AnswerType] = {}
-        raw_answers = data.get("answers", {})
+        raw_answers = data.get("answers") or {}
 
         for qid, ans in raw_answers.items():
+            if not isinstance(ans, dict):
+                continue
             ans_type = ans.get("type")
             if ans_type == "choice":
                 parsed_answers[qid] = ChoiceAnswer(
@@ -384,7 +428,7 @@ class JevClient:
                 elif "noul" in ans:
                     parsed_answers[qid] = NoulAnswer(noul=float(ans.get("noul", 0.0)))
 
-        usage = data.get("usage", {"input_tokens": len(data.get("state", "")) // 4, "output_tokens": 0})
+        usage = data.get("usage") or {"input_tokens": len(data.get("state", "")) // 4, "output_tokens": 0}
         return JevResponse(
             model=data.get("model", model),
             answers=parsed_answers,
@@ -406,14 +450,67 @@ class JevClient:
 
         is_explicit_assertion = any(
             re.search(
-                r"(?:assertionerror|assert\b|expect\(.*?\)\.to|assert_eq!|failures?:|expected:.*received:|^fail\s+|^failed\s+test)",
+                r"(?:assertionerror|assertionfailed|assertionfailederror|assert\b|assert_eq!|assertthat|expect\(.*?\)\.to|expected:.*received:|failures?:|fail(?:ed)?\s+test|^fail(?:ed)?\b|falha de asserção|fallo de aserción|opentest4j)",
                 line.strip(),
             )
             for line in state_lower.splitlines()
         )
+        has_explicit_failure = bool(re.search(
+            r"(?:assertionerror|assertionfailed|assertionfailederror|failures?:\s*[1-9]|failed\b|falhou\b|\d+\s+failed\b|not\s+ok\b|segmentation\s+fault|sigsegv|panic\b|core\s+dumped)",
+            state_lower
+        ))
         has_heavy_keywords = any(k in state_lower for k in [
-            "kernel", "distributed", "architecture", "refactor", "concurrency", "deadlock", "multi-file", "consensus", "supervision tree"
+            "kernel", "distributed", "architecture", "refactor", "concurrency", "deadlock", "multi-file", "consensus", "supervision tree",
+            "arquitetura", "distribuído", "distribuída", "distribuido", "refatorar", "refatoração", "concorrência", "concorrencia", "consenso", "múltiplos arquivos", "condição de corrida",
+            "arquitectura", "concurrencia", "condición de carrera", "múltiples archivos"
         ])
+        has_deadlock_or_loop = any(k in state_lower for k in [
+            "infinite loop", "loop infinito", "bucle infinito", "deadlock", "deadlock!", "bloqueo mutuo", "goroutines are asleep", "mutex", "thread hung"
+        ])
+        env_missing_triggers = [
+            "modulenotfounderror", "no module named", "importerror",
+            "cannot find module", "err_module_not_found", "ts2307", "cannot find crate",
+            "can't find crate", "e0463",
+            "cannot find package", "no required module provides package",
+            "classnotfoundexception", "noclassdeffounderror", "package does not exist",
+            "no such file or directory", "command not found", "module not found", "package not found", "crate not found",
+            "cs0246", "type or namespace name", "cannot load such file", "loaderror",
+            "módulo não encontrado", "modulo nao encontrado", "nenhum módulo chamado", "pacote não encontrado",
+            "módulo no encontrado", "modulo no encontrado", "no se encontró el módulo", "paquete no encontrado"
+        ]
+        flaky_triggers = [
+            "connectionreset", "timeout", "timed out", "econnreset", "econnrefused",
+            "etimedout", "socket hang up", "gateway timeout", "503 service unavailable",
+            "tempo limite", "tempo limite esgotado", "conexão recusada", "conexao recusada",
+            "tiempo de espera agotado", "conexión rechazada", "conexion rechazada"
+        ]
+        syntax_triggers = [
+            "syntaxerror", "indentationerror", "expected ';'", "ts1005", "missing bracket",
+            "erro de sintaxe", "sintaxe inválida", "indentação inesperada",
+            "error de sintaxis", "sintaxis inválida"
+        ]
+        deep_logic_triggers = [
+            "assertionerror", "assertionfailed", "assertionfailederror", "assert ", "panicked at", "panic:", "panic",
+            "deadlock", "goroutines are asleep", "infinite loop", "loop infinito", "bucle infinito", "bloqueo mutuo",
+            "mutex", "segmentation fault", "sigsegv", "addresssanitizer", "core dumped",
+            "nullpointerexception", "nullreferenceexception", "arrayindexoutofboundsexception",
+            "nil pointer dereference", "index out of bounds",
+            "falha de asserção", "asserção", "erro de lógica", "fallo de aserción", "error de lógica", "expect("
+        ]
+        single_word_mech = {
+            "git", "diff", "typo", "flake8", "eslint", "prettier", "linter",
+            "echo", "pwd", "format", "black", "lint", "cat", "ls"
+        }
+        multi_word_mech = [
+            "git status", "git diff", "git log", "view file", "read file", "cat file",
+            "check status", "run linter", "fix typo", "ler arquivo", "verificar arquivo",
+            "formatar código", "leer archivo", "corregir errata", "listar arquivos",
+            "listar diretório"
+        ]
+        has_mech_trigger = bool(
+            state_tokens.intersection(single_word_mech)
+            or any(p in state_lower for p in multi_word_mech)
+        )
 
         for qid, q in questions.items():
             if isinstance(q, ChoiceQuestion):
@@ -433,43 +530,22 @@ class JevClient:
                     if opt in state_lower:
                         match_score += 3
                     has_deadlock_or_loop = any(k in state_lower for k in [
-                        "infinite loop", "loop infinito", "deadlock", "deadlock!", "goroutines are asleep", "mutex", "thread hung"
+                        "infinite loop", "loop infinito", "bucle infinito", "deadlock", "deadlock!", "bloqueo mutuo", "goroutines are asleep", "mutex", "thread hung"
                     ])
                     if opt == "deep_logic":
-                        if any(k in state_lower for k in [
-                            "assertionerror", "assert ", "panicked at", "panic:", "panic",
-                            "deadlock", "goroutines are asleep", "infinite loop", "loop infinito", "mutex", "segmentation fault",
-                            "nullpointerexception", "nil pointer dereference", "index out of bounds",
-                            "falha de asserção", "asserção", "erro de lógica", "expect("
-                        ]):
+                        if any(k in state_lower for k in deep_logic_triggers):
                             match_score += 8
                         if is_explicit_assertion or has_deadlock_or_loop:
                             match_score += 18
-                    elif opt == "env_missing" and any(k in state_lower for k in [
-                        "modulenotfounderror", "no module named", "not found", "importerror",
-                        "cannot find module", "err_module_not_found", "ts2307", "cannot find crate",
-                        "can't find crate", "find crate", "e0463",
-                        "cannot find package", "no required module provides package",
-                        "módulo não encontrado", "nenhum módulo chamado", "pacote não encontrado"
-                    ]):
+                    elif opt == "env_missing" and any(k in state_lower for k in env_missing_triggers):
                         if not is_explicit_assertion:
                             match_score += 7
-                    elif opt == "flaky_transient" and not has_deadlock_or_loop and any(k in state_lower for k in [
-                        "connectionreset", "timeout", "timed out", "econnreset", "econnrefused",
-                        "etimedout", "socket hang up", "gateway timeout", "503 service unavailable",
-                        "tempo limite", "tempo limite esgotado", "conexão recusada"
-                    ]):
+                    elif opt == "flaky_transient" and not has_deadlock_or_loop and any(k in state_lower for k in flaky_triggers):
                         if not is_explicit_assertion:
                             match_score += 7
-                    elif opt == "syntax_trivial" and any(k in state_lower for k in [
-                        "syntaxerror", "indentationerror", "expected ';'", "ts1005", "missing bracket",
-                        "erro de sintaxe", "sintaxe inválida", "indentação inesperada"
-                    ]):
+                    elif opt == "syntax_trivial" and any(k in state_lower for k in syntax_triggers):
                         match_score += 6
-                    elif opt == "deterministic" and any(k in state_lower for k in [
-                        "typo", "format", "black", "prettier", "eslint", "lint", "bash", "regex", "script", "renomear"
-                    ]):
-                        # If task is inherently heavy architectural, deterministic cannot override
+                    elif opt == "deterministic" and (has_mech_trigger or any(k in state_tokens for k in ["bash", "regex", "script"])):
                         match_score += 2 if has_heavy_keywords else 7
                     elif opt == "heavy_system2" and has_heavy_keywords:
                         match_score += 15
@@ -479,37 +555,103 @@ class JevClient:
                         best_choice = opt
 
                 probs = {k: (0.85 if k == best_choice else 0.15 / max(1, len(q.criteria) - 1)) for k in q.criteria}
-                if "low" in q.criteria and "high" in q.criteria:
-                    # Specialized reasoning effort modulation question
+                is_effort_q = (
+                    qid == "effort"
+                    or any(eff in q.criteria for eff in ("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"))
+                )
+                if is_effort_q:
+                    # Specialized reasoning effort modulation question (supports 3-level and 8-level Astra-Ares scales)
                     if has_heavy_keywords or any(k in state_lower for k in [
                         "deadlock", "race condition", "distributed", "concurrency", "kernel", "supervision",
-                        "architectural", "complex", "algorithmic", "deadlocks", "concorrência", "arquitetura"
+                        "architectural", "complex", "algorithmic", "deadlocks", "concorrência", "arquitetura",
+                        "condição de corrida", "arquitectura", "concurrencia"
                     ]):
-                        best_choice = "high"
-                    elif any(k in state_lower for k in [
-                        "git", "status", "diff", "ls", "cat", "view", "read", "typo", "format", "black",
-                        "lint", "flake8", "eslint", "prettier", "import", "version", "trivial", "linter", "echo"
-                    ]) and not has_heavy_keywords:
-                        best_choice = "low"
+                        if "ultra" in q.criteria and "beyond max" in state_lower:
+                            best_choice = "ultra"
+                        elif "max" in q.criteria and ("first principles" in state_lower or "proof" in state_lower):
+                            best_choice = "max"
+                        elif "xhigh" in q.criteria and ("first principles" in state_lower or "subsystems" in state_lower):
+                            best_choice = "xhigh"
+                        elif "high" in q.criteria:
+                            best_choice = "high"
+                        elif "xhigh" in q.criteria:
+                            best_choice = "xhigh"
+                        elif "max" in q.criteria:
+                            best_choice = "max"
+                        elif "medium" in q.criteria:
+                            best_choice = "medium"
+                        else:
+                            best_choice = list(q.criteria.keys())[-1]
+                    elif has_mech_trigger and not has_heavy_keywords:
+                        if "none" in q.criteria and any(m in state_lower for m in ["git status", "pwd", "echo", "version"]):
+                            best_choice = "none"
+                        elif "minimal" in q.criteria and any(m in state_lower for m in ["git status", "pwd", "echo", "version"]):
+                            best_choice = "minimal"
+                        elif "low" in q.criteria:
+                            best_choice = "low"
+                        elif "minimal" in q.criteria:
+                            best_choice = "minimal"
+                        elif "none" in q.criteria:
+                            best_choice = "none"
+                        elif "medium" in q.criteria:
+                            best_choice = "medium"
+                        else:
+                            best_choice = list(q.criteria.keys())[0]
                     else:
-                        best_choice = "medium"
+                        if "medium" in q.criteria:
+                            best_choice = "medium"
+                        elif "high" in q.criteria:
+                            best_choice = "high"
+                        elif "low" in q.criteria:
+                            best_choice = "low"
+                        else:
+                            best_choice = list(q.criteria.keys())[0]
                     probs = {k: (0.90 if k == best_choice else 0.10 / max(1, len(q.criteria) - 1)) for k in q.criteria}
+                elif qid == "lease" or ("1" in q.criteria and any(x in q.criteria for x in ("2", "5", "10"))):
+                    # Astra-Ares multi-generation lease question ("1" | "2" | "5" | "10")
+                    if any(k in state_lower for k in ["error", "fail", "erro", "falha", "deadlock", "panic", "exception"]):
+                        best_choice = "1"
+                    elif has_mech_trigger and not has_heavy_keywords:
+                        if "5" in q.criteria:
+                            best_choice = "5"
+                        elif "2" in q.criteria:
+                            best_choice = "2"
+                        else:
+                            best_choice = "1"
+                    else:
+                        if "2" in q.criteria:
+                            best_choice = "2"
+                        elif "5" in q.criteria:
+                            best_choice = "5"
+                        else:
+                            best_choice = "1"
+                    if best_choice not in q.criteria:
+                        best_choice = list(q.criteria.keys())[0]
+                    probs = {k: (0.88 if k == best_choice else 0.12 / max(1, len(q.criteria) - 1)) for k in q.criteria}
 
                 answers[qid] = ChoiceAnswer(choice=best_choice, confidence=0.88, probabilities=probs)
 
             elif isinstance(q, ScoreQuestion):
                 n_levels = len(q.criteria)
-                matched_idx = 2
-                if any(w in state_lower for w in ["satisfy", "satisfaz", "atende", "passed", "passou", "sucesso", "pass", "success", "excellent", "exhaustively", "complete", "concluido"]):
-                    matched_idx = n_levels
-                elif any(w in state_lower for w in ["trivial", "minor", "pequeno"]) and not has_heavy_keywords:
+                matched_idx = 3 if qid == "viability" else 2
+                has_deadlock_or_loop = any(k in state_lower for k in [
+                    "infinite loop", "loop infinito", "bucle infinito", "deadlock", "deadlock!", "bloqueo mutuo", "goroutines are asleep", "mutex"
+                ])
+
+                if has_explicit_failure and qid in ["satisfaction", "rigor"]:
                     matched_idx = 1
-                elif has_heavy_keywords or any(w in state_lower for w in ["critical", "critico", "fatal", "disaster", "destrutivo", "complex"]):
+                elif qid == "viability" and (any(w in state_lower for w in ["deadlock", "circular", "impossible", "impossivel", "imposible", "doomed", "inviavel", "inviable"]) or has_deadlock_or_loop):
+                    matched_idx = 1
+                elif not has_explicit_failure and any(w in state_lower for w in ["satisfy", "satisfaz", "satisface", "atende", "passed", "passou", "pasó", "sucesso", "éxito", "success", "excellent", "exhaustively", "complete", "concluido", "completado"]) and not any(neg in state_lower for neg in ["not ok", "failed", "falhou"]):
+                    matched_idx = n_levels
+                elif qid != "viability" and any(w in state_lower for w in ["trivial", "minor", "pequeno", "menor"]) and not has_heavy_keywords:
+                    matched_idx = 1
+                elif qid != "viability" and (has_heavy_keywords or any(w in state_lower for w in ["critical", "critico", "crítico", "fatal", "disaster", "destrutivo", "complex", "complexo", "complejo"])):
                     matched_idx = n_levels
 
                 for idx, level_label in enumerate(q.criteria, start=1):
                     lvl_tokens = set(re.findall(r"\w+", level_label.lower()))
-                    if lvl_tokens.intersection(state_tokens):
+                    if lvl_tokens.intersection(state_tokens) and not (has_explicit_failure and idx > 1 and qid in ["satisfaction", "rigor"]):
                         matched_idx = idx
 
                 score_val = float(matched_idx)
@@ -519,22 +661,24 @@ class JevClient:
             elif isinstance(q, NoulQuestion):
                 inst = q.instructions.lower()
                 prob = 0.15
-                negative_signals = ["abort", "abortar", "fail", "falha", "error", "erro", "impossible", "impossivel", "fatal", "circular", "deadlock", "dead end", "broken", "quebrado", "unviable", "inviavel", "deletar", "apagar", "destrutivo"]
-                positive_signals = ["pass", "passed", "passou", "success", "sucesso", "resolved", "resolvido", "good", "bom", "valid", "valido", "satisfy", "satisfaz", "atende", "all criteria", "todos os criterios", "concluido", "complete", "proceed", "linear"]
+                negative_signals = ["abort", "abortar", "fail", "falha", "fallo", "error", "erro", "impossible", "impossivel", "imposible", "fatal", "circular", "deadlock", "dead end", "broken", "quebrado", "unviable", "inviavel", "inviable", "deletar", "apagar", "destrutivo"]
+                positive_signals = ["pass", "passed", "passou", "pasó", "success", "sucesso", "éxito", "resolved", "resolvido", "resuelto", "good", "bom", "valid", "valido", "válido", "satisfy", "satisfaz", "satisface", "atende", "all criteria", "todos os criterios", "concluido", "completado", "complete", "proceed", "linear"]
 
-                negation_pattern = r"\b(?:not|do\s+not|don't|não|nao|never|sem|evitar|avoid)\s+(?:\w+\s+){0,3}(?:abort|abortar|stop|parar|falhar|fail|deadlock|circular|dead\s*end)"
+                negation_pattern = r"\b(?:not|do\s+not|don't|não|nao|no|never|sem|evitar|avoid)\s+(?:\w+\s+){0,3}(?:abort|abortar|stop|parar|detener|falhar|fail|deadlock|circular|dead\s*end)"
                 is_negated_abort = bool(re.search(negation_pattern, state_lower))
 
                 proposed_part = state_lower.split("proposed next step:")[-1] if "proposed next step:" in state_lower else state_lower
                 is_forward_progress = any(w in proposed_part for w in [
-                    "implement", "fix", "resolve", "correct", "update", "create", "write", "corrigir", "implementar", "executar", "validar"
+                    "implement", "fix", "resolve", "correct", "update", "create", "write", "corrigir", "implementar", "executar", "validar", "corregir"
                 ])
-                is_repetitive_loop = any(w in proposed_part for w in ["same", "repetir", "tentar novamente", "4a vez", "again", "identical"])
-                is_fatal_deadlock = any(k in state_lower for k in ["impossible", "impossivel", "circular", "deadlock", "dead end", "inviavel", "hopeless", "fatal"])
+                is_repetitive_loop = any(w in proposed_part for w in ["same", "repetir", "tentar novamente", "intentar de nuevo", "4a vez", "again", "identical"])
+                is_fatal_deadlock = any(k in state_lower for k in ["impossible", "impossivel", "imposible", "circular", "deadlock", "dead end", "inviavel", "inviable", "hopeless", "fatal"])
 
-                if is_negated_abort and any(w in inst for w in ["abort", "dead", "unviable", "destructive"]):
+                if has_explicit_failure and any(w in inst for w in ["pass", "valid", "satisfy", "complete", "verif"]):
+                    prob = 0.05
+                elif is_negated_abort and any(w in inst for w in ["abort", "dead", "unviable", "destructive"]):
                     prob = 0.08
-                elif is_fatal_deadlock and any(w in inst for w in ["abort", "dead", "fail", "urgent", "invalid", "unviable", "destructive", "dead end"]):
+                elif (is_fatal_deadlock or has_deadlock_or_loop) and any(w in inst for w in ["abort", "dead", "fail", "urgent", "invalid", "unviable", "destructive", "dead end"]):
                     prob = 0.88
                 elif any(w in inst for w in ["abort", "dead", "fail", "urgent", "invalid", "unviable", "destructive", "dead end"]):
                     if is_repetitive_loop:
@@ -545,17 +689,17 @@ class JevClient:
                         prob = 0.85
                     else:
                         prob = 0.15
-                if any(w in state_lower for w in positive_signals):
+                if not has_explicit_failure and any(w in state_lower for w in positive_signals) and not any(neg in state_lower for neg in ["not ok", "failed", "falhou"]):
                     if any(w in inst for w in ["pass", "valid", "satisfy", "complete", "verif"]):
                         prob = 0.92
                     elif any(w in inst for w in ["abort", "dead", "unviable"]):
                         prob = 0.08
                 has_deadlock_or_loop = any(k in state_lower for k in [
-                    "infinite loop", "loop infinito", "deadlock", "deadlock!", "goroutines are asleep", "mutex"
+                    "infinite loop", "loop infinito", "bucle infinito", "deadlock", "deadlock!", "bloqueo mutuo", "goroutines are asleep", "mutex"
                 ])
                 if (is_explicit_assertion or has_deadlock_or_loop) and ("deterministically" in inst or "skip" in inst):
                     prob = 0.05
-                elif any(w in state_lower for w in ["modulenotfounderror", "no module named", "pip install", "npm install"]) and not (is_explicit_assertion or has_deadlock_or_loop):
+                elif any(w in state_lower for w in env_missing_triggers + flaky_triggers + ["pip install", "npm install", "cargo add"]) and not (is_explicit_assertion or has_deadlock_or_loop):
                     if "deterministically" in inst or "skip" in inst:
                         prob = 0.95
                 answers[qid] = NoulAnswer(noul=prob)

@@ -551,7 +551,7 @@ Ultra-low latency (< 500µs local, zero-overhead) for systems programming, Tauri
 
 ```toml
 [dependencies]
-jev-harness = "0.1.7"
+jev-harness = "0.1.8"
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -601,7 +601,7 @@ jev reasoning-effort --context "git status" --target-provider deepseek --json
 ```yaml
 repos:
   - repo: https://github.com/ismaelsoilet/jev-harness
-    rev: v0.1.7
+    rev: v0.1.8
     hooks:
       - id: jev-test-gate
 ```
@@ -693,6 +693,17 @@ You can also trigger releases via GitHub Actions:
 - **Manual:** Go to **GitHub Actions → Release & Publish → Run workflow**, specify the version, and click run.
 
 *(Requires `PYPI_API_TOKEN` and `CARGO_REGISTRY_TOKEN` in GitHub Repository Secrets; npm uses OpenID Connect (OIDC) Trusted Publishing with cryptographic Sigstore provenance without static tokens).*
+
+## 🌟 What's New in v0.1.8
+
+- 🏛️ **Astra-Ares v0.2.1 Protocol Parity**: Native endpoints for OpenRouter (`https://openrouter.ai/api/alpha/decisions`, model `typesafe/jev-1.13` with `provider: { only: ["typesafe"], allow_fallbacks: false }`), Vercel AI Gateway (`https://ai-gateway.vercel.sh/v1/evaluate`, model `typesafe-ai/jev` with `providerOptions: { gateway: { only: ["typesafe-ai"] } }` supporting `VERCEL_API_KEY`, `AI_GATEWAY_API_KEY`, `VERCEL_AI_GATEWAY_API_KEY`), TypeSafe AI direct (`https://api.typesafe.ai/v1/systemone`), and OpenCode Zen (`https://opencode.ai/zen/v1/systemone`).
+- ⚡ **8-Level Reasoning Scale & Provider Dialects**: Support for `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultra` via `--supported-efforts` / `supportedEfforts`. Proper CoT disable mapping (`none` / `minimal`) across DeepSeek (`extra_body.thinking.type: disabled`), Qwen (`enable_thinking: false`), Anthropic (`thinking.type: disabled`), Kimi (`extra_body.thinking: false`), and MiMo (`thinking.type: disabled`).
+- 🔄 **Multi-Generation Effort Leasing**: Multi-step stability leasing (`lease_steps` / `leaseSteps`: 1, 2, 5, 10 generations) with safe clamping (`max_lease_steps >= 1`), allocating 5 for mechanical tool calls, 1 for errors/tracebacks, and 2 for standard tasks.
+- 🔒 **Zero-Trust Secret Redaction**: Automatic masking (`[REDACTED]`) of `Bearer ...`, `sk-...`, `vck_...`, and active API keys in all HTTP error messages and diagnostics across Python, TypeScript, and Rust.
+- 🌐 **Polyglot & Multilingual Semantic Parity**: Uniform classification across 9 programming languages (Python, TypeScript/Node, Rust, Go, Java, C#, Ruby, C++) and 3 natural languages (EN, PT-BR, ES).
+- 🛡️ **Red-Team Defense Hardening**: Collision resistance in `verify_step_completion` (never verifying real failures despite positive tokens) and `should_abort_trajectory` (never aborting forward progress), plus prompt injection mitigation in `modulate_reasoning_effort`.
+- 🔌 **CLI & MCP Tooling Evolution**: `--supported-efforts` and `--max-lease-steps` supported across all 3 CLI binaries and native MCP server schemas with `lease_steps` in JSON responses.
+- 🧪 **Expanded 138-Test Battery**: 100% test pass rate across 138 tests (79 Python, 31 Rust, 28 TypeScript) with latency p99 < 90µs in Rust.
 
 ---
 

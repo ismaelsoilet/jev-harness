@@ -121,7 +121,7 @@ TOOLS_MANIFEST: List[Dict[str, Any]] = [
     {
         "name": "jev_modulate_reasoning_effort",
         "description": (
-            "Dynamically modulates reasoning effort (low, medium, high) for the immediate generation step. "
+            "Dynamically modulates reasoning effort (low, medium, high, etc.) and stability lease steps for the immediate generation step. "
             "Maps exact parameters for OpenAI (GPT-6 Astra/o3), DeepSeek (V4.1-Flash/R1), Qwen (3.8 Max), "
             "Anthropic (Claude Fable 5.1), and Gemini (3.8 Thinking). Eliminates reasoning token waste "
             "and cuts multi-minute delays on mechanical tool calls."
@@ -144,6 +144,15 @@ TOOLS_MANIFEST: List[Dict[str, Any]] = [
                 "session_context_tokens": {
                     "type": "integer",
                     "description": "Optional active prompt tokens in session context to evaluate prompt cache risk.",
+                },
+                "supported_efforts": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional list of supported effort levels (e.g. ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']).",
+                },
+                "max_lease_steps": {
+                    "type": "integer",
+                    "description": "Optional upper bound for generation stability lease steps (default: 10).",
                 },
             },
             "required": ["context"],
@@ -299,11 +308,15 @@ def handle_tools_call(req_id: Any, params: Dict[str, Any], client: JevClient) ->
             prov = args.get("provider", "openai")
             mdl = args.get("model", None)
             tokens = int(args.get("session_context_tokens", 0) or 0)
+            supported = args.get("supported_efforts", None)
+            max_lease = int(args.get("max_lease_steps", 10) or 10)
             res = modulate_reasoning_effort(
                 str(ctx),
                 provider=str(prov),
                 model=mdl,
                 session_context_tokens=tokens,
+                supported_efforts=supported,
+                max_lease_steps=max_lease,
                 client=client,
             )
             text_content = json.dumps(
@@ -316,6 +329,7 @@ def handle_tools_call(req_id: Any, params: Dict[str, Any], client: JevClient) ->
                     "provider_params": res.provider_params,
                     "is_reasoning_supported": res.is_reasoning_supported,
                     "cache_safe_recommendation": res.cache_safe_recommendation,
+                    "lease_steps": res.lease_steps,
                     "is_mock": res.is_mock,
                 },
                 indent=2,

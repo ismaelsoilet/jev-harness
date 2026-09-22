@@ -446,6 +446,9 @@ def cmd_reasoning_effort(args: argparse.Namespace) -> int:
     force_mock = getattr(args, "mock", False)
     is_json = getattr(args, "json", False)
     session_context_tokens = getattr(args, "session_context_tokens", 0) or 0
+    supported_raw = getattr(args, "supported_efforts", None)
+    supported_efforts = [s.strip() for s in supported_raw.split(",")] if supported_raw else None
+    max_lease_steps = getattr(args, "max_lease_steps", 10) or 10
 
     client = JevClient(force_mock=force_mock)
     res = modulate_reasoning_effort(
@@ -453,6 +456,8 @@ def cmd_reasoning_effort(args: argparse.Namespace) -> int:
         provider=provider,
         model=model,
         session_context_tokens=session_context_tokens,
+        supported_efforts=supported_efforts,
+        max_lease_steps=max_lease_steps,
         client=client,
         record_session=True,
     )
@@ -469,6 +474,7 @@ def cmd_reasoning_effort(args: argparse.Namespace) -> int:
                     "provider_params": res.provider_params,
                     "is_reasoning_supported": res.is_reasoning_supported,
                     "cache_safe_recommendation": res.cache_safe_recommendation,
+                    "lease_steps": res.lease_steps,
                     "is_mock": res.is_mock,
                 },
                 indent=2,
@@ -477,6 +483,7 @@ def cmd_reasoning_effort(args: argparse.Namespace) -> int:
     else:
         print("\n=== JEV REASONING EFFORT GATE ===")
         print(f"Assigned Effort:   {res.effort.upper()}")
+        print(f"Stability Lease:   {res.lease_steps} generation(s)")
         print(f"Target Provider:   {res.provider.upper()}")
         print(f"Confidence:        {res.confidence * 100:.1f}%")
         print(f"Complexity Score:  {res.complexity_score:.1f} / 4.0")
@@ -507,7 +514,7 @@ def main() -> None:
     common_parser = argparse.ArgumentParser(add_help=False)
     common_parser.add_argument("--mock", action="store_true", default=argparse.SUPPRESS, help="Force local simulation mode even if key is present")
     common_parser.add_argument("--json", action="store_true", default=argparse.SUPPRESS, help="Output machine-readable JSON")
-    common_parser.add_argument("--provider", choices=["typesafe", "opencode", "openrouter"], default=argparse.SUPPRESS, help="Override backend provider")
+    common_parser.add_argument("--provider", choices=["typesafe", "opencode", "openrouter", "vercel"], default=argparse.SUPPRESS, help="Override backend provider")
 
     parser = argparse.ArgumentParser(
         prog="jev-harness",
@@ -560,10 +567,10 @@ def main() -> None:
     p_route.add_argument("--task", "-t", default=None, help="Task description or prompt")
     p_route.set_defaults(func=cmd_route)
 
-    # reasoning-effort (alias: astra-jev)
+    # reasoning-effort (alias: astra-jev, effort)
     p_effort = subparsers.add_parser(
         "reasoning-effort",
-        aliases=["astra-jev"],
+        aliases=["astra-jev", "effort"],
         parents=[common_parser],
         help="Modulate reasoning effort dynamically before each generation (2026 Frontier Models)",
     )
@@ -584,6 +591,18 @@ def main() -> None:
         type=int,
         default=0,
         help="Active prompt tokens in session context",
+    )
+    p_effort.add_argument(
+        "--supported-efforts",
+        dest="supported_efforts",
+        help="Comma-separated allowed effort levels (e.g. low,medium,high,xhigh)",
+    )
+    p_effort.add_argument(
+        "--max-lease-steps",
+        dest="max_lease_steps",
+        type=int,
+        default=10,
+        help="Maximum generation stability lease steps (default: 10)",
     )
     p_effort.set_defaults(func=cmd_reasoning_effort)
 

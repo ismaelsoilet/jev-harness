@@ -170,6 +170,7 @@ pub struct ReasoningEffortResult {
     pub provider_params: serde_json::Value,
     pub is_reasoning_supported: bool,
     pub cache_safe_recommendation: String,
+    pub lease_steps: u32,
     pub is_mock: bool,
 }
 

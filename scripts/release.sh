@@ -108,6 +108,12 @@ bump_version() {
         sed -i -E "s/Versão: v[0-9]+\.[0-9]+\.[0-9]+/Versão: v${new_ver}/" "${REPO_ROOT}"/.agents/rules/*.md || true
         sed -i -E "s/Versão do Projeto: v[0-9]+\.[0-9]+\.[0-9]+/Versão do Projeto: v${new_ver}/" "${REPO_ROOT}"/.agents/rules/*.md || true
     fi
+    if compgen -G "${REPO_ROOT}/.wiki/*.md" > /dev/null; then
+        sed -i -E "s/jev-harness v[0-9]+\.[0-9]+\.[0-9]+/jev-harness v${new_ver}/g" "${REPO_ROOT}"/.wiki/*.md || true
+        sed -i -E "s/Jev Harness v[0-9]+\.[0-9]+\.[0-9]+/Jev Harness v${new_ver}/g" "${REPO_ROOT}"/.wiki/*.md || true
+        sed -i -E "s/rev: v[0-9]+\.[0-9]+\.[0-9]+/rev: v${new_ver}/g" "${REPO_ROOT}"/.wiki/*.md || true
+        sed -i -E "s/jev-harness = \"[^\"]+\"/jev-harness = \"${new_ver}\"/g" "${REPO_ROOT}"/.wiki/*.md || true
+    fi
 
     show_versions
     echo "✅ Version bump complete across all manifests, code, and docs."

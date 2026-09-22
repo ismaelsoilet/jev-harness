@@ -16,9 +16,10 @@ import type {
 
 export const TYPESAFE_API_URL = "https://api.typesafe.ai/v1/systemone";
 export const OPENCODE_API_URL = "https://opencode.ai/zen/v1/systemone";
-export const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
+export const OPENROUTER_API_URL = "https://openrouter.ai/api/alpha/decisions";
+export const VERCEL_API_URL = "https://ai-gateway.vercel.sh/v1/evaluate";
 export const DEFAULT_MODEL = "jev-latest";
-export const DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.1.7; +https://github.com/ismaelsoilet/jev-harness)";
+export const DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.1.8; +https://github.com/ismaelsoilet/jev-harness)";
 
 export class JevClient {
   public apiKey?: string;
@@ -42,6 +43,8 @@ export class JevClient {
       this.baseUrl = OPENCODE_API_URL;
     } else if (this.provider === "openrouter") {
       this.baseUrl = OPENROUTER_API_URL;
+    } else if (this.provider === "vercel") {
+      this.baseUrl = VERCEL_API_URL;
     } else {
       this.baseUrl = TYPESAFE_API_URL;
     }
@@ -51,7 +54,9 @@ export class JevClient {
     } else if (this.provider === "opencode") {
       this.model = "jev-1.13-free";
     } else if (this.provider === "openrouter") {
-      this.model = "google/gemini-2.5-flash";
+      this.model = "typesafe/jev-1.13";
+    } else if (this.provider === "vercel") {
+      this.model = "typesafe-ai/jev";
     } else {
       this.model = DEFAULT_MODEL;
     }
@@ -70,6 +75,9 @@ export class JevClient {
     if (typeof process !== "undefined" && process.env) {
       if (process.env.JEV_PROVIDER === "opencode") return { key: process.env.OPENCODE_API_KEY, provider: "opencode" };
       if (process.env.TYPESAFE_API_KEY) return { key: process.env.TYPESAFE_API_KEY, provider: "typesafe" };
+      if (process.env.VERCEL_AI_GATEWAY_API_KEY) return { key: process.env.VERCEL_AI_GATEWAY_API_KEY, provider: "vercel" };
+      if (process.env.VERCEL_API_KEY) return { key: process.env.VERCEL_API_KEY, provider: "vercel" };
+      if (process.env.AI_GATEWAY_API_KEY) return { key: process.env.AI_GATEWAY_API_KEY, provider: "vercel" };
       if (process.env.OPENCODE_API_KEY) return { key: process.env.OPENCODE_API_KEY, provider: "opencode" };
       if (process.env.OPENROUTER_API_KEY) return { key: process.env.OPENROUTER_API_KEY, provider: "openrouter" };
 
@@ -90,6 +98,9 @@ export class JevClient {
               const line = raw.trim();
               if (line.startsWith("JEV_PROVIDER=") && line.split("=", 2)[1].replace(/['"]/g, "").trim() === "opencode") return { key: undefined, provider: "opencode" };
               if (line.startsWith("TYPESAFE_API_KEY=")) return { key: line.split("=", 2)[1].replace(/['"]/g, "").trim(), provider: "typesafe" };
+              if (line.startsWith("VERCEL_AI_GATEWAY_API_KEY=")) return { key: line.split("=", 2)[1].replace(/['"]/g, "").trim(), provider: "vercel" };
+              if (line.startsWith("VERCEL_API_KEY=")) return { key: line.split("=", 2)[1].replace(/['"]/g, "").trim(), provider: "vercel" };
+              if (line.startsWith("AI_GATEWAY_API_KEY=")) return { key: line.split("=", 2)[1].replace(/['"]/g, "").trim(), provider: "vercel" };
               if (line.startsWith("OPENCODE_API_KEY=")) return { key: line.split("=", 2)[1].replace(/['"]/g, "").trim(), provider: "opencode" };
               if (line.startsWith("OPENROUTER_API_KEY=")) return { key: line.split("=", 2)[1].replace(/['"]/g, "").trim(), provider: "openrouter" };
             }
@@ -112,6 +123,9 @@ export class JevClient {
             const line = raw.trim();
             if (line.startsWith("JEV_PROVIDER=") && line.split("=", 2)[1].replace(/['"]/g, "").trim() === "opencode") return { key: undefined, provider: "opencode" };
             if (line.startsWith("TYPESAFE_API_KEY=")) return { key: line.split("=", 2)[1].replace(/['"]/g, "").trim(), provider: "typesafe" };
+            if (line.startsWith("VERCEL_AI_GATEWAY_API_KEY=")) return { key: line.split("=", 2)[1].replace(/['"]/g, "").trim(), provider: "vercel" };
+            if (line.startsWith("VERCEL_API_KEY=")) return { key: line.split("=", 2)[1].replace(/['"]/g, "").trim(), provider: "vercel" };
+            if (line.startsWith("AI_GATEWAY_API_KEY=")) return { key: line.split("=", 2)[1].replace(/['"]/g, "").trim(), provider: "vercel" };
             if (line.startsWith("OPENCODE_API_KEY=")) return { key: line.split("=", 2)[1].replace(/['"]/g, "").trim(), provider: "opencode" };
             if (line.startsWith("OPENROUTER_API_KEY=")) return { key: line.split("=", 2)[1].replace(/['"]/g, "").trim(), provider: "openrouter" };
           }
@@ -136,11 +150,16 @@ export class JevClient {
       return this.simulateSystemOne(stateStr, questions, chosenModel);
     }
 
-    const payload = {
+    const payload: Record<string, any> = {
       model: chosenModel,
       state: stateStr,
       questions,
     };
+    if (this.provider === "openrouter") {
+      payload.provider = { only: ["typesafe"], allow_fallbacks: false };
+    } else if (this.provider === "vercel") {
+      payload.providerOptions = { gateway: { only: ["typesafe-ai"] } };
+    }
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
@@ -153,6 +172,10 @@ export class JevClient {
       if (this.apiKey) {
         headers["Authorization"] = `Bearer ${this.apiKey}`;
       }
+      if (this.provider === "openrouter") {
+        headers["HTTP-Referer"] = "https://github.com/ismaelsoilet/jev-harness";
+        headers["X-Title"] = "Jev Harness";
+      }
 
       const resp = await fetch(this.baseUrl, {
         method: "POST",
@@ -162,8 +185,13 @@ export class JevClient {
       });
 
       if (!resp.ok) {
-        const errText = await resp.text();
-        const providerName = this.provider === "opencode" ? "OpenCode Zen" : "TypeSafe";
+        const errText = JevClient.redactSecrets(await resp.text(), this.apiKey);
+        const providerMap: Record<string, string> = {
+          opencode: "OpenCode Zen",
+          openrouter: "OpenRouter",
+          vercel: "Vercel AI Gateway",
+        };
+        const providerName = providerMap[this.provider] || "TypeSafe";
         throw new Error(`${providerName} API HTTP ${resp.status}: ${errText}`);
       }
 
@@ -171,7 +199,12 @@ export class JevClient {
       return this.parseResponse(data, chosenModel, false);
     } catch (err: any) {
       if (err.name === "AbortError") {
-        const providerName = this.provider === "opencode" ? "OpenCode Zen" : "TypeSafe";
+        const providerMap: Record<string, string> = {
+          opencode: "OpenCode Zen",
+          openrouter: "OpenRouter",
+          vercel: "Vercel AI Gateway",
+        };
+        const providerName = providerMap[this.provider] || "TypeSafe";
         throw new Error(`${providerName} API request timed out after ${this.timeoutMs}ms`);
       }
       throw err;
@@ -180,11 +213,25 @@ export class JevClient {
     }
   }
 
+  public static redactSecrets(text: string, secret?: string): string {
+    if (!text) return "";
+    let cleaned = text;
+    if (secret && secret.length >= 4) {
+      cleaned = cleaned.split(secret).join("[REDACTED]");
+    }
+    return cleaned
+      .replace(/(?:Bearer\s+|(?:vck_|sk-))[A-Za-z0-9._-]+/gi, "[REDACTED]")
+      .slice(0, 400);
+  }
+
   private parseResponse(data: any, model: string, isMock: boolean): JevResponse {
     const answers: Record<string, Answer> = {};
-    const rawAnswers = data.answers || {};
+    const rawAnswers = (data && typeof data === "object" && data.answers && typeof data.answers === "object")
+      ? data.answers
+      : {};
 
     for (const [qid, ans] of Object.entries<any>(rawAnswers)) {
+      if (!ans || typeof ans !== "object") continue;
       if (ans.type === "choice" || ans.choice !== undefined) {
         answers[qid] = {
           type: "choice",
@@ -208,13 +255,13 @@ export class JevClient {
       }
     }
 
-    const usage = data.usage || {
-      input_tokens: Math.max(10, Math.floor(String(data.state || "").length / 4)),
+    const usage = (data && typeof data === "object" && data.usage) || {
+      input_tokens: Math.max(10, Math.floor(String((data && data.state) || "").length / 4)),
       output_tokens: 0,
     };
 
     return {
-      model: data.model || model,
+      model: (data && data.model) || model,
       answers,
       usage,
       isMock,
@@ -227,10 +274,53 @@ export class JevClient {
     const stateTokens = new Set(stateLower.match(/\w+/g) || []);
     const answers: Record<string, Answer> = {};
 
-    const isExplicitAssertion = /(?:assertionerror|assert\b|expect\(.*?\)\.to|assert_eq!|failures?:|expected:.*received:|^fail\s+|^failed\s+test)/i.test(stateLower);
-    const hasHeavyKeywords = /(?:kernel|distributed|architecture|refactor|concurrency|deadlock|multi-file|consensus)/i.test(stateLower);
-    const hasDeadlockOrLoop = /(?:infinite\s+loop|loop\s+infinito|deadlock|dead\s+lock|livelock|hung|mutex|spin\s*lock)/i.test(stateLower);
-    const isNegatedAbort = /\b(?:not|do\s+not|don't|não|nao|never|sem|evitar|avoid)\s+(?:\w+\s+){0,3}(?:abort|abortar|stop|parar|falhar|fail|deadlock|circular|dead\s*end)/i.test(stateLower);
+    const isExplicitAssertion = /(?:assertionerror|assertionfailed|assertionfailederror|assert\b|assert_eq!|assertthat|expect\(.*?\)\.to|expected:.*received:|failures?:|fail(?:ed)?\s+test|^fail(?:ed)?\b|falha de asserção|fallo de aserción|opentest4j)/i.test(stateLower);
+    const hasExplicitFailure = /(?:assertionerror|assertionfailed|assertionfailederror|failures?:\s*[1-9]|failed\b|falhou\b|\d+\s+failed\b|not\s+ok\b|segmentation\s+fault|sigsegv|panic\b|core\s+dumped)/i.test(stateLower);
+    const hasHeavyKeywords = /(?:kernel|distributed|architecture|refactor|concurrency|deadlock|multi-file|consensus|supervision tree|arquitetura|distribuído|distribuída|distribuido|refatorar|refatoração|concorrência|concorrencia|consenso|múltiplos arquivos|condição de corrida|arquitectura|concurrencia|condición de carrera|múltiples archivos)/i.test(stateLower);
+    const hasDeadlockOrLoop = /(?:infinite\s+loop|loop\s+infinito|bucle\s+infinito|deadlock|dead\s+lock|bloqueo\s+mutuo|livelock|hung|mutex|spin\s*lock|goroutines\s+are\s+asleep)/i.test(stateLower);
+    const isNegatedAbort = /\b(?:not|do\s+not|don't|não|nao|no|never|sem|evitar|avoid)\s+(?:\w+\s+){0,3}(?:abort|abortar|stop|parar|detener|falhar|fail|deadlock|circular|dead\s*end)/i.test(stateLower);
+
+    const envMissingTriggers = [
+      "modulenotfounderror", "no module named", "importerror",
+      "cannot find module", "err_module_not_found", "ts2307", "cannot find crate",
+      "can't find crate", "e0463",
+      "cannot find package", "no required module provides package",
+      "classnotfoundexception", "noclassdeffounderror", "package does not exist",
+      "no such file or directory", "command not found", "module not found", "package not found", "crate not found",
+      "cs0246", "type or namespace name", "cannot load such file", "loaderror",
+      "módulo não encontrado", "modulo nao encontrado", "nenhum módulo chamado", "pacote não encontrado",
+      "módulo no encontrado", "modulo no encontrado", "no se encontró el módulo", "paquete no encontrado"
+    ];
+    const flakyTriggers = [
+      "connectionreset", "timeout", "timed out", "econnreset", "econnrefused",
+      "etimedout", "socket hang up", "gateway timeout", "503 service unavailable",
+      "tempo limite", "tempo limite esgotado", "conexão recusada", "conexao recusada",
+      "tiempo de espera agotado", "conexión rechazada", "conexion rechazada"
+    ];
+    const syntaxTriggers = [
+      "syntaxerror", "indentationerror", "expected ';'", "ts1005", "missing bracket",
+      "erro de sintaxe", "sintaxe inválida", "indentação inesperada",
+      "error de sintaxis", "sintaxis inválida"
+    ];
+    const deepLogicTriggers = [
+      "assertionerror", "assertionfailed", "assertionfailederror", "assert ", "panicked at", "panic:", "panic",
+      "deadlock", "goroutines are asleep", "infinite loop", "loop infinito", "bucle infinito", "bloqueo mutuo",
+      "mutex", "segmentation fault", "sigsegv", "addresssanitizer", "core dumped",
+      "nullpointerexception", "nullreferenceexception", "arrayindexoutofboundsexception",
+      "nil pointer dereference", "index out of bounds",
+      "falha de asserção", "asserção", "erro de lógica", "fallo de aserción", "error de lógica", "expect("
+    ];
+    const singleWordMech = new Set([
+      "git", "diff", "typo", "flake8", "eslint", "prettier", "linter",
+      "echo", "pwd", "format", "black", "lint", "cat", "ls"
+    ]);
+    const multiWordMech = [
+      "git status", "git diff", "git log", "view file", "read file", "cat file",
+      "check status", "run linter", "fix typo", "ler arquivo", "verificar arquivo",
+      "formatar código", "leer archivo", "corregir errata", "listar arquivos",
+      "listar diretório"
+    ];
+    const hasMechTrigger = Array.from(singleWordMech).some((w) => stateTokens.has(w)) || multiWordMech.some((p) => stateLower.includes(p));
 
     for (const [qid, q] of Object.entries(questions)) {
       if (q.type === "choice") {
@@ -251,51 +341,33 @@ export class JevClient {
 
           if (
             opt === "deep_logic" &&
-            (hasDeadlockOrLoop ||
-            [
-              "assertionerror", "assert ", "panicked at", "panic:", "panic",
-              "deadlock", "goroutines are asleep", "segmentation fault",
-              "nullpointerexception", "nil pointer dereference", "index out of bounds",
-              "falha de asserção", "asserção", "erro de lógica", "expect("
-            ].some((k) => stateLower.includes(k)))
+            (hasDeadlockOrLoop || deepLogicTriggers.some((k) => stateLower.includes(k)))
           ) {
             matchScore += (isExplicitAssertion || hasDeadlockOrLoop) ? 18 : 8;
           } else if (
             opt === "env_missing" &&
-            [
-              "modulenotfounderror", "no module named", "not found", "importerror",
-              "cannot find module", "err_module_not_found", "ts2307", "cannot find crate",
-              "can't find crate", "find crate", "e0463", "cannot find package", "no required module provides package",
-              "módulo não encontrado", "nenhum módulo chamado", "pacote não encontrado"
-            ].some((k) => stateLower.includes(k))
+            envMissingTriggers.some((k) => stateLower.includes(k))
           ) {
             matchScore += isExplicitAssertion ? 0 : 7;
           } else if (
             opt === "flaky_transient" &&
-            [
-              "connectionreset", "timeout", "timed out", "econnreset", "econnrefused",
-              "etimedout", "socket hang up", "gateway timeout", "503 service unavailable",
-              "tempo limite", "tempo limite esgotado", "conexão recusada"
-            ].some((k) => stateLower.includes(k))
+            flakyTriggers.some((k) => stateLower.includes(k))
           ) {
             matchScore += (isExplicitAssertion || hasDeadlockOrLoop) ? 0 : 7;
           } else if (
             opt === "syntax_trivial" &&
-            [
-              "syntaxerror", "indentationerror", "expected ';'", "ts1005", "missing bracket",
-              "erro de sintaxe", "sintaxe inválida", "indentação inesperada"
-            ].some((k) => stateLower.includes(k))
+            syntaxTriggers.some((k) => stateLower.includes(k))
           ) {
             matchScore += 6;
           } else if (
             opt === "deterministic" &&
-            ["typo", "format", "black", "prettier", "eslint", "lint", "bash", "regex", "script", "renomear"].some((k) => stateLower.includes(k))
+            (hasMechTrigger || ["bash", "regex", "script"].some((k) => stateTokens.has(k)))
           ) {
             matchScore += hasHeavyKeywords ? 2 : 7;
           } else if (opt === "heavy_system2" && hasHeavyKeywords) {
             matchScore += 16;
           } else if (opt === "abort_and_ask") {
-            if (!isNegatedAbort && ["repeat", "circular", "deadlock", "same", "tentar novamente", "mesma", "abort"].some((k) => stateLower.includes(k))) {
+            if (!isNegatedAbort && ["repeat", "circular", "deadlock", "same", "tentar novamente", "intentar de nuevo", "mesma", "abort"].some((k) => stateLower.includes(k))) {
               matchScore += 8;
             }
           } else if (opt === "proceed") {
@@ -310,24 +382,72 @@ export class JevClient {
           }
         }
 
-        if (q.criteria["low"] && q.criteria["high"]) {
+        const isEffortQ = qid === "effort" || ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"].some((eff) => eff in q.criteria);
+
+        if (isEffortQ) {
           if (
             hasHeavyKeywords ||
             [
               "deadlock", "race condition", "distributed", "concurrency", "kernel",
-              "supervision", "architectural", "complex", "algorithmic"
+              "supervision", "architectural", "complex", "algorithmic", "deadlocks", "concorrência", "arquitetura",
+              "condição de corrida", "arquitectura", "concurrencia"
             ].some((k) => stateLower.includes(k))
           ) {
-            bestChoice = "high";
-          } else if (
-            [
-              "git", "status", "diff", "ls", "cat", "view", "read", "typo", "format",
-              "black", "lint", "flake8", "eslint", "prettier", "import", "version", "trivial"
-            ].some((k) => stateLower.includes(k)) && !hasHeavyKeywords
-          ) {
-            bestChoice = "low";
+            if ("ultra" in q.criteria && stateLower.includes("beyond max")) {
+              bestChoice = "ultra";
+            } else if ("max" in q.criteria && (stateLower.includes("first principles") || stateLower.includes("proof"))) {
+              bestChoice = "max";
+            } else if ("xhigh" in q.criteria && (stateLower.includes("first principles") || stateLower.includes("subsystems"))) {
+              bestChoice = "xhigh";
+            } else if ("high" in q.criteria) {
+              bestChoice = "high";
+            } else if ("xhigh" in q.criteria) {
+              bestChoice = "xhigh";
+            } else if ("max" in q.criteria) {
+              bestChoice = "max";
+            } else if ("medium" in q.criteria) {
+              bestChoice = "medium";
+            } else {
+              bestChoice = Object.keys(q.criteria).pop()!;
+            }
+          } else if (hasMechTrigger && !hasHeavyKeywords) {
+            if ("none" in q.criteria && ["git status", "pwd", "echo", "version"].some((m) => stateLower.includes(m))) {
+              bestChoice = "none";
+            } else if ("minimal" in q.criteria && ["git status", "pwd", "echo", "version"].some((m) => stateLower.includes(m))) {
+              bestChoice = "minimal";
+            } else if ("low" in q.criteria) {
+              bestChoice = "low";
+            } else if ("minimal" in q.criteria) {
+              bestChoice = "minimal";
+            } else if ("none" in q.criteria) {
+              bestChoice = "none";
+            } else if ("medium" in q.criteria) {
+              bestChoice = "medium";
+            } else {
+              bestChoice = Object.keys(q.criteria)[0];
+            }
           } else {
-            bestChoice = "medium";
+            if ("medium" in q.criteria) {
+              bestChoice = "medium";
+            } else if ("high" in q.criteria) {
+              bestChoice = "high";
+            } else if ("low" in q.criteria) {
+              bestChoice = "low";
+            } else {
+              bestChoice = Object.keys(q.criteria)[0];
+            }
+          }
+        } else if (qid === "lease" || ("1" in q.criteria && ["2", "5", "10"].some((x) => x in q.criteria))) {
+          // Astra-Ares multi-generation lease question
+          if (["error", "fail", "erro", "falha", "deadlock", "panic", "exception"].some((k) => stateLower.includes(k))) {
+            bestChoice = "1";
+          } else if (hasMechTrigger && !hasHeavyKeywords) {
+            bestChoice = "5" in q.criteria ? "5" : ("2" in q.criteria ? "2" : "1");
+          } else {
+            bestChoice = "2" in q.criteria ? "2" : ("5" in q.criteria ? "5" : "1");
+          }
+          if (!(bestChoice in q.criteria)) {
+            bestChoice = Object.keys(q.criteria)[0];
           }
         }
 
@@ -345,17 +465,32 @@ export class JevClient {
         };
       } else if (q.type === "score") {
         const nLevels = q.criteria.length;
-        let matchedIdx = 2;
+        let matchedIdx = qid === "viability" ? 3 : 2;
 
-        if (
-          isNegatedAbort ||
-          ["satisfy", "satisfaz", "atende", "passed", "passou", "sucesso", "pass", "success", "excellent", "exhaustively", "complete", "concluido", "proceed"].some((w) => stateLower.includes(w))
+        if (hasExplicitFailure && ["satisfaction", "rigor"].includes(qid)) {
+          matchedIdx = 1;
+        } else if (
+          qid === "viability" &&
+          (["deadlock", "circular", "impossible", "impossivel", "imposible", "doomed", "inviavel", "inviable"].some((w) => stateLower.includes(w)) || hasDeadlockOrLoop)
+        ) {
+          matchedIdx = 1;
+        } else if (
+          !hasExplicitFailure &&
+          ["satisfy", "satisfaz", "satisface", "atende", "passed", "passou", "pasó", "sucesso", "éxito", "pass", "success", "excellent", "exhaustively", "complete", "concluido", "completado"].some((w) => stateLower.includes(w)) &&
+          !["not ok", "failed", "falhou"].some((neg) => stateLower.includes(neg))
         ) {
           matchedIdx = nLevels;
-        } else if (["trivial", "minor", "pequeno"].some((w) => stateLower.includes(w)) && !hasHeavyKeywords) {
+        } else if (qid !== "viability" && ["trivial", "minor", "pequeno", "menor"].some((w) => stateLower.includes(w)) && !hasHeavyKeywords) {
           matchedIdx = 1;
-        } else if (hasHeavyKeywords || ["critical", "critico", "fatal", "disaster", "destrutivo", "complex"].some((w) => stateLower.includes(w))) {
+        } else if (qid !== "viability" && (hasHeavyKeywords || ["critical", "critico", "crítico", "fatal", "disaster", "destrutivo", "complex", "complexo", "complejo"].some((w) => stateLower.includes(w)))) {
           matchedIdx = nLevels;
+        }
+
+        for (let idx = 0; idx < q.criteria.length; idx++) {
+          const levelTokens = (q.criteria[idx] || "").toLowerCase().match(/\w+/g) || [];
+          if (levelTokens.some((t) => stateTokens.has(t)) && !(hasExplicitFailure && idx > 0 && ["satisfaction", "rigor"].includes(qid))) {
+            matchedIdx = idx + 1;
+          }
         }
 
         answers[qid] = {
@@ -368,51 +503,45 @@ export class JevClient {
         const inst = q.instructions.toLowerCase();
         let prob = 0.15;
 
-        const negativeSignals = ["abort", "abortar", "fail", "falha", "error", "erro", "impossible", "impossivel", "fatal", "circular", "deadlock", "broken", "unviable", "destrutivo"];
-        const positiveSignals = ["pass", "passed", "passou", "success", "sucesso", "resolved", "valid", "satisfy", "complete", "proceed", "linear"];
+        const negativeSignals = ["abort", "abortar", "fail", "falha", "fallo", "error", "erro", "impossible", "impossivel", "imposible", "fatal", "circular", "deadlock", "broken", "unviable", "inviavel", "inviable", "destrutivo"];
+        const positiveSignals = ["pass", "passed", "passou", "pasó", "success", "sucesso", "éxito", "resolved", "resuelto", "valid", "válido", "satisfy", "satisfaz", "satisface", "complete", "completado", "proceed", "linear"];
 
         const proposedPart = stateLower.includes("proposed next step:") ? stateLower.split("proposed next step:")[1] : stateLower;
-        const isForwardProgress = ["implement", "fix", "resolve", "correct", "update", "create", "write", "corrigir", "implementar", "executar", "validar"].some((w) => proposedPart.includes(w));
-        const isRepetitiveLoop = ["same", "repetir", "tentar novamente", "4a vez", "again", "identical"].some((w) => proposedPart.includes(w));
-        const isFatalDeadlock = ["impossible", "impossivel", "circular", "deadlock", "dead end", "inviavel", "hopeless", "fatal"].some((w) => stateLower.includes(w));
+        const isForwardProgress = ["implement", "fix", "resolve", "correct", "update", "create", "write", "corrigir", "implementar", "executar", "validar", "corregir"].some((w) => proposedPart.includes(w));
+        const isRepetitiveLoop = ["same", "repetir", "tentar novamente", "intentar de nuevo", "4a vez", "again", "identical"].some((w) => proposedPart.includes(w));
+        const isFatalDeadlock = ["impossible", "impossivel", "imposible", "circular", "deadlock", "dead end", "inviavel", "inviable", "hopeless", "fatal"].some((w) => stateLower.includes(w));
 
-        if (isNegatedAbort && ["abort", "dead", "unviable", "destructive"].some((w) => inst.includes(w))) {
+        if (hasExplicitFailure && ["pass", "valid", "satisfy", "complete", "verif"].some((w) => inst.includes(w))) {
+          prob = 0.05;
+        } else if (isNegatedAbort && ["abort", "dead", "unviable", "destructive"].some((w) => inst.includes(w))) {
           prob = 0.08;
-        } else if (isFatalDeadlock && ["abort", "dead", "fail", "urgent", "invalid", "unviable", "destructive", "dead end"].some((w) => inst.includes(w))) {
+        } else if ((isFatalDeadlock || hasDeadlockOrLoop) && ["abort", "dead", "fail", "urgent", "invalid", "unviable", "destructive", "dead end"].some((w) => inst.includes(w))) {
           prob = 0.88;
-        } else if (["abort", "dead", "unviable", "destructive", "dead end", "circular"].some((w) => inst.includes(w))) {
+        } else if (["abort", "dead", "fail", "urgent", "invalid", "unviable", "destructive", "dead end"].some((w) => inst.includes(w))) {
           if (isRepetitiveLoop) {
             prob = 0.88;
           } else if (isForwardProgress) {
             prob = 0.12;
           } else if (negativeSignals.some((w) => stateLower.includes(w))) {
             prob = 0.85;
-          }
-        } else if (inst.includes("deterministically") || inst.includes("skip")) {
-          if (isExplicitAssertion || hasDeadlockOrLoop) {
-            prob = 0.05;
-          } else if (
-            ["modulenotfounderror", "no module named", "pip install", "npm install", "cannot find module"].some((w) => stateLower.includes(w))
-          ) {
-            prob = 0.95;
-          } else if (stateLower.includes("assertionerror") || stateLower.includes("panicked")) {
-            prob = 0.05;
           } else {
-            prob = 0.20;
+            prob = 0.15;
           }
         }
 
-        if (positiveSignals.some((w) => stateLower.includes(w))) {
+        if (!hasExplicitFailure && positiveSignals.some((w) => stateLower.includes(w)) && !["not ok", "failed", "falhou"].some((neg) => stateLower.includes(neg))) {
           if (["pass", "valid", "satisfy", "complete", "verif"].some((w) => inst.includes(w))) {
             prob = 0.92;
           } else if (["abort", "dead", "unviable"].some((w) => inst.includes(w))) {
             prob = 0.08;
           }
         }
-        if (
-          ["modulenotfounderror", "no module named", "pip install", "npm install", "cannot find module"].some((w) => stateLower.includes(w)) &&
-          !isExplicitAssertion &&
-          !hasDeadlockOrLoop
+
+        if ((isExplicitAssertion || hasDeadlockOrLoop) && (inst.includes("deterministically") || inst.includes("skip"))) {
+          prob = 0.05;
+        } else if (
+          [...envMissingTriggers, ...flakyTriggers, "pip install", "npm install", "cargo add"].some((w) => stateLower.includes(w)) &&
+          !(isExplicitAssertion || hasDeadlockOrLoop)
         ) {
           if (inst.includes("deterministically") || inst.includes("skip")) {
             prob = 0.95;

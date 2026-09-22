@@ -10,7 +10,7 @@ import {
 
 const PROTOCOL_VERSION = "2024-11-05";
 const SERVER_NAME = "jev-harness";
-const SERVER_VERSION = "0.1.7";
+const SERVER_VERSION = "0.1.8";
 
 export const TOOLS_MANIFEST = [
   {
@@ -103,6 +103,15 @@ export const TOOLS_MANIFEST = [
         session_context_tokens: {
           type: "integer",
           description: "Optional active prompt tokens in session context to evaluate prompt cache risk.",
+        },
+        supported_efforts: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional list of supported effort levels (e.g. ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']).",
+        },
+        max_lease_steps: {
+          type: "integer",
+          description: "Optional upper bound for generation stability lease steps (default: 10).",
         },
       },
       required: ["context"],
@@ -258,6 +267,8 @@ export async function processMessage(line: string, client: JevClient): Promise<R
           provider: args.provider,
           model: args.model,
           sessionContextTokens: args.session_context_tokens,
+          supportedEfforts: args.supported_efforts,
+          maxLeaseSteps: args.max_lease_steps,
           client,
         });
         result = {
@@ -273,6 +284,8 @@ export async function processMessage(line: string, client: JevClient): Promise<R
           isReasoningSupported: res.isReasoningSupported,
           cache_safe_recommendation: res.cacheSafeRecommendation,
           cacheSafeRecommendation: res.cacheSafeRecommendation,
+          lease_steps: res.leaseSteps,
+          leaseSteps: res.leaseSteps,
           is_mock: res.isMock,
           isMock: res.isMock,
         };

@@ -12,7 +12,8 @@ pub const DEFAULT_MODEL: &str = "jev-latest";
 pub const DEFAULT_TIMEOUT_MS: u64 = 10000;
 pub const TYPESAFE_API_URL: &str = "https://api.typesafe.ai/v1/systemone";
 pub const OPENCODE_API_URL: &str = "https://opencode.ai/zen/v1/systemone";
-pub const OPENROUTER_API_URL: &str = "https://openrouter.ai/api/v1/chat/completions";
+pub const OPENROUTER_API_URL: &str = "https://openrouter.ai/api/alpha/decisions";
+pub const VERCEL_API_URL: &str = "https://ai-gateway.vercel.sh/v1/evaluate";
 pub const DEFAULT_USER_AGENT: &str = concat!(
     "Mozilla/5.0 (compatible; JevHarness/",
     env!("CARGO_PKG_VERSION"),
@@ -20,11 +21,15 @@ pub const DEFAULT_USER_AGENT: &str = concat!(
 );
 
 static ASSERTION_REGEX: LazyLock<regex::Regex> = LazyLock::new(|| {
-    regex::Regex::new(r"(?i)(?:assertionerror|assert\b|expect\(.*?\)\.to|assert_eq!|failures?:|expected:.*received:|^fail\s+|^failed\s+test)").expect("Invalid assertion regex")
+    regex::Regex::new(r"(?i)(?:assertionerror|assertionfailed|assertionfailederror|assert\b|assert_eq!|assertthat|expect\(.*?\)\.to|expected:.*received:|failures?:|fail(?:ed)?\s+test|^fail(?:ed)?\b|falha de asserção|fallo de aserción|opentest4j)").expect("Invalid assertion regex")
+});
+
+static FAILURE_REGEX: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"(?i)(?:assertionerror|assertionfailed|assertionfailederror|failures?:\s*[1-9]|failed\b|falhou\b|\d+\s+failed\b|not\s+ok\b|segmentation\s+fault|sigsegv|panic\b|core\s+dumped)").expect("Invalid failure regex")
 });
 
 static NEGATION_REGEX: LazyLock<regex::Regex> = LazyLock::new(|| {
-    regex::Regex::new(r"(?i)\b(not|do\s+not|don't|não|nao|never|sem|evitar|avoid)\s+(\w+\s+){0,3}(abort|abortar|stop|parar|falhar|fail|deadlock|circular|dead\s*end)").expect("Invalid negation regex")
+    regex::Regex::new(r"(?i)\b(not|do\s+not|don't|não|nao|no|never|sem|evitar|avoid)\s+(\w+\s+){0,3}(abort|abortar|stop|parar|detener|falhar|fail|deadlock|circular|dead\s*end)").expect("Invalid negation regex")
 });
 
 #[derive(Debug, Clone)]
@@ -57,6 +62,10 @@ impl JevClient {
         let final_model = model.unwrap_or_else(|| {
             if resolved_provider == "opencode" {
                 "jev-1.13-free".to_string()
+            } else if resolved_provider == "openrouter" {
+                "typesafe/jev-1.13".to_string()
+            } else if resolved_provider == "vercel" {
+                "typesafe-ai/jev".to_string()
             } else {
                 DEFAULT_MODEL.to_string()
             }
@@ -92,6 +101,57 @@ impl JevClient {
         }
     }
 
+    pub fn with_provider(provider: &str, api_key: Option<String>) -> Self {
+        let prov = provider.trim().to_lowercase();
+        let base_url = match prov.as_str() {
+            "opencode" => OPENCODE_API_URL.to_string(),
+            "openrouter" => OPENROUTER_API_URL.to_string(),
+            "vercel" => VERCEL_API_URL.to_string(),
+            _ => TYPESAFE_API_URL.to_string(),
+        };
+        let model = match prov.as_str() {
+            "opencode" => "jev-1.13-free".to_string(),
+            "openrouter" => "typesafe/jev-1.13".to_string(),
+            "vercel" => "typesafe-ai/jev".to_string(),
+            _ => DEFAULT_MODEL.to_string(),
+        };
+        Self {
+            api_key,
+            base_url,
+            model,
+            provider: prov,
+            timeout_ms: DEFAULT_TIMEOUT_MS,
+            force_mock: false,
+            http_client: reqwest::Client::new(),
+        }
+    }
+
+    pub fn redact_secrets(text: &str, secret: Option<&str>) -> String {
+        if text.is_empty() {
+            return String::new();
+        }
+        let mut cleaned = text.to_string();
+        if let Some(sec) = secret {
+            if sec.len() >= 4 {
+                cleaned = cleaned.replace(sec, "[REDACTED]");
+            }
+        }
+        for prefix in ["Bearer ", "bearer ", "sk-", "vck_"] {
+            while let Some(idx) = cleaned.find(prefix) {
+                let end = cleaned[idx + prefix.len()..]
+                    .find(|c: char| !c.is_ascii_alphanumeric() && c != '.' && c != '_' && c != '-')
+                    .map(|offset| idx + prefix.len() + offset)
+                    .unwrap_or(cleaned.len());
+                if end > idx + prefix.len() {
+                    cleaned.replace_range(idx..end, "[REDACTED]");
+                } else {
+                    break;
+                }
+            }
+        }
+        cleaned.chars().take(400).collect()
+    }
+
     fn resolve_credentials(explicit_key: Option<String>) -> (Option<String>, String, String) {
         if let Some(key) = explicit_key {
             if !key.trim().is_empty() {
@@ -117,6 +177,36 @@ impl JevClient {
                     Some(key),
                     "typesafe".to_string(),
                     TYPESAFE_API_URL.to_string(),
+                );
+            }
+        }
+
+        if let Ok(key) = env::var("VERCEL_AI_GATEWAY_API_KEY") {
+            if !key.trim().is_empty() {
+                return (
+                    Some(key),
+                    "vercel".to_string(),
+                    VERCEL_API_URL.to_string(),
+                );
+            }
+        }
+
+        if let Ok(key) = env::var("VERCEL_API_KEY") {
+            if !key.trim().is_empty() {
+                return (
+                    Some(key),
+                    "vercel".to_string(),
+                    VERCEL_API_URL.to_string(),
+                );
+            }
+        }
+
+        if let Ok(key) = env::var("AI_GATEWAY_API_KEY") {
+            if !key.trim().is_empty() {
+                return (
+                    Some(key),
+                    "vercel".to_string(),
+                    VERCEL_API_URL.to_string(),
                 );
             }
         }
@@ -157,10 +247,15 @@ impl JevClient {
                 }
                 if let Some(k) = val.get("api_key").and_then(|v| v.as_str()) {
                     if !k.trim().is_empty() {
+                        let url = match prov {
+                            "openrouter" => OPENROUTER_API_URL,
+                            "vercel" => VERCEL_API_URL,
+                            _ => TYPESAFE_API_URL,
+                        };
                         return (
                             Some(k.to_string()),
-                            "typesafe".to_string(),
-                            TYPESAFE_API_URL.to_string(),
+                            prov.to_string(),
+                            url.to_string(),
                         );
                     }
                 }
@@ -200,6 +295,21 @@ impl JevClient {
                             );
                         }
                     }
+                    if trimmed.starts_with("VERCEL_AI_GATEWAY_API_KEY=") || trimmed.starts_with("VERCEL_API_KEY=") || trimmed.starts_with("AI_GATEWAY_API_KEY=") {
+                        let k = trimmed
+                            .split('=')
+                            .nth(1)
+                            .unwrap_or("")
+                            .trim_matches('"')
+                            .trim();
+                        if !k.is_empty() {
+                            return (
+                                Some(k.to_string()),
+                                "vercel".to_string(),
+                                VERCEL_API_URL.to_string(),
+                            );
+                        }
+                    }
                 }
             }
         }
@@ -217,11 +327,16 @@ impl JevClient {
             return Ok(self.simulate_system_one(state, &questions, &self.model));
         }
 
-        let payload = serde_json::json!({
+        let mut payload = serde_json::json!({
             "model": self.model,
             "state": state,
             "questions": questions
         });
+        if self.provider == "openrouter" {
+            payload["provider"] = serde_json::json!({ "only": ["typesafe"], "allow_fallbacks": false });
+        } else if self.provider == "vercel" {
+            payload["providerOptions"] = serde_json::json!({ "gateway": { "only": ["typesafe-ai"] } });
+        }
 
         let mut req = self
             .http_client
@@ -231,6 +346,11 @@ impl JevClient {
         if let Some(ref key) = self.api_key {
             req = req.header("Authorization", format!("Bearer {}", key));
         }
+        if self.provider == "openrouter" {
+            req = req
+                .header("HTTP-Referer", "https://github.com/ismaelsoilet/jev-harness")
+                .header("X-Title", "Jev Harness");
+        }
 
         let resp_result = req.json(&payload).send().await;
 
@@ -238,7 +358,8 @@ impl JevClient {
             Ok(resp) => {
                 if !resp.status().is_success() {
                     let status = resp.status().as_u16();
-                    let text = resp.text().await.unwrap_or_default();
+                    let raw_text = resp.text().await.unwrap_or_default();
+                    let text = Self::redact_secrets(&raw_text, self.api_key.as_deref());
                     return Err(JevError::Api {
                         status,
                         message: text,
@@ -302,6 +423,7 @@ impl JevClient {
                 || t.starts_with("panic:")
                 || ASSERTION_REGEX.is_match(t)
         });
+        let has_explicit_failure = FAILURE_REGEX.is_match(&state_lower);
 
         let heavy_kw = [
             "kernel",
@@ -313,8 +435,132 @@ impl JevClient {
             "multi-file",
             "consensus",
             "supervision tree",
+            "arquitetura",
+            "distribuído",
+            "distribuída",
+            "distribuido",
+            "refatorar",
+            "refatoração",
+            "concorrência",
+            "concorrencia",
+            "consenso",
+            "múltiplos arquivos",
+            "condição de corrida",
+            "arquitectura",
+            "concurrencia",
+            "condición de carrera",
+            "múltiples archivos",
         ];
         let has_heavy_keywords = heavy_kw.iter().any(|k| state_lower.contains(k));
+
+        let env_missing_triggers = [
+            "modulenotfounderror",
+            "no module named",
+            "not found",
+            "importerror",
+            "cannot find module",
+            "err_module_not_found",
+            "ts2307",
+            "cannot find crate",
+            "can't find crate",
+            "find crate",
+            "e0463",
+            "cannot find package",
+            "no required module provides package",
+            "classnotfoundexception",
+            "noclassdeffounderror",
+            "package does not exist",
+            "no such file or directory",
+            "command not found",
+            "module not found",
+            "package not found",
+            "crate not found",
+            "cs0246",
+            "type or namespace name",
+            "cannot load such file",
+            "loaderror",
+            "módulo não encontrado",
+            "modulo nao encontrado",
+            "nenhum módulo chamado",
+            "pacote não encontrado",
+            "módulo no encontrado",
+            "modulo no encontrado",
+            "no se encontró el módulo",
+            "paquete no encontrado",
+        ];
+        let flaky_triggers = [
+            "connectionreset",
+            "timeout",
+            "timed out",
+            "econnreset",
+            "econnrefused",
+            "etimedout",
+            "socket hang up",
+            "gateway timeout",
+            "503 service unavailable",
+            "tempo limite",
+            "tempo limite esgotado",
+            "conexão recusada",
+            "conexao recusada",
+            "tiempo de espera agotado",
+            "conexión rechazada",
+            "conexion rechazada",
+        ];
+        let syntax_triggers = [
+            "syntaxerror",
+            "indentationerror",
+            "expected ';'",
+            "ts1005",
+            "missing bracket",
+            "erro de sintaxe",
+            "sintaxe inválida",
+            "indentação inesperada",
+            "error de sintaxis",
+            "sintaxis inválida",
+        ];
+        let deep_logic_triggers = [
+            "assertionerror",
+            "assertionfailed",
+            "assertionfailederror",
+            "assert ",
+            "panicked at",
+            "panic:",
+            "panic",
+            "deadlock",
+            "goroutines are asleep",
+            "infinite loop",
+            "loop infinito",
+            "bucle infinito",
+            "bloqueo mutuo",
+            "mutex",
+            "segmentation fault",
+            "sigsegv",
+            "addresssanitizer",
+            "core dumped",
+            "nullpointerexception",
+            "nullreferenceexception",
+            "arrayindexoutofboundsexception",
+            "nil pointer dereference",
+            "index out of bounds",
+            "falha de asserção",
+            "asserção",
+            "erro de lógica",
+            "fallo de aserción",
+            "error de lógica",
+            "expect(",
+        ];
+        let single_word_mech = [
+            "git", "diff", "typo", "flake8", "eslint", "prettier", "linter",
+            "echo", "pwd", "format", "black", "lint", "cat", "ls",
+        ];
+        let multi_word_mech = [
+            "git status", "git diff", "git log", "view file", "read file", "cat file",
+            "check status", "run linter", "fix typo", "ler arquivo", "verificar arquivo",
+            "formatar código", "leer archivo", "corregir errata", "listar arquivos",
+            "listar diretório",
+        ];
+        let has_mech_trigger = single_word_mech.iter().any(|w| state_tokens.contains(*w))
+            || multi_word_mech.iter().any(|p| state_lower.contains(p));
 
         let is_negated_abort = NEGATION_REGEX.is_match(state);
 
@@ -353,8 +599,10 @@ impl JevClient {
                         let has_deadlock_or_loop = [
                             "infinite loop",
                             "loop infinito",
+                            "bucle infinito",
                             "deadlock",
                             "deadlock!",
+                            "bloqueo mutuo",
                             "goroutines are asleep",
                             "mutex",
                             "thread hung",
@@ -364,110 +612,35 @@ impl JevClient {
 
                         // Domain heuristics
                         if opt == "deep_logic" {
-                            let triggers = [
-                                "assertionerror",
-                                "assert ",
-                                "panicked at",
-                                "panic:",
-                                "panic",
-                                "deadlock",
-                                "goroutines are asleep",
-                                "infinite loop",
-                                "loop infinito",
-                                "mutex",
-                                "segmentation fault",
-                                "nullpointerexception",
-                                "nil pointer dereference",
-                                "index out of bounds",
-                                "falha de asserção",
-                                "asserção",
-                                "erro de lógica",
-                                "expect(",
-                            ];
-                            if triggers.iter().any(|t| state_lower.contains(t)) {
+                            if deep_logic_triggers.iter().any(|t| state_lower.contains(t)) {
                                 score += 8;
                             }
                             if is_explicit_assertion || has_deadlock_or_loop {
                                 score += 18;
                             }
                         } else if opt == "env_missing" {
-                            let triggers = [
-                                "modulenotfounderror",
-                                "no module named",
-                                "not found",
-                                "importerror",
-                                "cannot find module",
-                                "err_module_not_found",
-                                "ts2307",
-                                "cannot find crate",
-                                "can't find crate",
-                                "find crate",
-                                "e0463",
-                                "cannot find package",
-                                "no required module provides package",
-                                "módulo não encontrado",
-                                "nenhum módulo chamado",
-                                "pacote não encontrado",
-                            ];
-                            if triggers.iter().any(|t| state_lower.contains(t)) {
+                            if env_missing_triggers.iter().any(|t| state_lower.contains(t)) {
                                 score += if is_explicit_assertion { 0 } else { 7 };
                             }
                         } else if opt == "flaky_transient" && !has_deadlock_or_loop {
-                            let triggers = [
-                                "connectionreset",
-                                "timeout",
-                                "timed out",
-                                "econnreset",
-                                "econnrefused",
-                                "etimedout",
-                                "socket hang up",
-                                "gateway timeout",
-                                "503 service unavailable",
-                                "tempo limite",
-                                "tempo limite esgotado",
-                                "conexão recusada",
-                            ];
-                            if triggers.iter().any(|t| state_lower.contains(t)) {
+                            if flaky_triggers.iter().any(|t| state_lower.contains(t)) {
                                 score += if is_explicit_assertion { 0 } else { 7 };
                             }
                         } else if opt == "syntax_trivial" {
-                            let triggers = [
-                                "syntaxerror",
-                                "indentationerror",
-                                "expected ';'",
-                                "ts1005",
-                                "missing bracket",
-                                "erro de sintaxe",
-                                "sintaxe inválida",
-                                "indentação inesperada",
-                            ];
-                            if triggers.iter().any(|t| state_lower.contains(t)) {
+                            if syntax_triggers.iter().any(|t| state_lower.contains(t)) {
                                 score += 6;
                             }
                         } else if opt == "deterministic" {
-                            let triggers = [
-                                "typo", "format", "black", "prettier", "eslint", "lint", "bash",
-                                "regex", "script", "renomear",
-                            ];
-                            if triggers.iter().any(|t| state_lower.contains(t)) {
+                            if has_mech_trigger
+                                || ["bash", "regex", "script"]
+                                    .iter()
+                                    .any(|k| state_tokens.contains(*k))
+                            {
                                 score += if has_heavy_keywords { 2 } else { 7 };
                             }
                         } else if opt == "heavy_system2" {
                             if has_heavy_keywords {
                                 score += 15;
-                            } else {
-                                let triggers = [
-                                    "refactor",
-                                    "kernel",
-                                    "distributed",
-                                    "architecture",
-                                    "concurrency",
-                                    "deadlock",
-                                    "multi-file",
-                                ];
-                                if triggers.iter().any(|t| state_lower.contains(t)) {
-                                    score += 7;
-                                }
                             }
                         } else if opt == "abort_and_ask" {
                             if !is_negated_abort {
@@ -477,6 +650,7 @@ impl JevClient {
                                     "deadlock",
                                     "same",
                                     "tentar novamente",
+                                    "intentar de nuevo",
                                     "mesma",
                                     "abort",
                                 ];
@@ -510,8 +684,12 @@ impl JevClient {
                         }
                     }
 
-                    let criteria = &cq.criteria;
-                    if criteria.contains_key("low") && criteria.contains_key("high") {
+                    let is_effort_q = qid == "effort"
+                        || ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]
+                            .iter()
+                            .any(|eff| cq.criteria.contains_key(*eff));
+
+                    if is_effort_q {
                         if has_heavy_keywords
                             || [
                                 "deadlock",
@@ -523,23 +701,115 @@ impl JevClient {
                                 "architectural",
                                 "complex",
                                 "algorithmic",
+                                "deadlocks",
+                                "concorrência",
+                                "arquitetura",
+                                "condição de corrida",
+                                "arquitectura",
+                                "concurrencia",
                             ]
                             .iter()
                             .any(|k| state_lower.contains(k))
                         {
-                            best_choice = "high".to_string();
-                        } else if [
-                            "git", "status", "diff", "ls", "cat", "view", "read", "typo", "format",
-                            "black", "lint", "flake8", "eslint", "prettier", "import", "version",
-                            "trivial",
+                            best_choice = if cq.criteria.contains_key("ultra")
+                                && state_lower.contains("beyond max")
+                            {
+                                "ultra".to_string()
+                            } else if cq.criteria.contains_key("max")
+                                && (state_lower.contains("first principles")
+                                    || state_lower.contains("proof"))
+                            {
+                                "max".to_string()
+                            } else if cq.criteria.contains_key("xhigh")
+                                && (state_lower.contains("first principles")
+                                    || state_lower.contains("subsystems"))
+                            {
+                                "xhigh".to_string()
+                            } else if cq.criteria.contains_key("high") {
+                                "high".to_string()
+                            } else if cq.criteria.contains_key("xhigh") {
+                                "xhigh".to_string()
+                            } else if cq.criteria.contains_key("max") {
+                                "max".to_string()
+                            } else if cq.criteria.contains_key("medium") {
+                                "medium".to_string()
+                            } else {
+                                cq.criteria.keys().last().cloned().unwrap_or_default()
+                            };
+                        } else if has_mech_trigger && !has_heavy_keywords {
+                            best_choice = if cq.criteria.contains_key("none")
+                                && ["git status", "pwd", "echo", "version"]
+                                    .iter()
+                                    .any(|m| state_lower.contains(m))
+                            {
+                                "none".to_string()
+                            } else if cq.criteria.contains_key("minimal")
+                                && ["git status", "pwd", "echo", "version"]
+                                    .iter()
+                                    .any(|m| state_lower.contains(m))
+                            {
+                                "minimal".to_string()
+                            } else if cq.criteria.contains_key("low") {
+                                "low".to_string()
+                            } else if cq.criteria.contains_key("minimal") {
+                                "minimal".to_string()
+                            } else if cq.criteria.contains_key("none") {
+                                "none".to_string()
+                            } else if cq.criteria.contains_key("medium") {
+                                "medium".to_string()
+                            } else {
+                                cq.criteria.keys().next().cloned().unwrap_or_default()
+                            };
+                        } else {
+                            best_choice = if cq.criteria.contains_key("medium") {
+                                "medium".to_string()
+                            } else if cq.criteria.contains_key("high") {
+                                "high".to_string()
+                            } else if cq.criteria.contains_key("low") {
+                                "low".to_string()
+                            } else {
+                                cq.criteria.keys().next().cloned().unwrap_or_default()
+                            };
+                        }
+                    } else if qid == "lease"
+                        || (cq.criteria.contains_key("1")
+                            && ["2", "5", "10"]
+                                .iter()
+                                .any(|x| cq.criteria.contains_key(*x)))
+                    {
+                        // Astra-Ares multi-generation lease question
+                        if [
+                            "error",
+                            "fail",
+                            "erro",
+                            "falha",
+                            "deadlock",
+                            "panic",
+                            "exception",
                         ]
                         .iter()
                         .any(|k| state_lower.contains(k))
-                            && !has_heavy_keywords
                         {
-                            best_choice = "low".to_string();
+                            best_choice = "1".to_string();
+                        } else if has_mech_trigger && !has_heavy_keywords {
+                            best_choice = if cq.criteria.contains_key("5") {
+                                "5".to_string()
+                            } else if cq.criteria.contains_key("2") {
+                                "2".to_string()
+                            } else {
+                                "1".to_string()
+                            };
                         } else {
-                            best_choice = "medium".to_string();
+                            best_choice = if cq.criteria.contains_key("2") {
+                                "2".to_string()
+                            } else if cq.criteria.contains_key("5") {
+                                "5".to_string()
+                            } else {
+                                "1".to_string()
+                            };
+                        }
+                        if !cq.criteria.contains_key(&best_choice) {
+                            best_choice = cq.criteria.keys().next().cloned().unwrap_or_default();
                         }
                     }
 
@@ -554,43 +824,102 @@ impl JevClient {
                 }
                 Question::Score(sq) => {
                     let n_levels = sq.criteria.len() as i32;
-                    let mut matched_idx = 2;
+                    let mut matched_idx = if qid == "viability" { 3 } else { 2 };
 
                     let positive_words = [
                         "satisfy",
                         "satisfaz",
+                        "satisface",
                         "atende",
                         "passed",
                         "passou",
+                        "pasó",
                         "sucesso",
+                        "éxito",
                         "pass",
                         "success",
                         "excellent",
                         "exhaustively",
                         "complete",
                         "concluido",
+                        "completado",
                         "proceed",
                     ];
-                    let trivial_words = ["trivial", "minor", "typo", "pequeno"];
+                    let trivial_words = ["trivial", "minor", "pequeno", "menor"];
                     let critical_words = [
                         "critical",
                         "critico",
+                        "crítico",
                         "fatal",
                         "disaster",
                         "destrutivo",
                         "complex",
+                        "complexo",
+                        "complejo",
                     ];
+                    let has_deadlock_or_loop = [
+                        "infinite loop",
+                        "loop infinito",
+                        "bucle infinito",
+                        "deadlock",
+                        "deadlock!",
+                        "bloqueo mutuo",
+                        "goroutines are asleep",
+                        "mutex",
+                    ]
+                    .iter()
+                    .any(|k| state_lower.contains(k));
 
-                    if is_negated_abort || positive_words.iter().any(|w| state_lower.contains(w)) {
+                    let neg_signals = ["not ok", "failed", "falhou"];
+
+                    if has_explicit_failure && (qid == "satisfaction" || qid == "rigor") {
+                        matched_idx = 1;
+                    } else if qid == "viability"
+                        && ([
+                            "deadlock",
+                            "circular",
+                            "impossible",
+                            "impossivel",
+                            "imposible",
+                            "doomed",
+                            "inviavel",
+                            "inviable",
+                        ]
+                        .iter()
+                        .any(|w| state_lower.contains(w))
+                            || has_deadlock_or_loop)
+                    {
+                        matched_idx = 1;
+                    } else if !has_explicit_failure
+                        && positive_words.iter().any(|w| state_lower.contains(w))
+                        && !neg_signals.iter().any(|neg| state_lower.contains(neg))
+                    {
                         matched_idx = n_levels;
-                    } else if trivial_words.iter().any(|w| state_lower.contains(w))
+                    } else if qid != "viability"
+                        && trivial_words.iter().any(|w| state_lower.contains(w))
                         && !has_heavy_keywords
                     {
                         matched_idx = 1;
-                    } else if has_heavy_keywords
-                        || critical_words.iter().any(|w| state_lower.contains(w))
+                    } else if qid != "viability"
+                        && (has_heavy_keywords
+                            || critical_words.iter().any(|w| state_lower.contains(w)))
                     {
                         matched_idx = n_levels;
+                    }
+
+                    for (idx, level_label) in sq.criteria.iter().enumerate() {
+                        let lvl_lower = level_label.to_lowercase();
+                        let lvl_tokens: Vec<&str> = lvl_lower
+                            .split(|c: char| !c.is_alphanumeric() && c != '_')
+                            .filter(|s| !s.is_empty())
+                            .collect();
+                        if lvl_tokens.iter().any(|t| state_tokens.contains(*t))
+                            && !(has_explicit_failure
+                                && idx > 0
+                                && (qid == "satisfaction" || qid == "rigor"))
+                        {
+                            matched_idx = (idx + 1) as i32;
+                        }
                     }
 
                     answers.insert(
@@ -611,10 +940,12 @@ impl JevClient {
                         "abortar",
                         "fail",
                         "falha",
+                        "fallo",
                         "error",
                         "erro",
                         "impossible",
                         "impossivel",
+                        "imposible",
                         "fatal",
                         "circular",
                         "deadlock",
@@ -623,6 +954,7 @@ impl JevClient {
                         "quebrado",
                         "unviable",
                         "inviavel",
+                        "inviable",
                         "deletar",
                         "apagar",
                         "destrutivo",
@@ -631,25 +963,30 @@ impl JevClient {
                         "pass",
                         "passed",
                         "passou",
+                        "pasó",
                         "success",
                         "sucesso",
+                        "éxito",
                         "resolved",
                         "resolvido",
+                        "resuelto",
                         "good",
                         "bom",
                         "valid",
                         "valido",
+                        "válido",
                         "satisfy",
                         "satisfaz",
+                        "satisface",
                         "atende",
                         "all criteria",
                         "todos os criterios",
                         "concluido",
+                        "completado",
                         "complete",
                         "proceed",
                         "linear",
                     ];
-
                     let proposed_part = if state_lower.contains("proposed next step:") {
                         state_lower
                             .split("proposed next step:")
@@ -670,6 +1007,7 @@ impl JevClient {
                         "implementar",
                         "executar",
                         "validar",
+                        "corregir",
                     ]
                     .iter()
                     .any(|w| proposed_part.contains(w));
@@ -677,6 +1015,7 @@ impl JevClient {
                         "same",
                         "repetir",
                         "tentar novamente",
+                        "intentar de nuevo",
                         "4a vez",
                         "again",
                         "identical",
@@ -686,23 +1025,43 @@ impl JevClient {
                     let is_fatal_deadlock = [
                         "impossible",
                         "impossivel",
+                        "imposible",
                         "circular",
                         "deadlock",
                         "dead end",
                         "inviavel",
+                        "inviable",
                         "hopeless",
                         "fatal",
                     ]
                     .iter()
                     .any(|w| state_lower.contains(w));
+                    let has_deadlock_or_loop = [
+                        "infinite loop",
+                        "loop infinito",
+                        "bucle infinito",
+                        "deadlock",
+                        "deadlock!",
+                        "bloqueo mutuo",
+                        "goroutines are asleep",
+                        "mutex",
+                    ]
+                    .iter()
+                    .any(|k| state_lower.contains(k));
 
-                    if is_negated_abort
+                    if has_explicit_failure
+                        && ["pass", "valid", "satisfy", "complete", "verif"]
+                            .iter()
+                            .any(|w| inst.contains(w))
+                    {
+                        prob = 0.05;
+                    } else if is_negated_abort
                         && ["abort", "dead", "unviable", "destructive"]
                             .iter()
                             .any(|w| inst.contains(w))
                     {
                         prob = 0.08;
-                    } else if is_fatal_deadlock
+                    } else if (is_fatal_deadlock || has_deadlock_or_loop)
                         && [
                             "abort",
                             "dead",
@@ -720,10 +1079,12 @@ impl JevClient {
                     } else if [
                         "abort",
                         "dead",
+                        "fail",
+                        "urgent",
+                        "invalid",
                         "unviable",
                         "destructive",
                         "dead end",
-                        "circular",
                     ]
                     .iter()
                     .any(|w| inst.contains(w))
@@ -737,42 +1098,14 @@ impl JevClient {
                         } else {
                             prob = 0.15;
                         }
-                    } else if inst.contains("deterministically") || inst.contains("skip") {
-                        let has_deadlock_or_loop = [
-                            "infinite loop",
-                            "loop infinito",
-                            "deadlock",
-                            "deadlock!",
-                            "goroutines are asleep",
-                            "mutex",
-                        ]
-                        .iter()
-                        .any(|k| state_lower.contains(k));
-
-                        if is_explicit_assertion || has_deadlock_or_loop {
-                            prob = 0.05;
-                        } else if [
-                            "modulenotfounderror",
-                            "no module named",
-                            "pip install",
-                            "npm install",
-                            "ts2307",
-                            "cannot find crate",
-                        ]
-                        .iter()
-                        .any(|w| state_lower.contains(w))
-                        {
-                            prob = 0.95;
-                        } else if state_lower.contains("assertionerror")
-                            || state_lower.contains("panicked")
-                        {
-                            prob = 0.05;
-                        } else {
-                            prob = 0.20;
-                        }
                     }
 
-                    if positive_signals.iter().any(|s| state_lower.contains(s)) {
+                    if !has_explicit_failure
+                        && positive_signals.iter().any(|s| state_lower.contains(s))
+                        && !["not ok", "failed", "falhou"]
+                            .iter()
+                            .any(|neg| state_lower.contains(neg))
+                    {
                         if ["pass", "valid", "satisfy", "complete", "verif"]
                             .iter()
                             .any(|w| inst.contains(w))
@@ -783,6 +1116,22 @@ impl JevClient {
                             .any(|w| inst.contains(w))
                         {
                             prob = 0.08;
+                        }
+                    }
+
+                    if (is_explicit_assertion || has_deadlock_or_loop)
+                        && (inst.contains("deterministically") || inst.contains("skip"))
+                    {
+                        prob = 0.05;
+                    } else if env_missing_triggers
+                        .iter()
+                        .chain(flaky_triggers.iter())
+                        .chain(["pip install", "npm install", "cargo add"].iter())
+                        .any(|w| state_lower.contains(w))
+                        && !(is_explicit_assertion || has_deadlock_or_loop)
+                    {
+                        if inst.contains("deterministically") || inst.contains("skip") {
+                            prob = 0.95;
                         }
                     }
 

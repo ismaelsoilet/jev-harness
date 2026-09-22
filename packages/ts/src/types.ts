@@ -91,8 +91,10 @@ export interface VerificationResult {
   isMock: boolean;
 }
 
+export type EffortLevel = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra" | string;
+
 export interface ReasoningEffortResult {
-  effort: "low" | "medium" | "high";
+  effort: EffortLevel;
   confidence: number;
   complexityScore: number;
   rationale: string;
@@ -100,6 +102,7 @@ export interface ReasoningEffortResult {
   providerParams: Record<string, any>;
   isReasoningSupported: boolean;
   cacheSafeRecommendation: string;
+  leaseSteps: number;
   isMock: boolean;
 }
 
