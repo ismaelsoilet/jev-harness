@@ -504,7 +504,7 @@ Ultra-low latency (< 500µs local, zero-overhead) for systems programming, Tauri
 
 ```toml
 [dependencies]
-jev-harness = "0.1.5"
+jev-harness = "0.1.6"
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -554,7 +554,7 @@ jev reasoning-effort --context "git status" --target-provider deepseek --json
 ```yaml
 repos:
   - repo: https://github.com/ismaelsoilet/jev-harness
-    rev: v0.1.5
+    rev: v0.1.6
     hooks:
       - id: jev-test-gate
 ```
@@ -604,11 +604,11 @@ To update the packages and documentation across all 3 registries:
 Use the automated multi-runtime script to check, bump versions, and publish:
 
 ```bash
-# 1. Run full test battery (Python, TS, Rust - 94 tests)
+# 1. Run full test battery (Python, TS, Rust - 109 tests)
 ./scripts/release.sh --check
 
 # 2. Synchronously bump version in pyproject.toml, package.json, and Cargo.toml
-./scripts/release.sh --bump 0.1.5
+./scripts/release.sh --bump 0.1.6
 
 # 3. Publish to a specific registry or all at once:
 ./scripts/release.sh --publish rust    # Publishes to crates.io
@@ -616,15 +616,25 @@ Use the automated multi-runtime script to check, bump versions, and publish:
 ./scripts/release.sh --publish python  # Builds wheel/sdist for PyPI
 
 # 4. Create git tag and push to GitHub
-./scripts/release.sh --git-tag 0.1.5
+./scripts/release.sh --git-tag 0.1.6
 ```
 
 ### 2. Automated GitHub Actions CD (`.github/workflows/release.yml`)
 You can also trigger releases via GitHub Actions:
-- **Automatic:** Pushing any tag matching `v*.*.*` (e.g. `git push origin v0.1.5`) triggers the `release.yml` workflow, which tests all runtimes and automatically publishes to PyPI, npm, and Crates.io.
+- **Automatic:** Pushing any tag matching `v*.*.*` (e.g. `git push origin v0.1.6`) triggers the `release.yml` workflow, which tests all runtimes and automatically publishes to PyPI, npm, and Crates.io.
 - **Manual:** Go to **GitHub Actions → Release & Publish → Run workflow**, specify the version, and click run.
 
 *(Requires `PYPI_API_TOKEN` and `CARGO_REGISTRY_TOKEN` in GitHub Repository Secrets; npm uses OpenID Connect (OIDC) Trusted Publishing with cryptographic Sigstore provenance without static tokens).*
+
+---
+
+## 🌟 What's New in v0.1.6
+
+- 🛡️ **Expanded Direct Model Safeguards**: Automatically identifies non-reasoning direct execution models (`gpt-4o`, `gpt-4o-mini`, `gemini-2.5-flash`, `gemini-2.0-flash`, `claude-3-5-haiku`, `qwen-2.5-coder`, `llama-3.3`, etc.), injecting `{}` to prevent fatal HTTP 400 Bad Request parameter rejections across all 3 runtimes.
+- 🧠 **Active Session Context Tokens & Cache Risk Warning**: Added `--session-context-tokens` parameter to CLI and MCP tool. Emits proactive `HIGH CACHE RISK` advisory when session context exceeds 30,000 tokens to protect Prompt Cache (KV Cache) prefix hit rates.
+- 💻 **TypeScript CLI `reasoning-effort`**: Added full native CLI command support (`npx @ismaelsoilet/jev-harness reasoning-effort --context "..." --target-provider ...`) matching Python and Rust.
+- 🧪 **Hardened Adversarial Heuristics & 109-Test Battery**: Hardened regex matching for Jest and Pytest logs where `AssertionError` contains module names (guaranteeing `deep_logic` and `skip_llm=false`), preventing premature aborts on forward-progress implementation steps, and reaching 100% pass across 109 tests (68 Python, 23 Rust, 18 TypeScript).
+- 🌐 **OpenRouter & Provider Enhancements**: Updated OpenRouter fallback model to `google/gemini-2.5-flash` with direct provider configuration options.
 
 ---
 
