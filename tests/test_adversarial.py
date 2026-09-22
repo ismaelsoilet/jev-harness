@@ -182,6 +182,78 @@ Calculation returned 42, expected 100
         self.assertEqual(res.category, "deep_logic")
         self.assertFalse(res.skip_llm)
 
+    def test_adversarial_bare_exception_does_not_mask_env_root_cause(self):
+        """Regression (v0.1.10 -> v0.1.11): a generic `RuntimeError:`/`ValueError:` line must
+        never escalate a log whose actual root cause is a missing dependency."""
+        for log in (
+            "RuntimeError: Failed to load plugin\nCaused by: ModuleNotFoundError: No module named 'torch'",
+            "ValueError: bad configuration\nModuleNotFoundError: No module named 'scipy'",
+        ):
+            res = triage_test_failure(log, client=self.client)
+            self.assertEqual(res.category, "env_missing", f"env root cause masked for: {log!r}")
+            self.assertTrue(res.skip_llm)
+
+    def test_adversarial_bare_exception_does_not_mask_flaky_root_cause(self):
+        log = (
+            "RuntimeError: dependency install failed\n"
+            "requests.exceptions.Timeout: HTTPSConnectionPool(host='pypi.org') timed out"
+        )
+        res = triage_test_failure(log, client=self.client)
+        self.assertEqual(res.category, "flaky_transient")
+        self.assertTrue(res.skip_llm)
+
+    def test_adversarial_port_busy_is_flaky_transient(self):
+        res = triage_test_failure(
+            "RuntimeError: [Errno 98] Address already in use: port 8080",
+            client=self.client,
+        )
+        self.assertEqual(res.category, "flaky_transient")
+        self.assertTrue(res.skip_llm, "A busy port must retry deterministically, not call an LLM")
+
+    def test_adversarial_bare_exception_without_root_cause_stays_deep_logic(self):
+        res = triage_test_failure(
+            "TypeError: Cannot read properties of undefined (reading 'map')",
+            client=self.client,
+        )
+        self.assertEqual(res.category, "deep_logic")
+        self.assertFalse(res.skip_llm)
+
+    def test_auth_failure_falls_back_to_simulation_on_any_provider(self):
+        from unittest.mock import patch
+        import io
+        import urllib.error
+        from jev_harness.client import NoulQuestion
+
+        client = JevClient(provider="typesafe", api_key="expired-key-123")
+        http_err = urllib.error.HTTPError(
+            url="https://api.typesafe.ai/v1/systemone",
+            code=401,
+            msg="Unauthorized",
+            hdrs={},
+            fp=io.BytesIO(b'{"error":"authentication_error"}'),
+        )
+        with patch("jev_harness.client._urlopen_with_ipv4_fallback", side_effect=http_err):
+            resp = client.system_one("ModuleNotFoundError: No module named scipy", {"q": NoulQuestion("skip?")})
+        self.assertTrue(resp.is_mock, "HTTP 401 must degrade to offline simulation, never crash CI")
+
+    def test_http_500_still_raises_for_paid_providers(self):
+        from unittest.mock import patch
+        import io
+        import urllib.error
+        from jev_harness.client import NoulQuestion
+
+        client = JevClient(provider="typesafe", api_key="valid-looking-key")
+        http_err = urllib.error.HTTPError(
+            url="https://api.typesafe.ai/v1/systemone",
+            code=500,
+            msg="Internal Server Error",
+            hdrs={},
+            fp=io.BytesIO(b"Internal Server Error"),
+        )
+        with patch("jev_harness.client._urlopen_with_ipv4_fallback", side_effect=http_err):
+            with self.assertRaises(RuntimeError):
+                client.system_one("some state", {"q": NoulQuestion("valid?")})
+
     def test_adversarial_forward_progress_not_aborted(self):
         res = should_abort_trajectory(
             proposed_step="Implement the missing function to fix the error",
@@ -377,7 +449,7 @@ Calculation returned 42, expected 100
         # 3. Nudge gate unverified file edit detection
         nudge = should_nudge_continuation("Assistant: Updated file test.py. Finished editing.", client=self.client)
         self.assertTrue(nudge.should_nudge, "Premature stop after editing file without running tests must be nudged")
-        self.assertNotEqual(nudge.sureforge_phase, "complete")
+        self.assertNotEqual(nudge.workflow_phase, "complete")
 
 
 if __name__ == "__main__":

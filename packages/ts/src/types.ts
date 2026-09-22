@@ -106,14 +106,14 @@ export interface ReasoningEffortResult {
   isMock: boolean;
 }
 
-export type SureForgePhase = "research" | "ask" | "plan" | "execute" | "verify" | "complete" | string;
+export type WorkflowPhase = "research" | "ask" | "plan" | "execute" | "verify" | "complete" | string;
 
 export interface NudgeGateResult {
   shouldNudge: boolean;
   nudgeProbability: number;
   waitingProbability: number;
   progressProbability: number;
-  sureforgePhase: SureForgePhase;
+  workflowPhase: WorkflowPhase;
   suggestedNudgePrompt: string;
   rationale: string;
   isMock: boolean;

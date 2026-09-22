@@ -1,4 +1,5 @@
 import { JevClient } from "./client.js";
+import { loadRepoConfig } from "./config.js";
 import type {
   AbortGateResult,
   ChoiceAnswer,
@@ -80,7 +81,10 @@ export async function triageTestFailure(
   const sevScore = sevAns?.score ?? 3.0;
 
   const skipLlm =
-    category !== "deep_logic" && (skipProb >= 0.65 || category === "env_missing" || category === "flaky_transient");
+    category !== "deep_logic" &&
+    (skipProb >= loadRepoConfig().skipLlmThreshold ||
+      category === "env_missing" ||
+      category === "flaky_transient");
 
   let rec: string;
   if (category === "env_missing") {
@@ -145,7 +149,8 @@ export async function shouldAbortTrajectory(
   const action = actionAns?.choice || "proceed";
   const viability = viabilityAns?.score ?? 3.0;
 
-  const shouldAbort = deadEndProb >= 0.70 || action === "abort_and_ask" || viability <= 1.5;
+  const shouldAbort =
+    deadEndProb >= loadRepoConfig().abortThreshold || action === "abort_and_ask" || viability <= 1.5;
   const effectiveAction = shouldAbort && action === "proceed" ? "abort_and_ask" : action;
 
   const summary = shouldAbort
@@ -568,7 +573,7 @@ export async function shouldNudgeContinuation(
   const cleanState = safeTruncateHeadTail(stateParts.join("\n\n"), 1500, 2500);
 
   const questions: Record<string, Question> = {
-    sureforge_phase: {
+    workflow_phase: {
       type: "choice",
       instructions: "Identify the active workflow phase based on the agent's recent transcript.",
       criteria: {
@@ -599,7 +604,7 @@ export async function shouldNudgeContinuation(
 
   const resp = await activeClient.systemOne(cleanState, questions);
 
-  const phaseAns = resp.answers.sureforge_phase as ChoiceAnswer | undefined;
+  const phaseAns = resp.answers.workflow_phase as ChoiceAnswer | undefined;
   const nudgeAns = resp.answers.nudge as NoulAnswer | undefined;
   const waitingAns = resp.answers.waiting as NoulAnswer | undefined;
   const progressAns = resp.answers.progress as NoulAnswer | undefined;
@@ -648,7 +653,7 @@ export async function shouldNudgeContinuation(
     nudgeProbability: nudgeProb,
     waitingProbability: waitingProb,
     progressProbability: progressProb,
-    sureforgePhase: phase,
+    workflowPhase: phase,
     suggestedNudgePrompt,
     rationale,
     isMock: resp.isMock,

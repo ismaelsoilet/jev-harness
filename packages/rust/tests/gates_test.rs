@@ -5,6 +5,7 @@ use jev_harness::{
         modulate_reasoning_effort_with_tokens, route_model_tier, should_abort_trajectory,
         should_nudge_continuation, triage_test_failure, verify_step_completion,
     },
+    load_repo_config_from,
 };
 
 #[tokio::test]
@@ -788,7 +789,7 @@ async fn test_commandcode_provider_and_nudge_gate() {
     .await
     .expect("Nudge gate failed");
     assert!(res_verify.should_nudge);
-    assert_eq!(res_verify.sureforge_phase, "verify");
+    assert_eq!(res_verify.workflow_phase, "verify");
     assert!(res_verify.suggested_nudge_prompt.contains("Verify phase"));
 
     // 2. Waiting on user -> should_nudge = false, phase = ask
@@ -801,7 +802,7 @@ async fn test_commandcode_provider_and_nudge_gate() {
     .await
     .expect("Nudge gate failed");
     assert!(!res_wait.should_nudge);
-    assert_eq!(res_wait.sureforge_phase, "ask");
+    assert_eq!(res_wait.workflow_phase, "ask");
     assert!(res_wait.rationale.contains("waiting on user"));
 
     // 3. Last nudge had no progress -> should_nudge = false
@@ -826,7 +827,7 @@ async fn test_commandcode_provider_and_nudge_gate() {
     .await
     .expect("Nudge gate failed");
     assert!(!res_done.should_nudge);
-    assert_eq!(res_done.sureforge_phase, "complete");
+    assert_eq!(res_done.workflow_phase, "complete");
 }
 
 #[tokio::test]
@@ -888,5 +889,140 @@ async fn test_parity_json_fields_and_unverified_file_edits() {
     let unverified_edit = "Assistant: Updated file client.rs. Finished editing the logic.";
     let nudge_res = should_nudge_continuation(unverified_edit, "", 0.5, Some(&client)).await.unwrap();
     assert!(nudge_res.should_nudge);
-    assert_ne!(nudge_res.sureforge_phase, "complete");
+    assert_ne!(nudge_res.workflow_phase, "complete");
+}
+
+// ---------------------------------------------------------------------------
+// v0.1.11 regressions: config loader and heuristic precedence
+// ---------------------------------------------------------------------------
+
+fn temp_config_dir(tag: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!(
+        "jev-harness-test-{}-{}",
+        std::process::id(),
+        tag
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("create temp config dir");
+    dir
+}
+
+#[test]
+fn test_config_loader_defaults_without_file() {
+    let dir = temp_config_dir("defaults");
+    let cfg = load_repo_config_from(&dir);
+    assert_eq!(cfg.model, None);
+    assert_eq!(cfg.skip_llm_threshold, 0.65);
+    assert_eq!(cfg.abort_threshold, 0.70);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_config_loader_reads_model_and_thresholds() {
+    let dir = temp_config_dir("model");
+    std::fs::write(
+        dir.join(".jev.json"),
+        r#"{"model":"custom-model-7b","skip_llm_threshold":0.91,"abort_threshold":0.12}"#,
+    )
+    .unwrap();
+    let cfg = load_repo_config_from(&dir);
+    assert_eq!(cfg.model.as_deref(), Some("custom-model-7b"));
+    assert_eq!(cfg.skip_llm_threshold, 0.91);
+    assert_eq!(cfg.abort_threshold, 0.12);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_config_loader_clamps_and_ignores_invalid_values() {
+    let dir = temp_config_dir("clamp");
+    std::fs::write(
+        dir.join(".jev.json"),
+        r#"{"skip_llm_threshold":7.5,"abort_threshold":-3.0,"model":"   "}"#,
+    )
+    .unwrap();
+    let cfg = load_repo_config_from(&dir);
+    assert_eq!(cfg.skip_llm_threshold, 1.0);
+    assert_eq!(cfg.abort_threshold, 0.0);
+    assert_eq!(cfg.model, None, "blank model must be ignored");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_config_loader_survives_corrupted_json() {
+    let dir = temp_config_dir("corrupt");
+    std::fs::write(dir.join(".jev.json"), "{ not valid json").unwrap();
+    let cfg = load_repo_config_from(&dir);
+    assert_eq!(cfg.skip_llm_threshold, 0.65);
+    assert_eq!(cfg.abort_threshold, 0.70);
+    assert_eq!(cfg.model, None);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn test_bare_exception_does_not_mask_env_root_cause() {
+    let client = JevClient::with_mock();
+    for log in [
+        "RuntimeError: Failed to load plugin\nCaused by: ModuleNotFoundError: No module named 'torch'",
+        "ValueError: bad configuration\nModuleNotFoundError: No module named 'scipy'",
+    ] {
+        let res = triage_test_failure(log, Some(&client)).await.unwrap();
+        assert_eq!(res.category, "env_missing", "env root cause masked for: {log}");
+        assert!(res.skip_llm);
+    }
+}
+
+#[tokio::test]
+async fn test_bare_exception_does_not_mask_flaky_root_cause() {
+    let client = JevClient::with_mock();
+    let res = triage_test_failure(
+        "RuntimeError: dependency install failed\nrequests.exceptions.Timeout: HTTPSConnectionPool timed out",
+        Some(&client),
+    )
+    .await
+    .unwrap();
+    assert_eq!(res.category, "flaky_transient");
+    assert!(res.skip_llm);
+}
+
+#[tokio::test]
+async fn test_port_busy_is_flaky_transient() {
+    let client = JevClient::with_mock();
+    let res = triage_test_failure(
+        "RuntimeError: [Errno 98] Address already in use: port 8080",
+        Some(&client),
+    )
+    .await
+    .unwrap();
+    assert_eq!(res.category, "flaky_transient");
+    assert!(res.skip_llm);
+}
+
+#[tokio::test]
+async fn test_bare_exception_without_root_cause_stays_deep_logic() {
+    let client = JevClient::with_mock();
+    let res = triage_test_failure(
+        "TypeError: Cannot read properties of undefined (reading 'map')",
+        Some(&client),
+    )
+    .await
+    .unwrap();
+    assert_eq!(res.category, "deep_logic");
+    assert!(!res.skip_llm);
+}
+
+#[tokio::test]
+async fn test_nudge_gate_exposes_workflow_phase_contract() {
+    let client = JevClient::with_mock();
+    let res = should_nudge_continuation(
+        "Assistant: Edited src/auth.py. Now I need to run pytest to verify.",
+        "",
+        0.5,
+        Some(&client),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        res.workflow_phase, "verify",
+        "workflow_phase is the canonical documented field"
+    );
 }

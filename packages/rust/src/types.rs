@@ -176,14 +176,14 @@ pub struct ReasoningEffortResult {
     pub is_mock: bool,
 }
 
-/// Continuation nudge decision result (SureForge + CommandCode Jev Nudge).
+/// Continuation nudge decision result (CommandCode Jev Nudge).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct NudgeGateResult {
     pub should_nudge: bool,
     pub nudge_probability: f64,
     pub waiting_probability: f64,
     pub progress_probability: f64,
-    pub sureforge_phase: String,
+    pub workflow_phase: String,
     pub suggested_nudge_prompt: String,
     pub rationale: String,
     pub is_mock: bool,

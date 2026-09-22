@@ -1,6 +1,6 @@
 # 🏛️ Planta Arquitetural Completa: Jev Harness
 
-> **Documento Oficial de Engenharia — Versão do Projeto: v0.1.10**  
+> **Documento Oficial de Engenharia — Versão do Projeto: v0.1.11**  
 > *Obrigatório para todos os agentes autônomos e desenvolvedores que operam no repositório.*
 
 ---
@@ -121,7 +121,7 @@ jev-harness/
 ├── AGENTS.md                         # Ponto de entrada obrigatório para agentes de IA
 ├── LICENSE                           # Licença MIT
 └── scripts/
-    └── release.sh                    # Script mestre de release, check (149 testes) e sync
+    └── release.sh                    # Script mestre de release, check (184 testes) e sync
 ```
 
 ---

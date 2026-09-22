@@ -125,7 +125,7 @@ O Jev Harness suporta diversos backends e detecta credenciais automaticamente:
 | **Command Code (Tier Gratuito)** | `https://api.commandcode.ai/provider/v1/systemone` | **$0,00 / Grátis** | `export CMD_API_KEY=sua-chave` ou `cmd login` (`~/.commandcode/auth.json`) |
 | **OpenCode Zen (Tier Gratuito)** | `https://opencode.ai/zen/v1/systemone` | **$0,00 / Grátis** | `export OPENCODE_API_KEY=zen` ou selecionado automaticamente |
 | **TypeSafe AI (Direto)** | `https://api.typesafe.ai/v1/systemone` | $0,042 / 1M | `export TYPESAFE_API_KEY=sua-chave` |
-| **OpenRouter Native Decisions** | `https://openrouter.ai/api/alpha/decisions` | $0,042 / 1M | `export OPENROUTER_API_KEY=sua-chave` |
+| **OpenRouter (Alpha)** ⚠️ | `https://openrouter.ai/api/alpha/decisions` | $0,042 / 1M | `export OPENROUTER_API_KEY=sua-chave` — exige acesso alpha aprovado; o endpoint e o modelo `typesafe/jev-1.13` **ainda não são públicos** |
 | **Vercel AI Gateway** | `https://ai-gateway.vercel.sh/v1/evaluate` | $0,042 / 1M | `export AI_GATEWAY_API_KEY=sua-chave` |
 | **Simulação Autônoma** | Heurística Local (< 500µs) | **$0,00** | Ativa por padrão se offline ou sem chave |
 
@@ -133,12 +133,25 @@ Prioridade de resolução de credenciais:
 1. Variáveis de ambiente (`TYPESAFE_API_KEY`, `CMD_API_KEY`, `COMMAND_CODE_API_KEY`, `OPENCODE_API_KEY`, `OPENROUTER_API_KEY` ou `AI_GATEWAY_API_KEY`)
 2. Arquivo `.jev.json`, `.env` na raiz do repositório ou `~/.commandcode/auth.json`
 3. Configuração global `~/.config/jev/credentials.env`
-4. **Fallback para Simulação Autônoma** (garante que sua CI, agentes e scripts nunca quebrem)
+4. **Fallback para Simulação Autônoma**: ativo quando não há credenciais configuradas e em falhas de autenticação HTTP `401`/`403` de **qualquer** provedor. O motor imprime `[JEV WARNING]` no stderr e todo resultado degradado é sinalizado com `is_mock=true`. Outras falhas (ex.: HTTP 500) continuam gerando erro, para que indisponibilidades reais permaneçam visíveis.
 
 ```bash
 # Verificar status da conexão e provedor ativo a qualquer momento
 jev-harness status
 ```
+
+### Configuração do Repositório (`.jev.json`)
+
+O `jev-harness init` cria um `.jev.json` local. Chaves honradas:
+
+| Chave | Tipo | Padrão | Efeito |
+| :--- | :--- | :--- | :--- |
+| `model` | string | padrão do provedor | Sobrescreve o modelo enviado ao provedor. O placeholder `jev-latest` do scaffold significa "usar o padrão otimizado do provedor", portanto nunca sobrescreve IDs de modelo exigidos pelo provedor. |
+| `skip_llm_threshold` | float `0`-`1` | `0.65` | Confiança mínima para o `test-gate` definir `skip_llm=true` (um veredito `deep_logic` nunca é ignorado). |
+| `abort_threshold` | float `0`-`1` | `0.70` | Probabilidade mínima de beco sem saída para o `abort-check` abortar uma trajetória. |
+| `api_key` / `provider` | string | — | Credenciais opcionais. Variáveis de ambiente têm precedência. |
+
+Os valores são limitados a `[0, 1]`, e um arquivo corrompido degrada para os padrões em vez de quebrar a CI. As mesmas chaves funcionam de forma idêntica em Python, TypeScript e Rust.
 
 ---
 
@@ -263,10 +276,13 @@ LLM Frontier Calls Skipped:      11 calls (78.6%)
 Abort Guard Stops Triggered:     2 doom loops killed
 Deterministic Routes:            6 tasks
 Reasoning Effort Modulations:    8 steps (6 low, 2 high)
-Estimated Tokens Saved:          422,200 tokens
-Estimated Frontier Dollars Saved: $6.12 USD
+Estimated Tokens Saved:          422,200 tokens (estimativa heurística)
+Estimated Frontier Dollars Saved: $6.12 USD (estimativa heurística)
+Assumption Model:                26,200 tokens/$0.31 per intercepted triage; 80,000 tokens/$1.20 per aborted doom loop
 ============================================================
 ```
+
+> 📊 **Estes números são uma estimativa de planejamento, não medição real.** As premissas por evento são constantes fixas (26.200 tokens/$0,31 por triagem interceptada, 80.000 tokens/$1,20 por loop abortado). O `--json` expõe `estimates_are_heuristic: true` para que ferramentas downstream possam rotulá-los corretamente.
 
 ### 7. Configuração Automatizada de Agentes com Um Comando (`init`)
 Gera automaticamente a configuração de MCP para o seu editor ou agente:
@@ -525,7 +541,7 @@ Latência ultra-baixa (< 500µs local, zero-overhead) para Tauri, ferramentas de
 
 ```toml
 [dependencies]
-jev-harness = "0.1.10"
+jev-harness = "0.1.11"
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -549,7 +565,7 @@ async fn main() {
 ```yaml
 repos:
   - repo: https://github.com/ismaelsoilet/jev-harness
-    rev: v0.1.10
+    rev: v0.1.11
     hooks:
       - id: jev-test-gate
 ```
@@ -593,6 +609,19 @@ Quando em modo de simulação offline (`--mock` ou durante partições de rede),
 > ⚡ **Garantia de Zero-Overhead:** Como as verificações heurísticas operam na escala de dezenas de microssegundos, canalizar os executores de teste ou hooks pré-execução via `jev-harness` introduz overhead imperceptível nos ciclos do agente, evitando queimas fúteis de tokens e loops circulares de falha.
 
 ---
+
+## 🌟 O que há de Novo na v0.1.11
+
+- 🐛 **Corrigida uma regressão de classificação da v0.1.10**: uma linha crua `RuntimeError:` / `ValueError:` / `TypeError:` não mascara mais uma causa raiz concreta de dependência ou transitória. Logs como `RuntimeError: ... Caused by: ModuleNotFoundError` e `RuntimeError: ... Timeout` voltam a ser triados como `env_missing` / `flaky_transient` (`skip_llm=true`), enquanto exceções de lógica real sem causa raiz de ambiente/transiente continuam escalando como `deep_logic`.
+- 🌐 **Porta ocupada é flaky**: `Address already in use` / `EADDRINUSE` / `port already in use` (EN, PT-BR, ES) agora classificam como `flaky_transient`, alinhado ao comportamento documentado.
+- ⚙️ **`.jev.json` é honrado de ponta a ponta**: `model`, `skip_llm_threshold` e `abort_threshold` passam a ter efeito em Python, TypeScript e Rust (antes o arquivo era criado mas silenciosamente ignorado).
+- 🔐 **Fim dos crashes de autenticação na CI**: HTTP `401`/`403` de *qualquer* provedor degrada para simulação offline com aviso no stderr e `is_mock=true`, em vez de gerar traceback. Outras falhas (ex.: HTTP `500`) continuam gerando erro.
+- 📊 **Métricas de ROI honestas**: os contadores de economia são rotulados como estimativas heurísticas, o modelo de premissas é impresso e o `--json` expõe `estimates_are_heuristic`.
+- 📖 **OpenRouter documentado como alpha**: exige acesso alpha aprovado; o endpoint e o modelo `typesafe/jev-1.13` não são públicos, então ele deixou de ser apresentado como provedor turnkey.
+- 🧩 **Paridade de contrato**: Padronização da chave `workflow_phase` (`research`, `ask`, `plan`, `execute`, `verify`, `complete`) na CLI, SDK e ferramentas MCP do `nudge-gate`.
+- 🚦 **Gate de release endurecido**: o `release.yml` agora exige toda a matriz de CI (Linux/macOS/Windows, Python 3.9-3.13, Node 18-22, Rust) via workflow reutilizável antes de publicar no PyPI, npm ou crates.io — uma CI vermelha não consegue mais publicar uma release.
+- 🧹 **Zero avisos de clippy** em todo o workspace Rust.
+- 🧪 **Bateria de 184 Testes**: 100% de aprovação em 184 testes (102 Python, 43 Rust, 39 TypeScript).
 
 ## 🌟 O que há de Novo na v0.1.10
 

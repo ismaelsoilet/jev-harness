@@ -81,3 +81,12 @@ Um único ponto de entrada System 1.5 que consolida a decisão de fim/início de
 1. Garantir que o servidor MCP (`jev-mcp`) e todos os subcomandos CLI estejam 100% alinhados entre Python, TypeScript e Rust.
 2. Garantir escrita atômica (`tempfile` + `os.replace`) no `session_metrics.json` para segurança em execução concorrente multi-agente.
 3. Atualizar o diagrama principal do `README.md` e `README.pt-BR.md` apresentando a **Arquitetura System 1.5**.
+
+---
+
+## 4. Status de Higienização Pré-`v0.2.0`
+
+- ✅ **[CONCLUÍDO & SINCRONIZADO]** **Remoção Completa de Menções a Skills Internas e Padronização Estrita em `workflow_phase` (`v0.1.11`)**:
+  - Todas as referências a nomes de skills internas foram 100% removidas da documentação (`README.md`, `README.pt-BR.md`, `AGENTS.md`, `AGENTS.pt-BR.md`), das notas de release do GitHub (`v0.1.9`..`v0.1.11`), dos servidores MCP, das CLIs, dos SDKs e das suítes de testes nos 3 runtimes (Python, TypeScript e Rust).
+  - O contrato público e interno do `NudgeGateResult` (`should_nudge_continuation` / `nudge-gate`) utiliza exclusivamente `workflow_phase` (Python/Rust/JSON) e `workflowPhase` (`WorkflowPhase` em TypeScript).
+

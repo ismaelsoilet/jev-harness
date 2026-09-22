@@ -15,6 +15,12 @@ from typing import Optional
 try:
     from . import __version__
     from .client import JevClient
+    from .session import (
+        ASSUMED_COST_PER_ABORT_USD,
+        ASSUMED_COST_PER_TRIAGE_SKIP_USD,
+        ASSUMED_TOKENS_PER_ABORT,
+        ASSUMED_TOKENS_PER_TRIAGE_SKIP,
+    )
     from .gates import (
         modulate_reasoning_effort,
         route_model_tier,
@@ -27,6 +33,12 @@ except (ImportError, ValueError):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from jev_harness import __version__
     from jev_harness.client import JevClient
+    from jev_harness.session import (
+        ASSUMED_COST_PER_ABORT_USD,
+        ASSUMED_COST_PER_TRIAGE_SKIP_USD,
+        ASSUMED_TOKENS_PER_ABORT,
+        ASSUMED_TOKENS_PER_TRIAGE_SKIP,
+    )
     from jev_harness.gates import (
         modulate_reasoning_effort,
         route_model_tier,
@@ -107,6 +119,7 @@ def cmd_metrics(args: argparse.Namespace) -> int:
                     "nudge_continuations": s.nudge_continuations,
                     "estimated_tokens_saved": s.estimated_tokens_saved,
                     "estimated_cost_saved_usd": round(s.estimated_cost_saved_usd, 2),
+                    "estimates_are_heuristic": True,
                 },
                 indent=2,
             )
@@ -119,8 +132,13 @@ def cmd_metrics(args: argparse.Namespace) -> int:
         print(f"Deterministic Routes:    {s.deterministic_routes}")
         print(f"Effort Modulations:      {s.effort_modulations} (Astra-Jev per-generation)")
         print(f"Continuation Nudges:     {s.nudge_continuations} (Jev Nudge Gate)")
-        print(f"Estimated Tokens Saved:  ⚡ {s.estimated_tokens_saved:,} tokens")
-        print(f"Estimated API Cost Saved: 💸 ${s.estimated_cost_saved_usd:.2f} USD")
+        print(f"Estimated Tokens Saved:  ⚡ {s.estimated_tokens_saved:,} tokens (heuristic estimate)")
+        print(f"Estimated API Cost Saved: 💸 ${s.estimated_cost_saved_usd:.2f} USD (heuristic estimate)")
+        print(
+            "Assumption Model:        "
+            f"{ASSUMED_TOKENS_PER_TRIAGE_SKIP:,} tokens/${ASSUMED_COST_PER_TRIAGE_SKIP_USD:.2f} per intercepted triage; "
+            f"{ASSUMED_TOKENS_PER_ABORT:,} tokens/${ASSUMED_COST_PER_ABORT_USD:.2f} per aborted doom loop"
+        )
         print("=======================================\n")
     return 0
 
@@ -547,7 +565,7 @@ def cmd_nudge_gate(args: argparse.Namespace) -> int:
                     "nudge_probability": res.nudge_probability,
                     "waiting_probability": res.waiting_probability,
                     "progress_probability": res.progress_probability,
-                    "sureforge_phase": res.sureforge_phase,
+                    "workflow_phase": res.workflow_phase,
                     "suggested_nudge_prompt": res.suggested_nudge_prompt,
                     "rationale": res.rationale,
                     "is_mock": res.is_mock,
@@ -558,7 +576,7 @@ def cmd_nudge_gate(args: argparse.Namespace) -> int:
     else:
         print("\n=== JEV CONTINUATION NUDGE GATE ===")
         print(f"Should Nudge:      {'YES (Inject Continuation)' if res.should_nudge else 'NO (Stop & Yield to User)'}")
-        print(f"Workflow Phase:    {res.sureforge_phase.upper()}")
+        print(f"Workflow Phase:    {res.workflow_phase.upper()}")
         print(f"Nudge Prob:        {res.nudge_probability * 100:.1f}%")
         print(f"Waiting Prob:      {res.waiting_probability * 100:.1f}%")
         print(f"Progress Prob:     {res.progress_probability * 100:.1f}%")
@@ -691,7 +709,7 @@ def main() -> None:
     p_verify.add_argument("--output", "-o", required=True, help="Produced evidence / output")
     p_verify.set_defaults(func=cmd_verify)
 
-    # nudge-gate (alias: nudge)
+    # nudge-gate
     p_nudge = subparsers.add_parser(
         "nudge-gate",
         aliases=["nudge"],

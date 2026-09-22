@@ -357,17 +357,13 @@ pub async fn process_message(line: &str, client: &JevClient) -> Option<Value> {
                 })),
             }
         }
-        _ => {
-            if let Some(id) = req_id {
-                Some(json!({
-                    "jsonrpc": "2.0",
-                    "id": id,
-                    "error": { "code": -32601, "message": format!("Method not found: {}", method) }
-                }))
-            } else {
-                None
-            }
-        }
+        _ => req_id.map(|id| {
+            json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "error": { "code": -32601, "message": format!("Method not found: {}", method) }
+            })
+        }),
     }
 }
 

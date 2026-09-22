@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from .client import ChoiceQuestion, JevClient, NoulQuestion, ScoreQuestion
+from .config import load_repo_config
 from .session import (
     detect_repeated_failure,
     record_abort_event,
@@ -93,7 +94,7 @@ class NudgeGateResult:
     nudge_probability: float
     waiting_probability: float
     progress_probability: float
-    sureforge_phase: str  # 'research', 'ask', 'plan', 'execute', 'verify', 'complete'
+    workflow_phase: str  # 'research', 'ask', 'plan', 'execute', 'verify', 'complete'
     suggested_nudge_prompt: str
     rationale: str
     is_mock: bool = False
@@ -146,7 +147,8 @@ def triage_test_failure(
     sev_score = sev_ans.score if sev_ans and hasattr(sev_ans, "score") else 3.0
 
     skip_llm = (category != "deep_logic") and (
-        skip_prob >= 0.65 or category in ["env_missing", "flaky_transient"]
+        skip_prob >= load_repo_config()["skip_llm_threshold"]
+        or category in ["env_missing", "flaky_transient"]
     )
 
     if category == "env_missing":
@@ -228,7 +230,7 @@ def should_abort_trajectory(
     action = action_ans.choice if action_ans and hasattr(action_ans, "choice") else "proceed"
     viability = viability_ans.score if viability_ans and hasattr(viability_ans, "score") else 3.0
 
-    should_abort = dead_end_prob >= 0.70 or action == "abort_and_ask" or viability <= 1.5
+    should_abort = dead_end_prob >= load_repo_config()["abort_threshold"] or action == "abort_and_ask" or viability <= 1.5
     effective_action = "abort_and_ask" if should_abort and action == "proceed" else action
 
     summary = (
@@ -690,7 +692,7 @@ def should_nudge_continuation(
         clean_state = clean_state[:1500] + "\n...[truncated]...\n" + clean_state[-2500:]
 
     questions: Dict[str, Any] = {
-        "sureforge_phase": ChoiceQuestion(
+        "workflow_phase": ChoiceQuestion(
             instructions="Identify the active workflow phase based on the agent's recent transcript.",
             criteria={
                 "research": "Investigating codebase, gathering context, or discovering dependencies before planning.",
@@ -714,7 +716,7 @@ def should_nudge_continuation(
 
     resp = client.system_one(state=clean_state, questions=questions)
 
-    phase_ans = resp.answers.get("sureforge_phase")
+    phase_ans = resp.answers.get("workflow_phase")
     nudge_ans = resp.answers.get("nudge")
     waiting_ans = resp.answers.get("waiting")
     progress_ans = resp.answers.get("progress")
@@ -782,7 +784,7 @@ def should_nudge_continuation(
         nudge_probability=nudge_prob,
         waiting_probability=waiting_prob,
         progress_probability=progress_prob,
-        sureforge_phase=phase,
+        workflow_phase=phase,
         suggested_nudge_prompt=suggested_prompt,
         rationale=rationale,
         is_mock=resp.is_mock,

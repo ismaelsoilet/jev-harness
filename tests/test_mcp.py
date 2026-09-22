@@ -234,7 +234,7 @@ class TestMCPServer(unittest.TestCase):
         self.assertFalse(resp["result"]["isError"])
         content = json.loads(resp["result"]["content"][0]["text"])
         self.assertTrue(content["should_nudge"])
-        self.assertEqual(content["sureforge_phase"], "verify")
+        self.assertEqual(content["workflow_phase"], "verify")
 
 
 if __name__ == "__main__":

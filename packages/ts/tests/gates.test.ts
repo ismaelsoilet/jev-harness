@@ -1,5 +1,8 @@
 import { test, describe } from "node:test";
 import * as assert from "node:assert/strict";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { JevClient } from "../src/client.js";
 import {
   modulateReasoningEffort,
@@ -382,7 +385,7 @@ FAIL src/plugin.test.ts
       { client }
     );
     assert.equal(resVerify.shouldNudge, true);
-    assert.equal(resVerify.sureforgePhase, "verify");
+    assert.equal(resVerify.workflowPhase, "verify");
     assert.ok(resVerify.suggestedNudgePrompt.includes("Verify phase"));
 
     // 2. Waiting on user -> shouldNudge = false, phase = ask
@@ -391,7 +394,7 @@ FAIL src/plugin.test.ts
       { client }
     );
     assert.equal(resWait.shouldNudge, false);
-    assert.equal(resWait.sureforgePhase, "ask");
+    assert.equal(resWait.workflowPhase, "ask");
     assert.ok(resWait.rationale.includes("waiting on user"));
 
     // 3. Last nudge failed to make progress -> shouldNudge = false
@@ -408,7 +411,7 @@ FAIL src/plugin.test.ts
       { client }
     );
     assert.equal(resDone.shouldNudge, false);
-    assert.equal(resDone.sureforgePhase, "complete");
+    assert.equal(resDone.workflowPhase, "complete");
 
     // 5. Unverified file edit without mentioning test -> shouldNudge = true, phase != complete
     const resEdit = await shouldNudgeContinuation(
@@ -416,8 +419,129 @@ FAIL src/plugin.test.ts
       { client }
     );
     assert.equal(resEdit.shouldNudge, true);
-    assert.notEqual(resEdit.sureforgePhase, "complete");
+    assert.notEqual(resEdit.workflowPhase, "complete");
   });
 });
 
+describe("Jev Harness (TypeScript) v0.1.11 regressions", () => {
+  const client = new JevClient({ forceMock: true });
 
+  test("bare RuntimeError does not mask a missing-dependency root cause", async () => {
+    for (const log of [
+      "RuntimeError: Failed to load plugin\nCaused by: ModuleNotFoundError: No module named 'torch'",
+      "ValueError: bad configuration\nModuleNotFoundError: No module named 'scipy'",
+    ]) {
+      const res = await triageTestFailure(log, client);
+      assert.equal(res.category, "env_missing", `env root cause masked for: ${log}`);
+      assert.equal(res.skipLlm, true);
+    }
+  });
+
+  test("bare RuntimeError does not mask a transient root cause", async () => {
+    const res = await triageTestFailure(
+      "RuntimeError: dependency install failed\nrequests.exceptions.Timeout: HTTPSConnectionPool timed out",
+      client
+    );
+    assert.equal(res.category, "flaky_transient");
+    assert.equal(res.skipLlm, true);
+  });
+
+  test("busy port is classified as flaky_transient", async () => {
+    const res = await triageTestFailure("RuntimeError: [Errno 98] Address already in use: port 8080", client);
+    assert.equal(res.category, "flaky_transient");
+    assert.equal(res.skipLlm, true);
+  });
+
+  test("bare exception without env/flaky signal stays deep_logic", async () => {
+    const res = await triageTestFailure("TypeError: Cannot read properties of undefined (reading 'map')", client);
+    assert.equal(res.category, "deep_logic");
+    assert.equal(res.skipLlm, false);
+  });
+
+  test("HTTP 401 degrades to offline simulation on any provider", async () => {
+    const originalFetch = globalThis.fetch;
+    try {
+      globalThis.fetch = (async () => new Response("unauthorized", { status: 401 })) as typeof fetch;
+      const paidClient = new JevClient({ provider: "typesafe", apiKey: "expired-key" });
+      const res = await triageTestFailure("ModuleNotFoundError: No module named 'scipy'", paidClient);
+      assert.equal(res.isMock, true);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("HTTP 500 still surfaces as an error (no over-broad fallback)", async () => {
+    const originalFetch = globalThis.fetch;
+    try {
+      globalThis.fetch = (async () => new Response("boom", { status: 500 })) as typeof fetch;
+      const paidClient = new JevClient({ provider: "typesafe", apiKey: "valid-looking-key" });
+      await assert.rejects(() => triageTestFailure("some failure", paidClient));
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("repo .jev.json model override is honored", async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jev-ts-"));
+    const originalCwd = process.cwd();
+    try {
+      fs.writeFileSync(path.join(tmp, ".jev.json"), JSON.stringify({ model: "custom-model-7b" }), "utf-8");
+      process.chdir(tmp);
+      assert.equal(new JevClient({ forceMock: true }).model, "custom-model-7b");
+    } finally {
+      process.chdir(originalCwd);
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test("scaffold placeholder does not clobber provider defaults", async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jev-ts-"));
+    const originalCwd = process.cwd();
+    try {
+      fs.writeFileSync(path.join(tmp, ".jev.json"), JSON.stringify({ model: "jev-latest" }), "utf-8");
+      process.chdir(tmp);
+      assert.equal(new JevClient({ forceMock: true, provider: "opencode" }).model, "jev-1.13-free");
+      assert.equal(new JevClient({ forceMock: true, provider: "commandcode" }).model, "typesafe/jev");
+    } finally {
+      process.chdir(originalCwd);
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test("repo .jev.json thresholds gate triage and abort", async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jev-ts-"));
+    const originalCwd = process.cwd();
+    try {
+      process.chdir(tmp);
+      const syntaxLog = "SyntaxError: expected ';'\nHint: run pip install fast-json";
+      const permissive = await triageTestFailure(syntaxLog, new JevClient({ forceMock: true }));
+      assert.equal(permissive.skipLlm, true);
+
+      fs.writeFileSync(
+        path.join(tmp, ".jev.json"),
+        JSON.stringify({ skip_llm_threshold: 0.99, abort_threshold: 0.1 }),
+        "utf-8"
+      );
+      const strict = await triageTestFailure(syntaxLog, new JevClient({ forceMock: true }));
+      assert.equal(strict.skipLlm, false, "0.99 threshold must block a 0.95 probability");
+
+      const abortRes = await shouldAbortTrajectory(
+        "Implement the login endpoint",
+        "No prior attempts",
+        new JevClient({ forceMock: true })
+      );
+      assert.equal(abortRes.shouldAbort, true, "0.10 threshold must abort a step scored above it");
+    } finally {
+      process.chdir(originalCwd);
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test("nudge gate exposes the canonical workflow_phase contract", async () => {
+    const res = await shouldNudgeContinuation(
+      "Assistant: Edited src/auth.py. Now I need to run pytest to verify.",
+      { client }
+    );
+    assert.equal(res.workflowPhase, "verify", "workflowPhase is the canonical phase field");
+  });
+});

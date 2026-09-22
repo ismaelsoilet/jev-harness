@@ -12,9 +12,12 @@ import os
 from pathlib import Path
 import re
 import socket
+import sys
 from typing import Any, Dict, List, Optional, Union
 import urllib.error
 import urllib.request
+
+from .config import load_repo_config
 
 TYPESAFE_API_URL = "https://api.typesafe.ai/v1/systemone"
 OPENCODE_API_URL = "https://opencode.ai/zen/v1/systemone"
@@ -168,8 +171,14 @@ class JevClient:
         else:
             self.base_url = TYPESAFE_API_URL
 
+        # Resolution order: explicit argument > repository `.jev.json` override > provider
+        # default. The generic placeholder (`jev-latest`, what `jev-harness init` scaffolds) is
+        # treated as "no override" so scaffolded configs never clobber provider model IDs.
+        repo_model = load_repo_config().get("model")
         if model:
             self.model = model
+        elif repo_model and repo_model != DEFAULT_MODEL:
+            self.model = str(repo_model)
         elif self.provider == "opencode":
             self.model = "jev-1.13-free"
         elif self.provider == "commandcode":
@@ -347,8 +356,7 @@ class JevClient:
                 "vercel": "Vercel AI Gateway",
             }
             provider_label = provider_map.get(self.provider, "TypeSafe")
-            if e.code in (401, 403) and (self.provider == "opencode" or self.api_key in ("zen", None, "")):
-                import sys
+            if e.code in (401, 403):
                 sys.stderr.write(f"[JEV WARNING] {provider_label} auth failed (HTTP {e.code}); falling back to offline simulation.\n")
                 return self._simulate_system_one(state_str, questions, chosen_model)
             raise RuntimeError(f"{provider_label} API returned HTTP {e.code}: {err_body}") from e
@@ -482,9 +490,18 @@ class JevClient:
         state_lower = state.lower()
         state_tokens = set(re.findall(r"\w+", state_lower))
 
-        is_explicit_assertion = any(
+        # Concrete assertion signals, split from bare exception names so that a concrete
+        # dependency/transient root cause is never masked by a generic "RuntimeError:" line.
+        real_assertion = any(
             re.search(
-                r"(?:assertionerror|assertionfailed|assertionfailederror|assert\b|assert_eq!|assertthat|expect\(.*?\)\.to|expected:.*received:|failures?:|fail(?:ed)?\s+test|^fail(?:ed)?\b|falha de asserção|fallo de aserción|opentest4j|^(?:valueerror|runtimeerror|typeerror|keyerror|indexerror|zerodivisionerror|attributeerror|overflowerror|arithmeticerror|illegalargumentexception|illegalstateexception):)",
+                r"(?:assertionerror|assertionfailed|assertionfailederror|assert\b|assert_eq!|assertthat|expect\(.*?\)\.to|expected:.*received:|failures?:|fail(?:ed)?\s+test|^fail(?:ed)?\b|falha de asserção|fallo de aserción|opentest4j)",
+                line.strip(),
+            )
+            for line in state_lower.splitlines()
+        )
+        bare_exception = any(
+            re.search(
+                r"^(?:valueerror|runtimeerror|typeerror|keyerror|indexerror|zerodivisionerror|attributeerror|overflowerror|arithmeticerror|illegalargumentexception|illegalstateexception):",
                 line.strip(),
             )
             for line in state_lower.splitlines()
@@ -515,9 +532,21 @@ class JevClient:
         flaky_triggers = [
             "connectionreset", "timeout", "timed out", "econnreset", "econnrefused",
             "etimedout", "socket hang up", "gateway timeout", "503 service unavailable",
+            "address already in use", "eaddrinuse", "port already in use", "port is already in use",
             "tempo limite", "tempo limite esgotado", "conexão recusada", "conexao recusada",
-            "tiempo de espera agotado", "conexión rechazada", "conexion rechazada"
+            "tiempo de espera agotado", "conexión rechazada", "conexion rechazada",
+            "porta já está em uso", "puerto ya está en uso"
         ]
+
+        # Precedence rule (.agents/rules/04_testing_and_truthfulness.md): an explicit
+        # assertion/expectation mismatch always outranks dependency or transient words in the
+        # same log. A bare exception name is logic evidence only when the log does not also
+        # contain a concrete env/flaky root cause, so deterministic fixes are never escalated.
+        has_env_signal = any(k in state_lower for k in env_missing_triggers)
+        has_flaky_signal = any(k in state_lower for k in flaky_triggers)
+        is_explicit_assertion = real_assertion or (
+            bare_exception and not (has_env_signal or has_flaky_signal)
+        )
         syntax_triggers = [
             "syntaxerror", "indentationerror", "expected ';'", "ts1005", "missing bracket",
             "erro de sintaxe", "sintaxe inválida", "indentação inesperada",
@@ -529,7 +558,6 @@ class JevClient:
             "mutex", "segmentation fault", "sigsegv", "addresssanitizer", "core dumped",
             "nullpointerexception", "nullreferenceexception", "arrayindexoutofboundsexception",
             "nil pointer dereference", "index out of bounds",
-            "valueerror", "runtimeerror", "typeerror", "keyerror", "indexerror", "attributeerror", "zerodivisionerror",
             "falha de asserção", "asserção", "erro de lógica", "fallo de aserción", "error de lógica", "expect("
         ]
         single_word_mech = {
@@ -664,7 +692,7 @@ class JevClient:
                         best_choice = list(q.criteria.keys())[0]
                     probs = {k: (0.88 if k == best_choice else 0.12 / max(1, len(q.criteria) - 1)) for k in q.criteria}
 
-                elif qid == "sureforge_phase" or ("execute" in q.criteria and "complete" in q.criteria):
+                elif qid == "workflow_phase" or ("execute" in q.criteria and "complete" in q.criteria):
                     is_waiting_user = "?" in state_lower or any(k in state_lower for k in [
                         "waiting for your", "waiting on user", "wait for my go-ahead", "please confirm", "which option",
                         "do you approve", "would you like me to", "do you want me to", "need your api key", "aguardando sua aprovação",

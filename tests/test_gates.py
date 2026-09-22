@@ -209,7 +209,7 @@ class TestSemanticGates(unittest.TestCase):
         self.assertEqual(cmd_client.model, "typesafe/jev")
         self.assertTrue(cmd_client.is_live)
 
-    def test_sureforge_nudge_gate_execute_and_verify_vs_vetoes(self):
+    def test_nudge_gate_execute_and_verify_vs_vetoes(self):
         # 1. Unfinished implementation ('execute' phase) -> should_nudge = True
         res_exec = should_nudge_continuation(
             "Implemented step 1 of 3. Remaining TODO: update CLI parser and run tests.",
@@ -217,7 +217,7 @@ class TestSemanticGates(unittest.TestCase):
         )
         self.assertIsInstance(res_exec, NudgeGateResult)
         self.assertTrue(res_exec.should_nudge)
-        self.assertEqual(res_exec.sureforge_phase, "execute")
+        self.assertEqual(res_exec.workflow_phase, "execute")
         self.assertGreaterEqual(res_exec.nudge_probability, 0.5)
 
         # 2. Unverified changes ('verify' phase) -> should_nudge = True with Verify prompt
@@ -226,7 +226,7 @@ class TestSemanticGates(unittest.TestCase):
             client=self.client,
         )
         self.assertTrue(res_ver.should_nudge)
-        self.assertEqual(res_ver.sureforge_phase, "verify")
+        self.assertEqual(res_ver.workflow_phase, "verify")
         self.assertIn("Verify phase", res_ver.suggested_nudge_prompt)
 
         # 3. Waiting on user ('ask' phase / question mark) -> vetoed (should_nudge = False)
@@ -235,7 +235,7 @@ class TestSemanticGates(unittest.TestCase):
             client=self.client,
         )
         self.assertFalse(res_wait.should_nudge)
-        self.assertEqual(res_wait.sureforge_phase, "ask")
+        self.assertEqual(res_wait.workflow_phase, "ask")
         self.assertGreaterEqual(res_wait.waiting_probability, 0.5)
 
         # 4. Previous nudge made no progress -> vetoed (should_nudge = False)
@@ -253,7 +253,7 @@ class TestSemanticGates(unittest.TestCase):
             client=self.client,
         )
         self.assertFalse(res_done.should_nudge)
-        self.assertEqual(res_done.sureforge_phase, "complete")
+        self.assertEqual(res_done.workflow_phase, "complete")
 
 
 if __name__ == "__main__":

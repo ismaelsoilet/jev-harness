@@ -12,6 +12,13 @@ import {
 } from "./gates.js";
 import { runMcpServer } from "./mcp.js";
 
+// Heuristic savings model (documented planning assumptions, NOT measured token counts):
+// mirrors the Python and Rust runtimes so every metrics surface stays honest.
+const ASSUMED_TOKENS_PER_TRIAGE_SKIP = 26200;
+const ASSUMED_COST_PER_TRIAGE_SKIP_USD = 0.31;
+const ASSUMED_TOKENS_PER_ABORT = 80000;
+const ASSUMED_COST_PER_ABORT_USD = 1.2;
+
 function readInput(valOrPath?: string, allowStdin: boolean = true): string {
   if (valOrPath) {
     if (fs.existsSync(valOrPath) && fs.statSync(valOrPath).isFile()) {
@@ -276,6 +283,7 @@ This repository is connected to the global **Jev System One Harness**.
             nudge_continuations: nudgeContinuations,
             estimated_tokens_saved: tokensSaved,
             estimated_cost_saved_usd: Math.round(costSaved * 100) / 100,
+            estimates_are_heuristic: true,
           },
           null,
           2
@@ -289,8 +297,12 @@ This repository is connected to the global **Jev System One Harness**.
       console.log(`Deterministic Routes:    ${deterministicRoutes}`);
       console.log(`Effort Modulations:      ${effortModulations} (Astra-Jev per-generation)`);
       console.log(`Continuation Nudges:     ${nudgeContinuations} (Jev Nudge Gate)`);
-      console.log(`Estimated Tokens Saved:  ⚡ ${tokensSaved.toLocaleString()} tokens`);
-      console.log(`Estimated API Cost Saved: 💸 $${costSaved.toFixed(2)} USD`);
+      console.log(`Estimated Tokens Saved:  ⚡ ${tokensSaved.toLocaleString()} tokens (heuristic estimate)`);
+      console.log(`Estimated API Cost Saved: 💸 $${costSaved.toFixed(2)} USD (heuristic estimate)`);
+      console.log(
+        `Assumption Model:        ${ASSUMED_TOKENS_PER_TRIAGE_SKIP.toLocaleString()} tokens/$${ASSUMED_COST_PER_TRIAGE_SKIP_USD.toFixed(2)} per intercepted triage; ` +
+          `${ASSUMED_TOKENS_PER_ABORT.toLocaleString()} tokens/$${ASSUMED_COST_PER_ABORT_USD.toFixed(2)} per aborted doom loop`
+      );
       console.log("===========================================\n");
     }
     return 0;
@@ -611,7 +623,7 @@ This repository is connected to the global **Jev System One Harness**.
     return 0;
   }
 
-  if (command === "nudge-gate" || command === "nudge" || command === "sureforge") {
+  if (command === "nudge-gate" || command === "nudge") {
     const tIdx = args.findIndex((a) => a === "--transcript" || a === "-t");
     let tVal = tIdx !== -1 ? args[tIdx + 1] : undefined;
     if (!tVal) {
@@ -650,8 +662,8 @@ This repository is connected to the global **Jev System One Harness**.
             waitingProbability: res.waitingProbability,
             progress_probability: res.progressProbability,
             progressProbability: res.progressProbability,
-            sureforge_phase: res.sureforgePhase,
-            sureforgePhase: res.sureforgePhase,
+            workflow_phase: res.workflowPhase,
+            workflowPhase: res.workflowPhase,
             suggested_nudge_prompt: res.suggestedNudgePrompt,
             suggestedNudgePrompt: res.suggestedNudgePrompt,
             rationale: res.rationale,
@@ -665,7 +677,7 @@ This repository is connected to the global **Jev System One Harness**.
     } else {
       console.log("\n=== JEV CONTINUATION NUDGE GATE (TS) ===");
       console.log(`Should Nudge:      ${res.shouldNudge ? "YES (Inject Continuation)" : "NO (Stop & Yield to User)"}`);
-      console.log(`Workflow Phase:    ${res.sureforgePhase.toUpperCase()}`);
+      console.log(`Workflow Phase:    ${res.workflowPhase.toUpperCase()}`);
       console.log(`Nudge Prob:        ${(res.nudgeProbability * 100).toFixed(1)}%`);
       console.log(`Waiting Prob:      ${(res.waitingProbability * 100).toFixed(1)}%`);
       console.log(`Progress Prob:     ${(res.progressProbability * 100).toFixed(1)}%`);

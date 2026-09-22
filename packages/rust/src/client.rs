@@ -1,5 +1,6 @@
 //! HTTP client and offline deterministic simulation engine for TypeSafe Jev System One.
 
+use crate::config::load_repo_config;
 use crate::types::*;
 use std::collections::{HashMap, HashSet};
 use std::env;
@@ -22,7 +23,11 @@ pub const DEFAULT_USER_AGENT: &str = concat!(
 );
 
 static ASSERTION_REGEX: LazyLock<regex::Regex> = LazyLock::new(|| {
-    regex::Regex::new(r"(?i)(?:assertionerror|assertionfailed|assertionfailederror|assert\b|assert_eq!|assertthat|expect\(.*?\)\.to|expected:.*received:|failures?:|fail(?:ed)?\s+test|^fail(?:ed)?\b|falha de asserção|fallo de aserción|opentest4j|^(?:valueerror|runtimeerror|typeerror|keyerror|indexerror|zerodivisionerror|attributeerror|overflowerror|arithmeticerror|illegalargumentexception|illegalstateexception):)").expect("Invalid assertion regex")
+    regex::Regex::new(r"(?i)(?:assertionerror|assertionfailed|assertionfailederror|assert\b|assert_eq!|assertthat|expect\(.*?\)\.to|expected:.*received:|failures?:|fail(?:ed)?\s+test|^fail(?:ed)?\b|falha de asserção|fallo de aserción|opentest4j)").expect("Invalid assertion regex")
+});
+
+static BARE_EXCEPTION_REGEX: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"(?i)^(?:valueerror|runtimeerror|typeerror|keyerror|indexerror|zerodivisionerror|attributeerror|overflowerror|arithmeticerror|illegalargumentexception|illegalstateexception):").expect("Invalid bare exception regex")
 });
 
 static FAILURE_REGEX: LazyLock<regex::Regex> = LazyLock::new(|| {
@@ -60,8 +65,15 @@ impl JevClient {
     ) -> Self {
         let (resolved_key, resolved_provider, resolved_url) = Self::resolve_credentials(api_key);
         let final_url = base_url.unwrap_or(resolved_url);
+        let repo_config = load_repo_config();
         let final_model = model.unwrap_or_else(|| {
-            if resolved_provider == "commandcode" {
+            if let Some(repo_model) = repo_config
+                .model
+                .as_ref()
+                .filter(|m| m.as_str() != DEFAULT_MODEL)
+            {
+                repo_model.clone()
+            } else if resolved_provider == "commandcode" {
                 "typesafe/jev".to_string()
             } else if resolved_provider == "opencode" {
                 "jev-1.13-free".to_string()
@@ -113,12 +125,21 @@ impl JevClient {
             "vercel" => VERCEL_API_URL.to_string(),
             _ => TYPESAFE_API_URL.to_string(),
         };
-        let model = match prov.as_str() {
+        let repo_config = load_repo_config();
+        let model = if let Some(repo_model) = repo_config
+            .model
+            .as_ref()
+            .filter(|m| m.as_str() != DEFAULT_MODEL)
+        {
+            repo_model.clone()
+        } else {
+            match prov.as_str() {
             "commandcode" => "typesafe/jev".to_string(),
             "opencode" => "jev-1.13-free".to_string(),
             "openrouter" => "typesafe/jev-1.13".to_string(),
             "vercel" => "typesafe-ai/jev".to_string(),
             _ => DEFAULT_MODEL.to_string(),
+            }
         };
         Self {
             api_key,
@@ -426,7 +447,7 @@ impl JevClient {
                     let status = resp.status().as_u16();
                     let raw_text = resp.text().await.unwrap_or_default();
                     let text = Self::redact_secrets(&raw_text, self.api_key.as_deref());
-                    if (status == 401 || status == 403) && (self.provider == "opencode" || self.api_key.is_none() || self.api_key.as_deref() == Some("zen")) {
+                    if status == 401 || status == 403 {
                         eprintln!("[JEV WARNING] {} auth failed (HTTP {}); falling back to offline simulation.", self.provider, status);
                         return Ok(self.simulate_system_one(state, &questions, &self.model));
                     }
@@ -487,12 +508,15 @@ impl JevClient {
             .map(|s| s.to_string())
             .collect();
 
-        let is_explicit_assertion = state_lower.lines().any(|line| {
+        let real_assertion = state_lower.lines().any(|line| {
             let t = line.trim();
             t.starts_with("panicked at")
                 || t.starts_with("panic:")
                 || ASSERTION_REGEX.is_match(t)
         });
+        let bare_exception = state_lower
+            .lines()
+            .any(|line| BARE_EXCEPTION_REGEX.is_match(line.trim()));
         let has_explicit_failure = FAILURE_REGEX.is_match(&state_lower);
 
         let heavy_kw = [
@@ -575,7 +599,21 @@ impl JevClient {
             "tiempo de espera agotado",
             "conexión rechazada",
             "conexion rechazada",
+            "address already in use",
+            "eaddrinuse",
+            "port already in use",
+            "port is already in use",
+            "porta já está em uso",
+            "puerto ya está en uso",
         ];
+
+        // Precedence rule (.agents/rules/04): an explicit assertion/expectation mismatch always
+        // outranks dependency or transient words in the same log. A bare exception name is logic
+        // evidence only when no concrete env/flaky root cause is present.
+        let has_env_signal = env_missing_triggers.iter().any(|k| state_lower.contains(k));
+        let has_flaky_signal = flaky_triggers.iter().any(|k| state_lower.contains(k));
+        let is_explicit_assertion =
+            real_assertion || (bare_exception && !(has_env_signal || has_flaky_signal));
         let syntax_triggers = [
             "syntaxerror",
             "indentationerror",
@@ -612,13 +650,6 @@ impl JevClient {
             "arrayindexoutofboundsexception",
             "nil pointer dereference",
             "index out of bounds",
-            "valueerror",
-            "runtimeerror",
-            "typeerror",
-            "keyerror",
-            "indexerror",
-            "attributeerror",
-            "zerodivisionerror",
             "falha de asserção",
             "asserção",
             "erro de lógica",
@@ -888,7 +919,7 @@ impl JevClient {
                         if !cq.criteria.contains_key(&best_choice) {
                             best_choice = cq.criteria.keys().next().cloned().unwrap_or_default();
                         }
-                    } else if qid == "sureforge_phase"
+                    } else if qid == "workflow_phase"
                         || (cq.criteria.contains_key("execute")
                             && cq.criteria.contains_key("verify"))
                     {
@@ -1047,9 +1078,9 @@ impl JevClient {
 
                     let neg_signals = ["not ok", "failed", "falhou"];
 
-                    if has_explicit_failure && (qid == "satisfaction" || qid == "rigor") {
-                        matched_idx = 1;
-                    } else if qid == "viability"
+                    let is_satisfaction_failure =
+                        has_explicit_failure && (qid == "satisfaction" || qid == "rigor");
+                    let is_unviable_step = qid == "viability"
                         && ([
                             "deadlock",
                             "circular",
@@ -1062,8 +1093,9 @@ impl JevClient {
                         ]
                         .iter()
                         .any(|w| state_lower.contains(w))
-                            || has_deadlock_or_loop)
-                    {
+                            || has_deadlock_or_loop);
+
+                    if is_satisfaction_failure || is_unviable_step {
                         matched_idx = 1;
                     } else if !has_explicit_failure
                         && positive_words.iter().any(|w| state_lower.contains(w))
@@ -1304,13 +1336,12 @@ impl JevClient {
                         .chain(["pip install", "npm install", "cargo add"].iter())
                         .any(|w| state_lower.contains(w))
                         && !(is_explicit_assertion || has_deadlock_or_loop)
+                        && (inst.contains("deterministically") || inst.contains("skip"))
                     {
-                        if inst.contains("deterministically") || inst.contains("skip") {
-                            prob = 0.95;
-                        }
+                        prob = 0.95;
                     }
 
-                    // CommandCode Jev Nudge + SureForge continuation heuristics
+                    // CommandCode Jev Nudge continuation heuristics
                     let is_waiting_on_user = state_lower.contains('?')
                         || [
                             "waiting on user",

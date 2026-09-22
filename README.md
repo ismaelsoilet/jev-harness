@@ -125,7 +125,7 @@ Jev Harness supports multiple backend providers and auto-detects credentials:
 | **Command Code (Free Deal)** | `https://api.commandcode.ai/provider/v1/systemone` | **$0.00 / Free** | `export CMD_API_KEY=your-key` or `cmd login` (`~/.commandcode/auth.json`) |
 | **OpenCode Zen (Free Tier)** | `https://opencode.ai/zen/v1/systemone` | **$0.00 / Free** | `export OPENCODE_API_KEY=zen` or auto-selected |
 | **TypeSafe AI (Direct)** | `https://api.typesafe.ai/v1/systemone` | $0.042 / 1M | `export TYPESAFE_API_KEY=your-key` |
-| **OpenRouter Native Decisions** | `https://openrouter.ai/api/alpha/decisions` | $0.042 / 1M | `export OPENROUTER_API_KEY=your-key` |
+| **OpenRouter (Alpha)** ⚠️ | `https://openrouter.ai/api/alpha/decisions` | $0.042 / 1M | `export OPENROUTER_API_KEY=your-key` — requires approved alpha access; the endpoint and the `typesafe/jev-1.13` model are **not publicly listed yet** |
 | **Vercel AI Gateway** | `https://ai-gateway.vercel.sh/v1/evaluate` | $0.042 / 1M | `export AI_GATEWAY_API_KEY=your-key` |
 | **Autonomous Simulation** | Local Heuristics (< 500µs) | **$0.00** | Active by default if no key or offline |
 
@@ -133,12 +133,25 @@ Credential resolution priority:
 1. Environment variables (`TYPESAFE_API_KEY`, `CMD_API_KEY`, `COMMAND_CODE_API_KEY`, `OPENCODE_API_KEY`, `OPENROUTER_API_KEY`, or `AI_GATEWAY_API_KEY`)
 2. Local repository `.jev.json`, `.env`, or `~/.commandcode/auth.json`
 3. Global configuration `~/.config/jev/credentials.env`
-4. **Autonomous Simulation Fallback** (ensures your CI, agents, and scripts never crash)
+4. **Autonomous Simulation Fallback**: active when no credentials are configured, and on HTTP `401`/`403` auth failures from **any** provider. The engine prints a `[JEV WARNING]` to stderr and every degraded result is flagged `is_mock=true`. Other failures (e.g. HTTP 500) still raise, so real outages stay visible.
 
 ```bash
 # Check current connection & provider status anytime
 jev-harness status
 ```
+
+### Repository Configuration (`.jev.json`)
+
+`jev-harness init` scaffolds a repository-local `.jev.json`. Honored keys:
+
+| Key | Type | Default | Effect |
+| :--- | :--- | :--- | :--- |
+| `model` | string | provider default | Overrides the model sent to the provider. The scaffold placeholder `jev-latest` means "use the provider-optimized default", so it never clobbers provider model IDs. |
+| `skip_llm_threshold` | float `0`-`1` | `0.65` | Minimum confidence for `test-gate` to set `skip_llm=true` (a `deep_logic` verdict is never bypassed). |
+| `abort_threshold` | float `0`-`1` | `0.70` | Minimum dead-end probability for `abort-check` to abort a trajectory. |
+| `api_key` / `provider` | string | — | Optional credentials. Environment variables take precedence. |
+
+Values are clamped to `[0, 1]`, and a corrupted file degrades to defaults instead of breaking CI. The same keys work identically in Python, TypeScript and Rust.
 
 ---
 
@@ -263,10 +276,13 @@ LLM Frontier Calls Skipped:      11 calls (78.6%)
 Abort Guard Stops Triggered:     2 doom loops killed
 Deterministic Routes:            6 tasks
 Reasoning Effort Modulations:    8 steps (6 low, 2 high)
-Estimated Tokens Saved:          422,200 tokens
-Estimated Frontier Dollars Saved: $6.12 USD
+Estimated Tokens Saved:          422,200 tokens (heuristic estimate)
+Estimated Frontier Dollars Saved: $6.12 USD (heuristic estimate)
+Assumption Model:                26,200 tokens/$0.31 per intercepted triage; 80,000 tokens/$1.20 per aborted doom loop
 ============================================================
 ```
+
+> 📊 **These figures are a planning estimate, not metered usage.** The per-event assumptions are fixed constants (26,200 tokens/$0.31 per intercepted triage, 80,000 tokens/$1.20 per aborted loop). `--json` exposes `estimates_are_heuristic: true` so downstream tooling can label them correctly.
 
 ### 7. One-Command Agent Setup (`init`)
 Automatically scaffold MCP configurations for your active agent or IDE:
@@ -569,7 +585,7 @@ Ultra-low latency (< 500µs local, zero-overhead) for systems programming, Tauri
 
 ```toml
 [dependencies]
-jev-harness = "0.1.10"
+jev-harness = "0.1.11"
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -619,7 +635,7 @@ jev reasoning-effort --context "git status" --target-provider deepseek --json
 ```yaml
 repos:
   - repo: https://github.com/ismaelsoilet/jev-harness
-    rev: v0.1.10
+    rev: v0.1.11
     hooks:
       - id: jev-test-gate
 ```
@@ -711,6 +727,19 @@ You can also trigger releases via GitHub Actions:
 - **Manual:** Go to **GitHub Actions → Release & Publish → Run workflow**, specify the version, and click run.
 
 *(Requires `PYPI_API_TOKEN` and `CARGO_REGISTRY_TOKEN` in GitHub Repository Secrets; npm uses OpenID Connect (OIDC) Trusted Publishing with cryptographic Sigstore provenance without static tokens).*
+
+## 🌟 What's New in v0.1.11
+
+- 🐛 **Fixed a v0.1.10 classification regression**: a bare `RuntimeError:` / `ValueError:` / `TypeError:` line no longer masks a concrete dependency or transient root cause. Logs such as `RuntimeError: ... Caused by: ModuleNotFoundError` and `RuntimeError: ... Timeout` are triaged as `env_missing` / `flaky_transient` again (`skip_llm=true`), while real logic exceptions without an env/flaky root cause still escalate as `deep_logic`.
+- 🌐 **Busy ports are flaky**: `Address already in use` / `EADDRINUSE` / `port already in use` (EN, PT-BR, ES) now classify as `flaky_transient`, matching the documented behaviour.
+- ⚙️ **`.jev.json` is honored end-to-end**: `model`, `skip_llm_threshold` and `abort_threshold` take effect across Python, TypeScript and Rust (previously the file was scaffolded but silently ignored).
+- 🔐 **No more auth CI crashes**: HTTP `401`/`403` from *any* provider degrades to offline simulation with a stderr warning and `is_mock=true`, instead of raising a traceback. Other failures (e.g. HTTP `500`) still surface as errors.
+- 📊 **Honest ROI metrics**: the savings counters are labeled as heuristic estimates, the assumption model is printed, and `--json` exposes `estimates_are_heuristic`.
+- 📖 **OpenRouter documented as alpha**: it requires approved alpha access; the endpoint and `typesafe/jev-1.13` model are not publicly listed, so it is no longer presented as a turnkey provider.
+- 🧩 **Contract parity**: Standardized `workflow_phase` (`research`, `ask`, `plan`, `execute`, `verify`, `complete`) across CLI, SDK, and MCP outputs for `nudge-gate`.
+- 🚦 **Release gate hardened**: `release.yml` now requires the full CI matrix (Linux/macOS/Windows, Python 3.9-3.13, Node 18-22, Rust) through a reusable workflow gate before publishing to PyPI, npm or crates.io — a red CI can no longer ship a release.
+- 🧹 **Zero clippy warnings** across the Rust workspace.
+- 🧪 **184-Test Battery**: 100% pass rate across 184 tests (102 Python, 43 Rust, 39 TypeScript).
 
 ## 🌟 What's New in v0.1.10
 

@@ -388,7 +388,7 @@ def handle_tools_call(req_id: Any, params: Dict[str, Any], client: JevClient) ->
                     "nudge_probability": res.nudge_probability,
                     "waiting_probability": res.waiting_probability,
                     "progress_probability": res.progress_probability,
-                    "sureforge_phase": res.sureforge_phase,
+                    "workflow_phase": res.workflow_phase,
                     "suggested_nudge_prompt": res.suggested_nudge_prompt,
                     "rationale": res.rationale,
                     "is_mock": res.is_mock,

@@ -364,6 +364,7 @@ pub async fn run_cli() {
                     "nudge_continuations": nudge_continuations,
                     "estimated_tokens_saved": tokens_saved,
                     "estimated_cost_saved_usd": (cost_saved * 100.0).round() / 100.0,
+                    "estimates_are_heuristic": true,
                 });
                 println!("{}", serde_json::to_string_pretty(&out).unwrap());
             } else {
@@ -374,8 +375,12 @@ pub async fn run_cli() {
                 println!("Deterministic Routes:    {}", deterministic_routes);
                 println!("Effort Modulations:      {} (Astra-Jev per-generation)", effort_modulations);
                 println!("Continuation Nudges:     {} (Jev Nudge Gate)", nudge_continuations);
-                println!("Estimated Tokens Saved:  ⚡ {} tokens", tokens_saved);
-                println!("Estimated API Cost Saved: 💸 ${:.2} USD", cost_saved);
+                println!("Estimated Tokens Saved:  ⚡ {} tokens (heuristic estimate)", tokens_saved);
+                println!("Estimated API Cost Saved: 💸 ${:.2} USD (heuristic estimate)", cost_saved);
+                println!(
+                    "Assumption Model:        {} tokens/${:.2} per intercepted triage; {} tokens/${:.2} per aborted doom loop",
+                    26200, 0.31, 80000, 1.20
+                );
                 println!("==============================================\n");
             }
             process::exit(0);
@@ -645,7 +650,7 @@ pub async fn run_cli() {
                                 "NO (Stop & Yield to User)"
                             }
                         );
-                        println!("Workflow Phase:    {}", res.sureforge_phase.to_uppercase());
+                        println!("Workflow Phase:    {}", res.workflow_phase.to_uppercase());
                         println!("Nudge Prob:        {:.1}%", res.nudge_probability * 100.0);
                         println!("Waiting Prob:      {:.1}%", res.waiting_probability * 100.0);
                         println!("Progress Prob:     {:.1}%", res.progress_probability * 100.0);

@@ -13,6 +13,7 @@ import type {
   ScoreAnswer,
   ScoreQuestion,
 } from "./types.js";
+import { loadRepoConfig } from "./config.js";
 
 export const TYPESAFE_API_URL = "https://api.typesafe.ai/v1/systemone";
 export const COMMANDCODE_API_URL = "https://api.commandcode.ai/provider/v1/systemone";
@@ -52,8 +53,14 @@ export class JevClient {
       this.baseUrl = TYPESAFE_API_URL;
     }
 
+    // Resolution order: explicit option > repository `.jev.json` override > provider
+    // default. The generic placeholder (`jev-latest`, what `jev init` scaffolds) is treated
+    // as "no override" so scaffolded configs never clobber provider model IDs.
+    const repoConfig = loadRepoConfig();
     if (options.model) {
       this.model = options.model;
+    } else if (repoConfig.model && repoConfig.model !== DEFAULT_MODEL) {
+      this.model = repoConfig.model;
     } else if (this.provider === "commandcode") {
       this.model = "typesafe/jev";
     } else if (this.provider === "opencode") {
@@ -216,7 +223,7 @@ export class JevClient {
           vercel: "Vercel AI Gateway",
         };
         const providerName = providerMap[this.provider] || "TypeSafe";
-        if ((resp.status === 401 || resp.status === 403) && (this.provider === "opencode" || !this.apiKey || this.apiKey === "zen")) {
+        if (resp.status === 401 || resp.status === 403) {
           process.stderr.write(`[JEV WARNING] ${providerName} auth failed (HTTP ${resp.status}); falling back to offline simulation.\n`);
           return this.simulateSystemOne(stateStr, questions, chosenModel);
         }
@@ -303,7 +310,8 @@ export class JevClient {
     const stateTokens = new Set(stateLower.match(/\w+/g) || []);
     const answers: Record<string, Answer> = {};
 
-    const isExplicitAssertion = /(?:assertionerror|assertionfailed|assertionfailederror|assert\b|assert_eq!|assertthat|expect\(.*?\)\.to|expected:.*received:|failures?:|fail(?:ed)?\s+test|^fail(?:ed)?\b|falha de asserção|fallo de aserción|opentest4j|(?:^|\n)\s*(?:valueerror|runtimeerror|typeerror|keyerror|indexerror|zerodivisionerror|attributeerror|overflowerror|arithmeticerror|illegalargumentexception|illegalstateexception):)/i.test(stateLower);
+    const realAssertion = /(?:assertionerror|assertionfailed|assertionfailederror|assert\b|assert_eq!|assertthat|expect\(.*?\)\.to|expected:.*received:|failures?:|fail(?:ed)?\s+test|^fail(?:ed)?\b|falha de asserção|fallo de aserción|opentest4j)/i.test(stateLower);
+    const bareException = /(?:^|\n)\s*(?:valueerror|runtimeerror|typeerror|keyerror|indexerror|zerodivisionerror|attributeerror|overflowerror|arithmeticerror|illegalargumentexception|illegalstateexception):/i.test(stateLower);
     const hasExplicitFailure = /(?:assertionerror|assertionfailed|assertionfailederror|failures?:\s*[1-9]|failed\b|falhou\b|\d+\s+failed\b|not\s+ok\b|segmentation\s+fault|sigsegv|panic\b|core\s+dumped)/i.test(stateLower);
     const hasHeavyKeywords = /(?:kernel|distributed|architecture|refactor|concurrency|deadlock|multi-file|consensus|supervision tree|arquitetura|distribuído|distribuída|distribuido|refatorar|refatoração|concorrência|concorrencia|consenso|múltiplos arquivos|condição de corrida|arquitectura|concurrencia|condición de carrera|múltiples archivos)/i.test(stateLower);
     const hasDeadlockOrLoop = /(?:infinite\s+loop|loop\s+infinito|bucle\s+infinito|deadlock|dead\s+lock|bloqueo\s+mutuo|livelock|hung|mutex|spin\s*lock|goroutines\s+are\s+asleep)/i.test(stateLower);
@@ -324,8 +332,17 @@ export class JevClient {
       "connectionreset", "timeout", "timed out", "econnreset", "econnrefused",
       "etimedout", "socket hang up", "gateway timeout", "503 service unavailable",
       "tempo limite", "tempo limite esgotado", "conexão recusada", "conexao recusada",
-      "tiempo de espera agotado", "conexión rechazada", "conexion rechazada"
+      "tiempo de espera agotado", "conexión rechazada", "conexion rechazada",
+      "address already in use", "eaddrinuse", "port already in use", "port is already in use",
+      "porta já está em uso", "puerto ya está en uso"
     ];
+
+    // Precedence rule (.agents/rules/04): an explicit assertion/expectation mismatch always
+    // outranks dependency or transient words in the same log. A bare exception name is logic
+    // evidence only when no concrete env/flaky root cause is present.
+    const hasEnvSignal = envMissingTriggers.some((k) => stateLower.includes(k));
+    const hasFlakySignal = flakyTriggers.some((k) => stateLower.includes(k));
+    const isExplicitAssertion = realAssertion || (bareException && !(hasEnvSignal || hasFlakySignal));
     const syntaxTriggers = [
       "syntaxerror", "indentationerror", "expected ';'", "ts1005", "missing bracket",
       "erro de sintaxe", "sintaxe inválida", "indentação inesperada",
@@ -337,7 +354,6 @@ export class JevClient {
       "mutex", "segmentation fault", "sigsegv", "addresssanitizer", "core dumped",
       "nullpointerexception", "nullreferenceexception", "arrayindexoutofboundsexception",
       "nil pointer dereference", "index out of bounds",
-      "valueerror", "runtimeerror", "typeerror", "keyerror", "indexerror", "attributeerror", "zerodivisionerror",
       "falha de asserção", "asserção", "erro de lógica", "fallo de aserción", "error de lógica", "expect("
     ];
     const singleWordMech = new Set([
@@ -467,7 +483,7 @@ export class JevClient {
               bestChoice = Object.keys(q.criteria)[0];
             }
           }
-        } else if (qid === "sureforge_phase" || ("execute" in q.criteria && "verify" in q.criteria)) {
+        } else if (qid === "workflow_phase" || ("execute" in q.criteria && "verify" in q.criteria)) {
           const isWaitingQ = stateLower.includes("?") || [
             "waiting on user", "need permission", "please clarify", "which option",
             "would you like me to", "do you want me to", "aguardando usuário",
@@ -615,7 +631,7 @@ export class JevClient {
           }
         }
 
-        // CommandCode Jev Nudge + SureForge continuation heuristics
+        // CommandCode Jev Nudge continuation heuristics
         const isWaitingOnUser = stateLower.includes("?") || [
           "waiting on user", "need permission", "please clarify", "which option",
           "would you like me to", "do you want me to", "aguardando usuário",

@@ -21,6 +21,18 @@ from typing import Any, Dict, List, Optional
 
 _IN_PROCESS_LOCK = threading.RLock()
 
+# Heuristic savings model. These are documented planning assumptions, NOT measured
+# token counts: they translate intercepted failures into an estimated ROI. The CLI
+# and MCP surfaces label every derived number as a heuristic estimate.
+ASSUMED_TOKENS_PER_TRIAGE_SKIP = 26200
+ASSUMED_COST_PER_TRIAGE_SKIP_USD = 0.31
+ASSUMED_TOKENS_PER_ABORT = 80000
+ASSUMED_COST_PER_ABORT_USD = 1.20
+ASSUMED_TOKENS_PER_DETERMINISTIC_ROUTE = 5000
+ASSUMED_COST_PER_DETERMINISTIC_ROUTE_USD = 0.05
+ASSUMED_TOKENS_PER_EFFORT_DOWNGRADE = 7000
+ASSUMED_COST_PER_EFFORT_DOWNGRADE_USD = 0.21
+
 
 @dataclass
 class AttemptRecord:
@@ -172,10 +184,8 @@ def record_triage_event(skip_llm: bool, category: str) -> None:
         session.total_triage_calls += 1
         if skip_llm:
             session.skipped_llm_calls += 1
-            tokens = 26200
-            cost = 0.31
-            session.estimated_tokens_saved += tokens
-            session.estimated_cost_saved_usd += cost
+            session.estimated_tokens_saved += ASSUMED_TOKENS_PER_TRIAGE_SKIP
+            session.estimated_cost_saved_usd += ASSUMED_COST_PER_TRIAGE_SKIP_USD
     update_session(_mod)
 
 
@@ -183,10 +193,8 @@ def record_abort_event(triggered: bool) -> None:
     def _mod(session: SessionState) -> None:
         if triggered:
             session.abort_guards_triggered += 1
-            tokens = 80000
-            cost = 1.20
-            session.estimated_tokens_saved += tokens
-            session.estimated_cost_saved_usd += cost
+            session.estimated_tokens_saved += ASSUMED_TOKENS_PER_ABORT
+            session.estimated_cost_saved_usd += ASSUMED_COST_PER_ABORT_USD
     update_session(_mod)
 
 
@@ -194,10 +202,8 @@ def record_route_event(selected_tier: str) -> None:
     if selected_tier == "deterministic":
         def _mod(session: SessionState) -> None:
             session.deterministic_routes += 1
-            tokens = 5000
-            cost = 0.05
-            session.estimated_tokens_saved += tokens
-            session.estimated_cost_saved_usd += cost
+            session.estimated_tokens_saved += ASSUMED_TOKENS_PER_DETERMINISTIC_ROUTE
+            session.estimated_cost_saved_usd += ASSUMED_COST_PER_DETERMINISTIC_ROUTE_USD
         update_session(_mod)
 
 
@@ -205,11 +211,9 @@ def record_reasoning_effort_event(effort: str, provider: str = "openai") -> None
     def _mod(session: SessionState) -> None:
         session.effort_modulations += 1
         if effort == "low":
-            # Turning high reasoning to low saves ~7,000 reasoning tokens per turn
-            tokens = 7000
-            cost = 0.21
-            session.estimated_tokens_saved += tokens
-            session.estimated_cost_saved_usd += cost
+            # Downgrading heavy reasoning to low is modeled as one avoided reasoning burst.
+            session.estimated_tokens_saved += ASSUMED_TOKENS_PER_EFFORT_DOWNGRADE
+            session.estimated_cost_saved_usd += ASSUMED_COST_PER_EFFORT_DOWNGRADE_USD
     update_session(_mod)
 
 
@@ -271,8 +275,8 @@ def record_triage_step(skip_llm: bool, category: str, error_snippet: str = "", a
         session.total_triage_calls += 1
         if skip_llm:
             session.skipped_llm_calls += 1
-            session.estimated_tokens_saved += 26200
-            session.estimated_cost_saved_usd += 0.31
+            session.estimated_tokens_saved += ASSUMED_TOKENS_PER_TRIAGE_SKIP
+            session.estimated_cost_saved_usd += ASSUMED_COST_PER_TRIAGE_SKIP_USD
         session.history.append(
             AttemptRecord(
                 timestamp=time.time(),
@@ -292,8 +296,8 @@ def record_abort_step(should_abort: bool, proposed_step: str, action: str = "") 
     def _mod(session: SessionState) -> None:
         if should_abort:
             session.abort_guards_triggered += 1
-            session.estimated_tokens_saved += 80000
-            session.estimated_cost_saved_usd += 1.20
+            session.estimated_tokens_saved += ASSUMED_TOKENS_PER_ABORT
+            session.estimated_cost_saved_usd += ASSUMED_COST_PER_ABORT_USD
         session.history.append(
             AttemptRecord(
                 timestamp=time.time(),

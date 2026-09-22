@@ -124,7 +124,9 @@ pub async fn triage_test_failure(
     let sev_score = sev_ans.map(|a| a.score as f64).unwrap_or(3.0);
     let skip_prob = skip_ans.map(|a| a.noul).unwrap_or(0.0);
     let skip_llm = category != "deep_logic"
-        && (skip_prob >= 0.65 || category == "env_missing" || category == "flaky_transient");
+        && (skip_prob >= crate::config::load_repo_config().skip_llm_threshold
+            || category == "env_missing"
+            || category == "flaky_transient");
 
     let rec = match category.as_str() {
         "env_missing" => "AUTO-ACTION: Install missing dependency or check environment configuration (Do NOT call LLM).",
@@ -224,7 +226,9 @@ pub async fn should_abort_trajectory(
         .unwrap_or_else(|| "proceed".to_string());
     let viability = viability_ans.map(|a| a.score as f64).unwrap_or(3.0);
 
-    let should_abort = dead_end_prob >= 0.70 || action == "abort_and_ask" || viability <= 1.5;
+    let should_abort = dead_end_prob >= crate::config::load_repo_config().abort_threshold
+        || action == "abort_and_ask"
+        || viability <= 1.5;
     let effective_action = if should_abort && action == "proceed" {
         "abort_and_ask".to_string()
     } else {
@@ -811,7 +815,7 @@ pub async fn should_nudge_continuation(
 
     let mut questions = HashMap::new();
     questions.insert(
-        "sureforge_phase".to_string(),
+        "workflow_phase".to_string(),
         Question::Choice(ChoiceQuestion {
             instructions: "Identify the active workflow phase based on the agent's recent transcript.".to_string(),
             criteria: phase_criteria,
@@ -842,7 +846,7 @@ pub async fn should_nudge_continuation(
 
     let mut phase = resp
         .answers
-        .get("sureforge_phase")
+        .get("workflow_phase")
         .and_then(|a| a.as_choice())
         .map(|a| a.choice.clone())
         .unwrap_or_else(|| "complete".to_string());
@@ -935,7 +939,7 @@ pub async fn should_nudge_continuation(
         nudge_probability: nudge_prob,
         waiting_probability: waiting_prob,
         progress_probability: progress_prob,
-        sureforge_phase: phase,
+        workflow_phase: phase,
         suggested_nudge_prompt,
         rationale,
         is_mock: resp.is_mock,

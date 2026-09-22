@@ -11,8 +11,15 @@ on:
         required: true
 
 jobs:
+  # Inviolable publication gate: the full CI matrix (Linux/macOS/Windows, Python
+  # 3.9-3.13, Node 18-22, Rust) must be green before anything is published.
+  ci-gate:
+    name: Full CI Gate (all OS & runtimes)
+    uses: ./.github/workflows/ci.yml
+
   test-and-validate:
     name: Run Full Test Suite
+    needs: ci-gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -42,7 +49,7 @@ jobs:
 
   publish-pypi:
     name: Publish to PyPI
-    needs: test-and-validate
+    needs: [ci-gate, test-and-validate]
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -63,7 +70,7 @@ jobs:
 
   publish-npm:
     name: Publish to npm
-    needs: test-and-validate
+    needs: [ci-gate, test-and-validate]
     runs-on: ubuntu-latest
     environment: github-actions-release
     permissions:
@@ -90,7 +97,7 @@ jobs:
 
   publish-crates:
     name: Publish to Crates.io
-    needs: test-and-validate
+    needs: [ci-gate, test-and-validate]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
