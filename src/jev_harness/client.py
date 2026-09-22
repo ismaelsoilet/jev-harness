@@ -26,7 +26,7 @@ OPENROUTER_API_URL = "https://openrouter.ai/api/alpha/decisions"
 OPENROUTER_CHAT_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 VERCEL_API_URL = "https://ai-gateway.vercel.sh/v1/evaluate"
 DEFAULT_MODEL = "jev-latest"
-DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.1.10; +https://github.com/ismaelsoilet/jev-harness)"
+DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.1.11; +https://github.com/ismaelsoilet/jev-harness)"
 
 
 def _urlopen_with_ipv4_fallback(req: urllib.request.Request, timeout: float):
@@ -425,7 +425,11 @@ class JevClient:
                 content = data["choices"][0]["message"]["content"]
                 parsed_json = json.loads(content)
                 return self._parse_response(parsed_json, model, is_mock=False)
-        except Exception:
+        except Exception as e:
+            sys.stderr.write(
+                f"[JEV WARNING] OpenRouter-compatible endpoint failed ({type(e).__name__}); "
+                "falling back to offline simulation.\n"
+            )
             return self._simulate_system_one(state_str, questions, model)
 
     def _parse_response(self, data: Dict[str, Any], model: str, is_mock: bool) -> JevResponse:
@@ -494,10 +498,13 @@ class JevClient:
         # dependency/transient root cause is never masked by a generic "RuntimeError:" line.
         real_assertion = any(
             re.search(
-                r"(?:assertionerror|assertionfailed|assertionfailederror|assert\b|assert_eq!|assertthat|expect\(.*?\)\.to|expected:.*received:|failures?:|fail(?:ed)?\s+test|^fail(?:ed)?\b|falha de asserção|fallo de aserción|opentest4j)",
+                r"(?:assertionerror|assertionfailed|assertionfailederror|assert\b|assert_eq!|assertthat|expect\(.*?\)\.to|expected:.*received:|failures?:|fail(?:ed)?\s+test|^fail(?:ed)?(?!\s+to\b)\b|falha de asserção|fallo de aserción|opentest4j)",
                 line.strip(),
             )
             for line in state_lower.splitlines()
+        ) or bool(
+            # Cross-line Expectation/Reality pairs (rules/04 precedence) remain explicit assertions.
+            re.search(r"expected:[\s\S]{0,300}?received:", state_lower)
         )
         bare_exception = any(
             re.search(
@@ -532,7 +539,7 @@ class JevClient:
         flaky_triggers = [
             "connectionreset", "timeout", "timed out", "econnreset", "econnrefused",
             "etimedout", "socket hang up", "gateway timeout", "503 service unavailable",
-            "address already in use", "eaddrinuse", "port already in use", "port is already in use",
+            "already in use", "address already in use", "eaddrinuse", "port already in use", "port is already in use",
             "tempo limite", "tempo limite esgotado", "conexão recusada", "conexao recusada",
             "tiempo de espera agotado", "conexión rechazada", "conexion rechazada",
             "porta já está em uso", "puerto ya está en uso"

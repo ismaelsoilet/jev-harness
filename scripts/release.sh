@@ -200,6 +200,22 @@ verify_sync() {
     fi
     echo "✅ Manifest parity 100% synchronized: v${py_ver}"
 
+    # Source-level version literals (user agents and MCP server banner) must not drift
+    local py_ua ts_ua ts_mcp_ver
+    py_ua="$(grep -oE 'JevHarness/[0-9]+\.[0-9]+\.[0-9]+' "${REPO_ROOT}/src/jev_harness/client.py" | head -1 | cut -d/ -f2)"
+    ts_ua="$(grep -oE 'JevHarness/[0-9]+\.[0-9]+\.[0-9]+' "${REPO_ROOT}/packages/ts/src/client.ts" | head -1 | cut -d/ -f2)"
+    ts_mcp_ver="$(grep -oE 'SERVER_VERSION = \"[0-9]+\.[0-9]+\.[0-9]+\"' "${REPO_ROOT}/packages/ts/src/mcp.ts" | head -1 | cut -d\" -f2)"
+    echo "Source version literals:"
+    echo "  - Python user agent:             ${py_ua}"
+    echo "  - TypeScript user agent:         ${ts_ua}"
+    echo "  - TypeScript MCP SERVER_VERSION: ${ts_mcp_ver}"
+    if [[ "${py_ua}" != "${py_ver}" || "${ts_ua}" != "${py_ver}" || "${ts_mcp_ver}" != "${py_ver}" ]]; then
+        echo ""
+        echo "❌ FATAL: source-level version literals are out of sync with v${py_ver}!"
+        exit 1
+    fi
+    echo "✅ Source version literals synchronized."
+
     # Build check
     echo ""
     echo "Checking TypeScript build..."

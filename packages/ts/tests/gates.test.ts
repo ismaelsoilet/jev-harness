@@ -537,6 +537,46 @@ describe("Jev Harness (TypeScript) v0.1.11 regressions", () => {
     }
   });
 
+  test("cross-line Expected/Received without expect() is deep_logic", async () => {
+    const log =
+      "FAIL src/plugin.test.ts\n" +
+      '  Expected: "READY"\n' +
+      '  Received: "ModuleNotFoundError: No module named \'foo\'"';
+    const res = await triageTestFailure(log, client);
+    assert.equal(res.category, "deep_logic", "rules/04 precedence must hold cross-line");
+    assert.equal(res.skipLlm, false);
+  });
+
+  test("fail word boundary parity: 'failing'/'failsafe' are not assertion lines", async () => {
+    const env = await triageTestFailure(
+      "failing tests:\nModuleNotFoundError: No module named 'torch'",
+      client
+    );
+    assert.equal(env.category, "env_missing");
+    assert.equal(env.skipLlm, true);
+
+    const colon = await triageTestFailure("Failed: to compile", client);
+    assert.equal(colon.category, "deep_logic");
+    assert.equal(colon.skipLlm, false);
+  });
+
+  test("port-number sentence is classified as flaky_transient", async () => {
+    const res = await triageTestFailure("Error: Port 8080 is already in use", client);
+    assert.equal(res.category, "flaky_transient");
+    assert.equal(res.skipLlm, true);
+  });
+
+  test("prose 'failed to' and 'expected ... received' do not mask flaky root causes", async () => {
+    for (const log of [
+      "Failed to start server: Port 8080 is already in use",
+      "requests.exceptions.Timeout: expected response not received within 30s",
+    ]) {
+      const res = await triageTestFailure(log, client);
+      assert.equal(res.category, "flaky_transient", `masked flaky root cause for: ${log}`);
+      assert.equal(res.skipLlm, true);
+    }
+  });
+
   test("nudge gate exposes the canonical workflow_phase contract", async () => {
     const res = await shouldNudgeContinuation(
       "Assistant: Edited src/auth.py. Now I need to run pytest to verify.",

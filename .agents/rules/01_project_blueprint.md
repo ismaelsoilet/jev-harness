@@ -70,7 +70,7 @@ jev-harness/
 │       └── deepseek_qwen_recipe.py   # Receita para DeepSeek e Alibaba Qwen
 ├── packages/
 │   ├── rust/                         # Crate oficial e CLI nativa em Rust (`jev` e `jev-harness`)
-│   │   ├── Cargo.toml                # Manifesto do pacote Rust (v0.1.6)
+│   │   ├── Cargo.toml                # Manifesto do pacote Rust
 │   │   ├── Cargo.lock
 │   │   ├── README.md                 # Documentação oficial do crate no docs.rs e crates.io
 │   │   ├── src/
@@ -79,12 +79,13 @@ jev-harness/
 │   │   │   │   └── jev_harness.rs    # Binário CLI alias `jev-harness`
 │   │   │   ├── cli.rs                # Parser CLI standalone em Rust
 │   │   │   ├── client.rs             # Cliente HTTP Tokio e simulação heurística local
+│   │   │   ├── config.rs             # Carregador do .jev.json (modelo, thresholds e cache)
 │   │   │   ├── gates.rs              # Implementação de todos os gates semânticos
 │   │   │   ├── lib.rs                # Ponto de exportação público da biblioteca Rust
 │   │   │   ├── mcp.rs                # Servidor MCP stdio nativo em Rust
 │   │   │   └── types.rs              # Tipos estruturados e respostas tipadas
 │   │   └── tests/
-│   │       └── gates_test.rs         # 34 testes automatizados (100% pass)
+│   │       └── gates_test.rs         # 47 testes automatizados (100% pass)
 │   └── ts/                           # Pacote oficial npm (`@ismaelsoilet/jev-harness`)
 │       ├── package.json              # Manifesto do pacote npm
 │       ├── package-lock.json
@@ -95,22 +96,25 @@ jev-harness/
 │       ├── src/
 │       │   ├── cli.ts                # Parser CLI em TypeScript
 │       │   ├── client.ts             # Cliente fetch nativo e simulação heurística
+│       │   ├── config.ts             # Carregador do .jev.json (modelo, thresholds e cache)
 │       │   ├── gates.ts              # Implementação dos gates semânticos
 │       │   ├── index.ts              # Exportações do pacote
 │       │   ├── mcp.ts                # Servidor MCP stdio nativo em TypeScript
 │       │   └── types.ts              # Interfaces TypeScript tipadas
 │       └── tests/
-│           └── gates.test.ts         # 29 testes automatizados (100% pass)
+│           └── gates.test.ts         # 43 testes automatizados (100% pass)
 ├── src/
 │   └── jev_harness/                  # Pacote oficial Python (`pip install jev-harness`)
 │       ├── __init__.py               # Metadados e exports públicos
 │       ├── cli.py                    # CLI em Python com argparse
 │       ├── client.py                 # Cliente urllib (zero dependências) e simulação
+│       ├── config.py                 # Carregador do .jev.json (modelo, thresholds e cache)
 │       ├── gates.py                  # Gates semânticos (triage, abort, route, verify, reasoning-effort, nudge)
 │       ├── mcp_server.py             # Servidor MCP stdio universal (`jev-mcp`)
 │       └── session.py                # Telemetria, persistência de sessão e lock de concorrência
-├── tests/                            # Bateria de testes Python (86 testes, 100% pass)
+├── tests/                            # Bateria de testes Python (107 testes, 100% pass)
 │   ├── test_adversarial.py           # Testes adversariais, concorrência, negação, emojis UTF-8
+│   ├── test_config.py                # Testes do .jev.json (modelo, thresholds, clamp, corrompido)
 │   ├── test_cli.py                   # Testes de argumentos CLI e códigos de saída
 │   ├── test_client.py                # Testes de cliente e perguntas tipadas
 │   ├── test_gates.py                 # Testes unitários dos gates semânticos
@@ -121,7 +125,7 @@ jev-harness/
 ├── AGENTS.md                         # Ponto de entrada obrigatório para agentes de IA
 ├── LICENSE                           # Licença MIT
 └── scripts/
-    └── release.sh                    # Script mestre de release, check (184 testes) e sync
+    └── release.sh                    # Script mestre de release, check (197 testes) e sync
 ```
 
 ---

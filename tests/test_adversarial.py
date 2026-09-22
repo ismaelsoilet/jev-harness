@@ -218,6 +218,52 @@ Calculation returned 42, expected 100
         self.assertEqual(res.category, "deep_logic")
         self.assertFalse(res.skip_llm)
 
+    def test_adversarial_cross_line_expected_received_is_deep_logic(self):
+        """rules/04 canonical snippet WITHOUT the `expect(...)` helper line: the cross-line
+        Expected/Received pair must still outrank the module name it contains."""
+        log = (
+            "FAIL src/plugin.test.ts\n"
+            '  Expected: "READY"\n'
+            "  Received: \"ModuleNotFoundError: No module named 'foo'\""
+        )
+        res = triage_test_failure(log, client=self.client)
+        self.assertEqual(res.category, "deep_logic")
+        self.assertFalse(res.skip_llm)
+
+    def test_adversarial_fail_word_boundary_parity(self):
+        """`failing`/`failsafe` must NOT count as assertion lines; `Failed: to compile` must."""
+        env = triage_test_failure(
+            "failing tests:\nModuleNotFoundError: No module named 'torch'", client=self.client
+        )
+        self.assertEqual(env.category, "env_missing")
+        self.assertTrue(env.skip_llm)
+
+        colon = triage_test_failure("Failed: to compile", client=self.client)
+        self.assertEqual(colon.category, "deep_logic")
+        self.assertFalse(colon.skip_llm)
+
+    def test_adversarial_port_number_sentence_is_flaky(self):
+        res = triage_test_failure("Error: Port 8080 is already in use", client=self.client)
+        self.assertEqual(res.category, "flaky_transient")
+        self.assertTrue(res.skip_llm)
+
+    def test_adversarial_failed_to_prose_does_not_mask_flaky_root_cause(self):
+        res = triage_test_failure(
+            "Failed to start server: Port 8080 is already in use", client=self.client
+        )
+        self.assertEqual(res.category, "flaky_transient")
+        self.assertTrue(res.skip_llm)
+
+    def test_adversarial_expected_received_prose_is_not_an_assertion(self):
+        # Guards the bounded cross-line detector: it must require colons so ordinary prose
+        # ("expected response not received") cannot suppress a transient classification.
+        res = triage_test_failure(
+            "requests.exceptions.Timeout: expected response not received within 30s",
+            client=self.client,
+        )
+        self.assertEqual(res.category, "flaky_transient")
+        self.assertTrue(res.skip_llm)
+
     def test_auth_failure_falls_back_to_simulation_on_any_provider(self):
         from unittest.mock import patch
         import io

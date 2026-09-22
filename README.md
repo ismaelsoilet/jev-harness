@@ -739,7 +739,8 @@ You can also trigger releases via GitHub Actions:
 - 🧩 **Contract parity**: Standardized `workflow_phase` (`research`, `ask`, `plan`, `execute`, `verify`, `complete`) across CLI, SDK, and MCP outputs for `nudge-gate`.
 - 🚦 **Release gate hardened**: `release.yml` now requires the full CI matrix (Linux/macOS/Windows, Python 3.9-3.13, Node 18-22, Rust) through a reusable workflow gate before publishing to PyPI, npm or crates.io — a red CI can no longer ship a release.
 - 🧹 **Zero clippy warnings** across the Rust workspace.
-- 🧪 **184-Test Battery**: 100% pass rate across 184 tests (102 Python, 43 Rust, 39 TypeScript).
+- 🧩 **Tri-runtime heuristic parity**: the TypeScript engine now scores an explicit assertion exactly like Python and Rust, so the rules/04 precedence snippet (`FAIL` + cross-line `Expected:`/`Received:` containing a module name) is `deep_logic`/`skip_llm=false` on every runtime. Assertions spanning multiple lines are detected, and `Port 8080 is already in use`-style messages are `flaky_transient`.
+- 🧪 **197-Test Battery**: 100% pass rate across 197 tests (107 Python, 47 Rust, 43 TypeScript).
 
 ## 🌟 What's New in v0.1.10
 

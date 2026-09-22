@@ -1011,6 +1011,55 @@ async fn test_bare_exception_without_root_cause_stays_deep_logic() {
 }
 
 #[tokio::test]
+async fn test_cross_line_expected_received_is_deep_logic() {
+    let client = JevClient::with_mock();
+    let log = "FAIL src/plugin.test.ts\n  Expected: \"READY\"\n  Received: \"ModuleNotFoundError: No module named 'foo'\"";
+    let res = triage_test_failure(log, Some(&client)).await.unwrap();
+    assert_eq!(res.category, "deep_logic", "rules/04 precedence must hold cross-line");
+    assert!(!res.skip_llm);
+}
+
+#[tokio::test]
+async fn test_fail_word_boundary_parity() {
+    let client = JevClient::with_mock();
+    let env = triage_test_failure(
+        "failing tests:\nModuleNotFoundError: No module named 'torch'",
+        Some(&client),
+    )
+    .await
+    .unwrap();
+    assert_eq!(env.category, "env_missing");
+    assert!(env.skip_llm);
+
+    let colon = triage_test_failure("Failed: to compile", Some(&client)).await.unwrap();
+    assert_eq!(colon.category, "deep_logic");
+    assert!(!colon.skip_llm);
+}
+
+#[tokio::test]
+async fn test_port_number_sentence_is_flaky_transient() {
+    let client = JevClient::with_mock();
+    let res = triage_test_failure("Error: Port 8080 is already in use", Some(&client))
+        .await
+        .unwrap();
+    assert_eq!(res.category, "flaky_transient");
+    assert!(res.skip_llm);
+}
+
+#[tokio::test]
+async fn test_prose_failed_to_and_expected_received_do_not_mask_flaky_root_causes() {
+    let client = JevClient::with_mock();
+    for log in [
+        "Failed to start server: Port 8080 is already in use",
+        "requests.exceptions.Timeout: expected response not received within 30s",
+    ] {
+        let res = triage_test_failure(log, Some(&client)).await.unwrap();
+        assert_eq!(res.category, "flaky_transient", "masked flaky root cause for: {log}");
+        assert!(res.skip_llm);
+    }
+}
+
+#[tokio::test]
 async fn test_nudge_gate_exposes_workflow_phase_contract() {
     let client = JevClient::with_mock();
     let res = should_nudge_continuation(

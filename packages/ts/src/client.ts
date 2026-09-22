@@ -21,7 +21,7 @@ export const OPENCODE_API_URL = "https://opencode.ai/zen/v1/systemone";
 export const OPENROUTER_API_URL = "https://openrouter.ai/api/alpha/decisions";
 export const VERCEL_API_URL = "https://ai-gateway.vercel.sh/v1/evaluate";
 export const DEFAULT_MODEL = "jev-latest";
-export const DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.1.10; +https://github.com/ismaelsoilet/jev-harness)";
+export const DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.1.11; +https://github.com/ismaelsoilet/jev-harness)";
 
 export class JevClient {
   public apiKey?: string;
@@ -310,7 +310,10 @@ export class JevClient {
     const stateTokens = new Set(stateLower.match(/\w+/g) || []);
     const answers: Record<string, Answer> = {};
 
-    const realAssertion = /(?:assertionerror|assertionfailed|assertionfailederror|assert\b|assert_eq!|assertthat|expect\(.*?\)\.to|expected:.*received:|failures?:|fail(?:ed)?\s+test|^fail(?:ed)?\b|falha de asserção|fallo de aserción|opentest4j)/i.test(stateLower);
+    const realAssertion =
+      /(?:assertionerror|assertionfailed|assertionfailederror|assert\b|assert_eq!|assertthat|expect\(.*?\)\.to|expected:.*received:|failures?:|fail(?:ed)?\s+test|^fail(?:ed)?(?!\s+to\b)\b|falha de asserção|fallo de aserción|opentest4j)/i.test(stateLower) ||
+      // Cross-line Expectation/Reality pairs (rules/04 precedence) remain explicit assertions.
+      /expected:[\s\S]{0,300}?received:/i.test(stateLower);
     const bareException = /(?:^|\n)\s*(?:valueerror|runtimeerror|typeerror|keyerror|indexerror|zerodivisionerror|attributeerror|overflowerror|arithmeticerror|illegalargumentexception|illegalstateexception):/i.test(stateLower);
     const hasExplicitFailure = /(?:assertionerror|assertionfailed|assertionfailederror|failures?:\s*[1-9]|failed\b|falhou\b|\d+\s+failed\b|not\s+ok\b|segmentation\s+fault|sigsegv|panic\b|core\s+dumped)/i.test(stateLower);
     const hasHeavyKeywords = /(?:kernel|distributed|architecture|refactor|concurrency|deadlock|multi-file|consensus|supervision tree|arquitetura|distribuído|distribuída|distribuido|refatorar|refatoração|concorrência|concorrencia|consenso|múltiplos arquivos|condição de corrida|arquitectura|concurrencia|condición de carrera|múltiples archivos)/i.test(stateLower);
@@ -333,7 +336,7 @@ export class JevClient {
       "etimedout", "socket hang up", "gateway timeout", "503 service unavailable",
       "tempo limite", "tempo limite esgotado", "conexão recusada", "conexao recusada",
       "tiempo de espera agotado", "conexión rechazada", "conexion rechazada",
-      "address already in use", "eaddrinuse", "port already in use", "port is already in use",
+      "already in use", "address already in use", "eaddrinuse", "port already in use", "port is already in use",
       "porta já está em uso", "puerto ya está en uso"
     ];
 
@@ -385,11 +388,9 @@ export class JevClient {
 
           if (stateLower.includes(opt.toLowerCase())) matchScore += 3;
 
-          if (
-            opt === "deep_logic" &&
-            (hasDeadlockOrLoop || deepLogicTriggers.some((k) => stateLower.includes(k)))
-          ) {
-            matchScore += (isExplicitAssertion || hasDeadlockOrLoop) ? 18 : 8;
+          if (opt === "deep_logic") {
+            if (deepLogicTriggers.some((k) => stateLower.includes(k))) matchScore += 8;
+            if (isExplicitAssertion || hasDeadlockOrLoop) matchScore += 18;
           } else if (
             opt === "env_missing" &&
             envMissingTriggers.some((k) => stateLower.includes(k))

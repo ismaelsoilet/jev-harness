@@ -621,7 +621,8 @@ Quando em modo de simulação offline (`--mock` ou durante partições de rede),
 - 🧩 **Paridade de contrato**: Padronização da chave `workflow_phase` (`research`, `ask`, `plan`, `execute`, `verify`, `complete`) na CLI, SDK e ferramentas MCP do `nudge-gate`.
 - 🚦 **Gate de release endurecido**: o `release.yml` agora exige toda a matriz de CI (Linux/macOS/Windows, Python 3.9-3.13, Node 18-22, Rust) via workflow reutilizável antes de publicar no PyPI, npm ou crates.io — uma CI vermelha não consegue mais publicar uma release.
 - 🧹 **Zero avisos de clippy** em todo o workspace Rust.
-- 🧪 **Bateria de 184 Testes**: 100% de aprovação em 184 testes (102 Python, 43 Rust, 39 TypeScript).
+- 🧩 **Paridade heurística tri-runtime**: o motor TypeScript agora pontua uma asserção explícita exatamente como Python e Rust, então o snippet de precedência da regra 04 (`FAIL` + `Expected:`/`Received:` em linhas separadas contendo nome de módulo) é `deep_logic`/`skip_llm=false` em todos os runtimes. Asserções em múltiplas linhas são detectadas, e mensagens como `Port 8080 is already in use` são `flaky_transient`.
+- 🧪 **Bateria de 197 Testes**: 100% de aprovação em 197 testes (107 Python, 47 Rust, 43 TypeScript).
 
 ## 🌟 O que há de Novo na v0.1.10
 

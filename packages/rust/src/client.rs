@@ -23,7 +23,19 @@ pub const DEFAULT_USER_AGENT: &str = concat!(
 );
 
 static ASSERTION_REGEX: LazyLock<regex::Regex> = LazyLock::new(|| {
-    regex::Regex::new(r"(?i)(?:assertionerror|assertionfailed|assertionfailederror|assert\b|assert_eq!|assertthat|expect\(.*?\)\.to|expected:.*received:|failures?:|fail(?:ed)?\s+test|^fail(?:ed)?\b|falha de asserção|fallo de aserción|opentest4j)").expect("Invalid assertion regex")
+    regex::Regex::new(r"(?i)(?:assertionerror|assertionfailed|assertionfailederror|assert\b|assert_eq!|assertthat|expect\(.*?\)\.to|expected:.*received:|failures?:|fail(?:ed)?\s+test|falha de asserção|fallo de aserción|opentest4j)").expect("Invalid assertion regex")
+});
+
+static FAIL_LINE_REGEX: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"(?i)^fail(?:ed)?\b").expect("Invalid fail line regex")
+});
+
+static FAIL_TO_REGEX: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"(?i)^fail(?:ed)?\s+to\b").expect("Invalid fail-to regex")
+});
+
+static EXPECTED_RECEIVED_REGEX: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"(?is)expected:.{0,300}?received:").expect("Invalid expected/received regex")
 });
 
 static BARE_EXCEPTION_REGEX: LazyLock<regex::Regex> = LazyLock::new(|| {
@@ -513,7 +525,12 @@ impl JevClient {
             t.starts_with("panicked at")
                 || t.starts_with("panic:")
                 || ASSERTION_REGEX.is_match(t)
-        });
+                // Bare pytest/Jest `FAIL`/`FAILED` lines are assertions, but prose such as
+                // "Failed to start the server" is a transient/environment report. Two regexes
+                // mirror Python/TS `^fail(?:ed)?(?!\s+to\b)\b` exactly (the regex crate has no
+                // lookahead), so `failing tests:` / `failsafe mode` are not treated as assertions.
+                || (FAIL_LINE_REGEX.is_match(t) && !FAIL_TO_REGEX.is_match(t))
+        }) || EXPECTED_RECEIVED_REGEX.is_match(&state_lower);
         let bare_exception = state_lower
             .lines()
             .any(|line| BARE_EXCEPTION_REGEX.is_match(line.trim()));
@@ -599,6 +616,7 @@ impl JevClient {
             "tiempo de espera agotado",
             "conexión rechazada",
             "conexion rechazada",
+            "already in use",
             "address already in use",
             "eaddrinuse",
             "port already in use",
