@@ -1060,6 +1060,66 @@ async fn test_prose_failed_to_and_expected_received_do_not_mask_flaky_root_cause
 }
 
 #[tokio::test]
+async fn test_green_runs_short_circuit_to_no_failure() {
+    let client = JevClient::with_mock();
+    let green = [
+        ("cargo", "running 46 tests\ntest result: ok. 46 passed; 0 failed; 0 ignored"),
+        ("vitest", " Test Files  3 passed (3)\n      Tests  12 passed (12)"),
+        ("jest", "Test Suites: 3 passed, 3 total\nTests: 12 passed, 12 total"),
+        ("pytest", "5 passed in 0.42s"),
+        ("unittest", "Ran 2 tests in 0.001s\n\nOK"),
+        ("go", "ok  \tgithub.com/x/y\t0.123s"),
+        ("mocha", "  12 passing (35ms)"),
+        ("rspec", "12 examples, 0 failures"),
+        ("comma_passed", "1,024 passed in 3.2s"),
+    ];
+    for (runner, log) in green {
+        let res = triage_test_failure(log, Some(&client)).await.unwrap();
+        assert_eq!(res.category, "no_failure", "{runner} should be no_failure");
+        assert!(res.skip_llm, "{runner} must not escalate");
+    }
+}
+
+#[tokio::test]
+async fn test_failure_evidence_vetoes_success_short_circuit() {
+    let client = JevClient::with_mock();
+    let red = [
+        ("vitest", " Test Files  1 failed | 2 passed (3)\n      Tests  1 failed | 11 passed (12)"),
+        ("jest", "Test Suites: 1 failed, 2 passed\nTests: 1 failed, 11 passed"),
+        ("pytest", "FAILED tests/test_x.py::test_y - AssertionError: assert 42 == 41\n1 failed, 9 passed"),
+        ("cargo", "test result: FAILED. 45 passed; 1 failed; 0 ignored"),
+        ("unittest", "FAILED (failures=1)"),
+        ("go", "--- FAIL: TestX (0.00s)\nFAIL\tgithub.com/x/y\t0.123s"),
+        ("missing_dep", "ModuleNotFoundError: No module named 'x'\n5 passed in 0.4s"),
+        ("timeout_with_pass", "requests.exceptions.Timeout: timed out\n5 passed in 0.4s"),
+        ("mocha_failing", "10 passing (35ms)\n1 failing"),
+        ("uppercase_error", "Error: boom while running suite\n5 passed in 0.4s"),
+        ("socket_hangup", "5 passed in 0.4s\nError: socket hang up"),
+        ("go_midline_fail", "ok  \tpkg\t0.1s\n--- FAIL: TestX (0.00s)"),
+        ("vitest_glyph", "10 passed (10)\n× should fail"),
+        ("colon_failures", "BUILD SUCCESS\nTests run: 10, Failures: 1"),
+        ("singular_failure", "10 passed\n1 failure"),
+        ("empty_suite", "Tests: 0 passed, 0 total"),
+        ("econnreset", "5 passed\nError: read ECONNRESET"),
+        ("cargo_one_failed", "test result: ok. 46 passed; 1 failed"),
+        ("comma_thousand_failed", "1000 passed\n1,024 failed"),
+        ("comma_twelve_thousand", "12,345 failed"),
+        ("comma_failing", "1,000 failing"),
+        ("comma_errors", "1,000 errors"),
+        ("space_sep_count", "1000 passed\n1 000 failed"),
+        ("underscore_count", "1000 passed\n10_000 failed"),
+        ("assign_colon", "1000 passed\nfailed: 1"),
+        ("noun_form", "1000 passed\n1 test failed"),
+        ("fullwidth_digits", "1000 passed\n\u{ff11}\u{ff12}\u{ff13} failed"),
+        ("arabic_digits", "1000 passed\n\u{0661}\u{0662}\u{0663} failed"),
+    ];
+    for (runner, log) in red {
+        let res = triage_test_failure(log, Some(&client)).await.unwrap();
+        assert_ne!(res.category, "no_failure", "{runner} must never be no_failure");
+    }
+}
+
+#[tokio::test]
 async fn test_nudge_gate_exposes_workflow_phase_contract() {
     let client = JevClient::with_mock();
     let res = should_nudge_continuation(

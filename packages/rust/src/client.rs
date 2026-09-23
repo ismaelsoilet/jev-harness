@@ -26,6 +26,100 @@ static ASSERTION_REGEX: LazyLock<regex::Regex> = LazyLock::new(|| {
     regex::Regex::new(r"(?i)(?:assertionerror|assertionfailed|assertionfailederror|assert\b|assert_eq!|assertthat|expect\(.*?\)\.to|expected:.*received:|failures?:|fail(?:ed)?\s+test|falha de asserção|fallo de aserción|opentest4j)").expect("Invalid assertion regex")
 });
 
+// Success summaries emitted by common runners when a suite is green, plus the failure
+// signals that veto the `no_failure` short-circuit ("0 failed" is not a veto).
+static SUCCESS_PATTERNS: LazyLock<Vec<regex::Regex>> = LazyLock::new(|| {
+    [
+        r"test result:\s*ok",
+        r"[1-9][\d,]*\s+passed\b",
+        r"[1-9]\d*\s+passing\b",
+        r"test suites?:\s*[1-9]\d*\s+passed",
+        r"[1-9]\d*\s+examples?,\s*0\s+failures",
+        r"all tests? passed",
+        r"\bbuild success(?:ful)?\b",
+        r"(?m)^\s*ok\s+\S+",
+    ]
+    .iter()
+    .map(|p| regex::Regex::new(p).expect("Invalid success pattern"))
+    .collect()
+});
+
+static FAILURE_COUNT_REGEX: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"[1-9\x{FF11}-\x{FF19}\x{0661}-\x{0669}\x{06F1}-\x{06F9}][\d,._\x{00A0} \x{FF10}-\x{FF19}\x{0660}-\x{0669}\x{06F0}-\x{06F9}]*\s*(?:failures|failure|failed|failing|errors?)\b")
+        .expect("count"));
+static FAILURE_NOUN_REGEX: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(
+        r"\b[1-9\x{FF11}-\x{FF19}\x{0661}-\x{0669}\x{06F1}-\x{06F9}][\d,._\x{00A0} \x{FF10}-\x{FF19}\x{0660}-\x{0669}\x{06F0}-\x{06F9}]*\s+tests?\s+failed\b",
+    )
+    .expect("noun")
+});
+
+static FAILURE_ASSIGN_REGEX: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"(?:failures?|errors?|failed|failing)\s*[:=]\s*[1-9]").expect("assign")
+});
+static FAILURE_MARKER_REGEX: LazyLock<regex::Regex> = LazyLock::new(|| {
+    // NOTE: `error:` must not be followed by \b — a colon before a space has no word boundary.
+    regex::Regex::new(r"\b(?:traceback|panic|panicked|assertionerror|assertion failed|not ok)\b|error\s*:")
+        .expect("marker")
+});
+static UPPER_FAILED_REGEX: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"\bFAILED\b").expect("FAILED"));
+static UPPER_FAIL_LINE_REGEX: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"(?m)^\s*FAIL\b|(?m)---\s*FAIL\b").expect("FAIL"));
+static RAN_TESTS_REGEX: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"ran\s+[1-9]\d*\s+tests?").expect("ran tests"));
+static BARE_OK_LINE_REGEX: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"(?m)^\s*ok\s*$").expect("ok line"));
+
+/// Returns true only when a log is unequivocally a *successful* run summary.
+///
+/// Strict by design: a positive success summary is required AND every failure signal
+/// (non-zero counts, FAIL/FAILED markers, tracebacks, panics, dependency or transient
+/// errors) must be absent, so a real failure can never be short-circuited.
+pub fn looks_like_test_success(log: &str) -> bool {
+    if log.trim().is_empty() {
+        return false;
+    }
+    let text = log.to_lowercase();
+
+    if FAILURE_COUNT_REGEX.is_match(&text)
+        || FAILURE_NOUN_REGEX.is_match(&text)
+        || FAILURE_ASSIGN_REGEX.is_match(&text)
+        || FAILURE_MARKER_REGEX.is_match(&text)
+        || UPPER_FAILED_REGEX.is_match(log)
+        || UPPER_FAIL_LINE_REGEX.is_match(log)
+    {
+        return false;
+    }
+    if ["✗", "❌", "✘", "✕", "×", "‼"].iter().any(|m| log.contains(m)) {
+        return false;
+    }
+    let unclean = [
+        "module not found",
+        "no module named",
+        "cannot find module",
+        "cannot find crate",
+        "command not found",
+        "connection refused",
+        "connection reset",
+        "econnrefused",
+        "econnreset",
+        "etimedout",
+        "socket hang up",
+        "address already in use",
+        "timed out",
+        "timeout",
+    ];
+    if unclean.iter().any(|s| text.contains(s)) {
+        return false;
+    }
+
+    if SUCCESS_PATTERNS.iter().any(|p| p.is_match(&text)) {
+        return true;
+    }
+    RAN_TESTS_REGEX.is_match(&text) && BARE_OK_LINE_REGEX.is_match(&text)
+}
+
 static FAIL_LINE_REGEX: LazyLock<regex::Regex> = LazyLock::new(|| {
     regex::Regex::new(r"(?i)^fail(?:ed)?\b").expect("Invalid fail line regex")
 });

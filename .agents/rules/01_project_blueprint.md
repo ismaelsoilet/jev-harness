@@ -1,6 +1,6 @@
 # 🏛️ Planta Arquitetural Completa: Jev Harness
 
-> **Documento Oficial de Engenharia — Versão do Projeto: v0.1.11**  
+> **Documento Oficial de Engenharia — Versão do Projeto: v0.1.12**  
 > *Obrigatório para todos os agentes autônomos e desenvolvedores que operam no repositório.*
 
 ---
@@ -85,7 +85,7 @@ jev-harness/
 │   │   │   ├── mcp.rs                # Servidor MCP stdio nativo em Rust
 │   │   │   └── types.rs              # Tipos estruturados e respostas tipadas
 │   │   └── tests/
-│   │       └── gates_test.rs         # 47 testes automatizados (100% pass)
+│   │       └── gates_test.rs         # 49 testes automatizados (100% pass)
 │   └── ts/                           # Pacote oficial npm (`@ismaelsoilet/jev-harness`)
 │       ├── package.json              # Manifesto do pacote npm
 │       ├── package-lock.json
@@ -102,7 +102,7 @@ jev-harness/
 │       │   ├── mcp.ts                # Servidor MCP stdio nativo em TypeScript
 │       │   └── types.ts              # Interfaces TypeScript tipadas
 │       └── tests/
-│           └── gates.test.ts         # 43 testes automatizados (100% pass)
+│           └── gates.test.ts         # 45 testes automatizados (100% pass)
 ├── src/
 │   └── jev_harness/                  # Pacote oficial Python (`pip install jev-harness`)
 │       ├── __init__.py               # Metadados e exports públicos
@@ -112,7 +112,7 @@ jev-harness/
 │       ├── gates.py                  # Gates semânticos (triage, abort, route, verify, reasoning-effort, nudge)
 │       ├── mcp_server.py             # Servidor MCP stdio universal (`jev-mcp`)
 │       └── session.py                # Telemetria, persistência de sessão e lock de concorrência
-├── tests/                            # Bateria de testes Python (107 testes, 100% pass)
+├── tests/                            # Bateria de testes Python (113 testes, 100% pass)
 │   ├── test_adversarial.py           # Testes adversariais, concorrência, negação, emojis UTF-8
 │   ├── test_config.py                # Testes do .jev.json (modelo, thresholds, clamp, corrompido)
 │   ├── test_cli.py                   # Testes de argumentos CLI e códigos de saída
@@ -125,7 +125,8 @@ jev-harness/
 ├── AGENTS.md                         # Ponto de entrada obrigatório para agentes de IA
 ├── LICENSE                           # Licença MIT
 └── scripts/
-    └── release.sh                    # Script mestre de release, check (197 testes) e sync
+    ├── jev_test_gate_hook.sh         # Wrapper do hook pre-commit (runner decide, Jev aconselha)
+    └── release.sh                    # Script mestre de release, check (207 testes) e sync
 ```
 
 ---

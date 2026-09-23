@@ -129,6 +129,10 @@ Jev Harness supports multiple backend providers and auto-detects credentials:
 | **Vercel AI Gateway** | `https://ai-gateway.vercel.sh/v1/evaluate` | $0.042 / 1M | `export AI_GATEWAY_API_KEY=your-key` |
 | **Autonomous Simulation** | Local Heuristics (< 500µs) | **$0.00** | Active by default if no key or offline |
 
+> **📅 Provider verification date: 2026-09-22.** Model IDs, free tiers and prices change weekly — agents and engineers should re-verify them (and record their own date) if more than 30 days have passed. Step-by-step key acquisition for every provider: **[Universal AI Agent Integration Guide](docs/AGENT_INTEGRATION_GUIDE.md#-provider-access--api-keys)**.
+>
+> **🔒 Privacy:** offline mode (`--mock`, or no credentials) makes **zero network calls**. Live mode transmits the typed questions and the raw failure log (head 2,000 + tail 4,000 characters) to the provider endpoint; secret redaction applies to error messages, not to the log payload. Use `--mock` for repositories with regulated or customer data.
+
 Credential resolution priority:
 1. Environment variables (`TYPESAFE_API_KEY`, `CMD_API_KEY`, `COMMAND_CODE_API_KEY`, `OPENCODE_API_KEY`, `OPENROUTER_API_KEY`, or `AI_GATEWAY_API_KEY`)
 2. Local repository `.jev.json`, `.env`, or `~/.commandcode/auth.json`
@@ -294,7 +298,7 @@ jev-harness init --cursor
 # Setup for Antigravity IDE
 jev-harness init --antigravity
 
-# Setup git pre-commit hook
+# Setup git pre-commit hook (detects npm/pytest/cargo; never overwrites an existing hook)
 jev-harness init --git
 
 # Setup all supported tools at once
@@ -585,7 +589,7 @@ Ultra-low latency (< 500µs local, zero-overhead) for systems programming, Tauri
 
 ```toml
 [dependencies]
-jev-harness = "0.1.11"
+jev-harness = "0.1.12"
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -632,18 +636,32 @@ jev reasoning-effort --context "git status" --target-provider deepseek --json
 ## 📦 Git & CI/CD Guardrails
 
 ### Pre-commit Hook (`.pre-commit-config.yaml`)
+The hook needs your test command as an argument (a hook repository cannot guess your runner):
+
 ```yaml
 repos:
   - repo: https://github.com/ismaelsoilet/jev-harness
-    rev: v0.1.11
+    rev: v0.1.12
     hooks:
       - id: jev-test-gate
+        args: ["pytest -q"]     # or "npm test", "cargo test --quiet", ...
+```
+
+### Generated Git Hook (`jev-harness init --git`)
+Detects your runner (`npm`/`pytest`/`cargo`), writes a failure-only hook and never overwrites an existing one (it saves `pre-commit.jev` instead):
+
+```bash
+jev-harness init --git
 ```
 
 ### Husky Hook (`.husky/pre-commit`)
+Let the runner decide; ask Jev only for the triage of a failure:
+
 ```bash
-npm test 2>&1 | jev-harness test-gate || exit 1
+if ! OUT=$(npm test 2>&1); then printf '%s\n' "$OUT" | jev-harness test-gate; exit 1; fi
 ```
+
+> Green runs are detected deterministically (`category: "no_failure"`, exit `0`, zero API calls), so `npm test 2>&1 | jev-harness test-gate` is also safe — but the failure-only form above is the most explicit and never depends on run-summary parsing.
 
 ---
 
@@ -728,6 +746,14 @@ You can also trigger releases via GitHub Actions:
 
 *(Requires `PYPI_API_TOKEN` and `CARGO_REGISTRY_TOKEN` in GitHub Repository Secrets; npm uses OpenID Connect (OIDC) Trusted Publishing with cryptographic Sigstore provenance without static tokens).*
 
+## 🌟 What's New in v0.1.12
+
+- ✅ **Green runs never block or escalate**: a strict, deterministic success detector recognizes passing summaries from pytest, vitest, jest, cargo, go, mocha, rspec and unittest, returning `category: "no_failure"` with exit `0` and **zero API calls**. Real failures always veto the shortcut (`1 failed`, `FAILED`, tracebacks, panics, dependency/transient errors). This fixes false failures in pre-commit/husky recipes for JS and Rust projects.
+- 🪝 **Working pre-commit integration**: `jev-test-gate` now takes your test command as `args` (the runner decides, Jev advises) through a console entry point that works from any consumer directory (a shell wrapper remains available for non-pre-commit users), and `jev-harness init --git` generates a runner-aware hook (npm/pytest/cargo) that uses `python3`, never overwrites an existing hook, and records the detected command.
+- 🔐 **State files hardened**: `~/.config/jev` is created `0700` and `session.json` / the lock file are written `0600` (POSIX), so error snippets are no longer world-readable.
+- 📖 **Documentation**: provider access and API-key acquisition for every backend (TypeSafe console, OpenCode Zen, Command Code, OpenRouter alpha, Vercel AI Gateway) with a **verification date** and re-check instructions for agents, plus an explicit privacy matrix (what leaves the machine in live vs offline mode).
+- 🧪 **207-Test Battery**: 100% pass rate across 207 tests (113 Python, 49 Rust, 45 TypeScript).
+
 ## 🌟 What's New in v0.1.11
 
 - 🐛 **Fixed a v0.1.10 classification regression**: a bare `RuntimeError:` / `ValueError:` / `TypeError:` line no longer masks a concrete dependency or transient root cause. Logs such as `RuntimeError: ... Caused by: ModuleNotFoundError` and `RuntimeError: ... Timeout` are triaged as `env_missing` / `flaky_transient` again (`skip_llm=true`), while real logic exceptions without an env/flaky root cause still escalate as `deep_logic`.
@@ -740,7 +766,7 @@ You can also trigger releases via GitHub Actions:
 - 🚦 **Release gate hardened**: `release.yml` now requires the full CI matrix (Linux/macOS/Windows, Python 3.9-3.13, Node 18-22, Rust) through a reusable workflow gate before publishing to PyPI, npm or crates.io — a red CI can no longer ship a release.
 - 🧹 **Zero clippy warnings** across the Rust workspace.
 - 🧩 **Tri-runtime heuristic parity**: the TypeScript engine now scores an explicit assertion exactly like Python and Rust, so the rules/04 precedence snippet (`FAIL` + cross-line `Expected:`/`Received:` containing a module name) is `deep_logic`/`skip_llm=false` on every runtime. Assertions spanning multiple lines are detected, and `Port 8080 is already in use`-style messages are `flaky_transient`.
-- 🧪 **197-Test Battery**: 100% pass rate across 197 tests (107 Python, 47 Rust, 43 TypeScript).
+- 🧪 **197-Test Battery**: 100% pass rate across 197 tests (107 Python, 47 Rust, 43 TypeScript) at v0.1.11; superseded by the 207-test battery in v0.1.12.
 
 ## 🌟 What's New in v0.1.10
 

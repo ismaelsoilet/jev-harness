@@ -13,7 +13,7 @@ pub mod gates;
 pub mod mcp;
 pub mod types;
 
-pub use client::{JevClient, COMMANDCODE_API_URL};
+pub use client::{looks_like_test_success, JevClient, COMMANDCODE_API_URL};
 pub use config::{
     load_repo_config, load_repo_config_from, RepoConfig, DEFAULT_ABORT_THRESHOLD,
     DEFAULT_SKIP_LLM_THRESHOLD,

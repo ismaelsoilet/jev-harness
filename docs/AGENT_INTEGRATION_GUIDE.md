@@ -19,6 +19,45 @@ Autonomous AI coding agents burn **70% to 80% of their token budget and executio
 - **Zero external runtime dependencies** across Python (pure stdlib), TypeScript (zero dependencies), and Rust (Tokio/Serde).
 - **Instant offline simulation fallback**: runs locally even without an API key or internet connection.
 
+> **📅 Document validity: verified on 2026-09-22.**
+> Model IDs, endpoints, free tiers and prices change weekly. **If you are an AI agent reading this and more than 30 days have passed since 2026-09-22, re-verify every model ID, endpoint and price against the provider links in [Provider Access & API Keys](#-provider-access--api-keys) before relying on them, and record the date of your own verification in the project documentation.** Offline `--mock` mode needs no verification and no key.
+
+---
+
+## 🔑 Provider Access & API Keys
+
+`jev-harness` works in two ways: **offline** (deterministic local engine, no key, no network) and **live** (a typed System One decision over HTTPS). Pick a provider, obtain a key, export the variable, verify with `jev-harness status`.
+
+| Provider | How to obtain access | Environment | Endpoint | Cost |
+| :--- | :--- | :--- | :--- | :--- |
+| **Offline simulation (default)** | Nothing to do — active whenever no credentials are configured | — | none (fully local) | **Free** |
+| **OpenCode Zen (free tier)** | Sign in at <https://opencode.ai/auth>, add billing details, copy your API key. Free model: `jev-1.13-free` (limited-time) | `JEV_PROVIDER=opencode` + `OPENCODE_API_KEY=<key>` | `https://opencode.ai/zen/v1/systemone` | `jev-1.13-free` free; `jev-1.13` $0.042/1M input, output free |
+| **TypeSafe AI (direct)** | Create an account at <https://console.typesafe.ai/> and generate an API key. Docs: <https://docs.typesafe.ai/> (agents can fetch <https://docs.typesafe.ai/llms.txt>) | `TYPESAFE_API_KEY=<key>` | `https://api.typesafe.ai/v1/systemone` | $42 per billion input tokens ($0.042/1M); output free |
+| **Command Code** | Sign up at <https://commandcode.ai/signup>, then `npm i -g command-code && cmd login` (stores the key in `~/.commandcode/auth.json`) | `CMD_API_KEY=<key>` | `https://api.commandcode.ai/provider/v1/systemone` | Free tier for solo developers; paid plans from $1/month |
+| **OpenRouter (alpha)** | Requires approved alpha access. ⚠️ `typesafe/jev-1.13` is **not** in the public OpenRouter catalogue and the endpoint returns `401` without alpha credentials | `OPENROUTER_API_KEY=<key>` | `https://openrouter.ai/api/alpha/decisions` | $0.042/1M when available |
+| **Vercel AI Gateway** | Gateway credentials from your Vercel account | `AI_GATEWAY_API_KEY=<key>` | `https://ai-gateway.vercel.sh/v1/evaluate` | Depends on the gateway |
+
+**Credential resolution order:** environment variables → repository `.jev.json` / `.env` → global `~/.config/jev/credentials.env` → `~/.commandcode/auth.json` → offline simulation.
+
+### Verify your access in 5 seconds
+
+```bash
+jev-harness status                                        # provider + LIVE/MOCK mode
+echo "ModuleNotFoundError: No module named 'x'" | jev-harness test-gate --json
+```
+
+`"is_mock": true` means the answer came from the local deterministic engine (no network). `"is_mock": false` means a live System One call was made — see **Privacy** below.
+
+### 🔒 Privacy: what leaves your machine
+
+| Mode | Network traffic | Data transmitted |
+| :--- | :--- | :--- |
+| Offline (`--mock`, or no credentials) | **None** | Nothing |
+| Live (any provider) | HTTPS to the provider endpoint | `model`, your typed `questions`, and the **raw failure log** (head 2,000 + tail 4,000 characters, ~6 KB max) |
+
+Live triage sends the log as the `state` field. Secret-looking strings are redacted from *error messages*, **not** from the log payload — if a token, password or customer record appears in your test output, it is transmitted.
+**Rule of thumb:** repository logs with regulated or customer data → run agents with `--mock` (fully local), or confirm the provider's data-retention policy first. The local telemetry file `~/.config/jev/session.json` stores short error snippets and is written with `0600` permissions.
+
 ---
 
 ## ⚡ Quickstart: 4 Universal Integration Modes
@@ -117,14 +156,15 @@ claude mcp add jev-harness -- jev-mcp
 
 If your agent executes commands via a terminal tool (e.g. bash, zsh, pwsh), wrap your test commands using Unix pipes:
 
+> **Correct pattern:** let the test runner decide whether the command fails, and ask Jev for a *triage* of the failure. Jev never blocks a green run: logs from a passing suite are detected deterministically and return `category: "no_failure"` with exit code `0` and **zero** API calls.
+
 ```bash
-# Python / Pytest
+# ✅ Recommended: the runner decides, Jev advises on failure
+if ! OUT=$(npm test 2>&1); then printf '%s\n' "$OUT" | jev-harness test-gate; exit 1; fi
+
+# ✅ Also valid: pipe everything (green runs short-circuit to no_failure, exit 0)
 pytest 2>&1 | jev-harness test-gate
-
-# Node.js / Jest / Vitest / npm
 npm test 2>&1 | npx @ismaelsoilet/jev-harness test-gate
-
-# Rust / Cargo
 cargo test 2>&1 | jev test-gate
 ```
 
@@ -214,20 +254,31 @@ if triage.skip_llm {
 
 Protect your repository automatically before commits or CI runs:
 
-**In `.pre-commit-config.yaml`:**
+**In `.pre-commit-config.yaml`** — the hook requires your test command as an argument, because a hook repository cannot know your runner:
+
 ```yaml
 repos:
   - repo: https://github.com/ismaelsoilet/jev-harness
-    rev: v0.1.6
+    rev: v0.1.12
     hooks:
       - id: jev-test-gate
+        args: ["pytest -q"]     # or "npm test", "cargo test --quiet", ...
+```
+
+**Generated git hook (Python CLI):**
+```bash
+jev-harness init --git   # detects npm/pytest/cargo, writes .git/hooks/pre-commit,
+                         # never overwrites an existing hook (saves pre-commit.jev instead)
 ```
 
 **In GitHub Actions (`.github/workflows/ci.yml`):**
 ```yaml
-- name: Run Tests with Jev Gate Guard
+- name: Run tests, triage the failure with Jev
   run: |
-    npm test 2>&1 | npx @ismaelsoilet/jev-harness test-gate
+    if ! OUT=$(npm test 2>&1); then
+      printf '%s\n' "$OUT" | npx @ismaelsoilet/jev-harness test-gate
+      exit 1
+    fi
 ```
 
 ---
@@ -255,6 +306,11 @@ To make your agent completely autonomous and token-frugal, inject these 3 operat
           (e.g. npm install / retry)                   to Frontier Model (System 2)
        ⚡ 0 Tokens Burned / Instant Fix              💸 Tokens Saved by ~80%
 ```
+
+> **Detector scope:** the success shortcut covers the summary formats emitted by pytest, vitest, jest, cargo, go, mocha, rspec and unittest — including comma/space/underscore separators and non-ASCII digit counts. It is a *shortcut, never a guarantee*: when in doubt it classifies as a failure. The failure-only recipes above keep the test runner's exit code authoritative, so the detector can never turn a red suite into a green commit.
+
+### Rule 0: Never Escalate a Green Run
+- `category: "no_failure"` (exit `0`) means the log is a *successful* run: do **not** call an LLM and do **not** treat it as a failure signal. The detector is strict: any real failure evidence (`1 failed`, `FAILED`, tracebacks, panics, dependency/transient errors) vetoes it.
 
 ### Rule 1: Zero-LLM Triage on Failures
 - **NEVER** forward raw tracebacks (>20 lines) directly to a frontier reasoning model.

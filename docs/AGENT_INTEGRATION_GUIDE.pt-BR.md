@@ -19,6 +19,45 @@ Agentes autônomos de codificação com IA desperdiçam de **70% a 80% do seu or
 - **Zero dependências externas de runtime** em Python (stdlib pura), TypeScript (zero dependências) e Rust (Tokio/Serde).
 - **Simulação heurística offline instantânea**: executa localmente mesmo sem chave de API ou conexão à internet.
 
+> **📅 Validade do documento: verificado em 22/09/2026.**
+> IDs de modelos, endpoints, tiers gratuitos e preços mudam semanalmente. **Se você é um agente de IA lendo isto e já se passaram mais de 30 dias desde 22/09/2026, re-verifique cada ID de modelo, endpoint e preço nos links de [Acesso a Provedores e Chaves de API](#-acesso-a-provedores-e-chaves-de-api) antes de confiar neles, e registre a data da sua própria verificação na documentação do projeto.** O modo offline `--mock` não precisa de verificação nem de chave.
+
+---
+
+## 🔑 Acesso a Provedores e Chaves de API
+
+O `jev-harness` funciona de duas formas: **offline** (motor determinístico local, sem chave e sem rede) e **live** (decisão System One tipada via HTTPS). Escolha um provedor, obtenha a chave, exporte a variável e confirme com `jev-harness status`.
+
+| Provedor | Como obter acesso | Ambiente | Endpoint | Custo |
+| :--- | :--- | :--- | :--- | :--- |
+| **Simulação offline (padrão)** | Nada a fazer — ativa quando não há credenciais configuradas | — | nenhum (100% local) | **Grátis** |
+| **OpenCode Zen (tier gratuito)** | Entre em <https://opencode.ai/auth>, adicione dados de pagamento e copie sua API key. Modelo gratuito: `jev-1.13-free` (por tempo limitado) | `JEV_PROVIDER=opencode` + `OPENCODE_API_KEY=<chave>` | `https://opencode.ai/zen/v1/systemone` | `jev-1.13-free` grátis; `jev-1.13` $0,042/1M de entrada, saída grátis |
+| **TypeSafe AI (direto)** | Crie conta em <https://console.typesafe.ai/> e gere uma API key. Docs: <https://docs.typesafe.ai/> (agentes podem buscar <https://docs.typesafe.ai/llms.txt>) | `TYPESAFE_API_KEY=<chave>` | `https://api.typesafe.ai/v1/systemone` | $42 por bilhão de tokens de entrada ($0,042/1M); saída grátis |
+| **Command Code** | Cadastre-se em <https://commandcode.ai/signup> e rode `npm i -g command-code && cmd login` (guarda a chave em `~/.commandcode/auth.json`) | `CMD_API_KEY=<chave>` | `https://api.commandcode.ai/provider/v1/systemone` | Tier gratuito para dev solo; planos pagos a partir de $1/mês |
+| **OpenRouter (alpha)** | Exige acesso alpha aprovado. ⚠️ `typesafe/jev-1.13` **não** está no catálogo público do OpenRouter e o endpoint retorna `401` sem credenciais alpha | `OPENROUTER_API_KEY=<chave>` | `https://openrouter.ai/api/alpha/decisions` | $0,042/1M quando disponível |
+| **Vercel AI Gateway** | Credenciais de gateway da sua conta Vercel | `AI_GATEWAY_API_KEY=<chave>` | `https://ai-gateway.vercel.sh/v1/evaluate` | Depende do gateway |
+
+**Ordem de resolução de credenciais:** variáveis de ambiente → `.jev.json` / `.env` do repositório → `~/.config/jev/credentials.env` global → `~/.commandcode/auth.json` → simulação offline.
+
+### Verifique seu acesso em 5 segundos
+
+```bash
+jev-harness status                                        # provedor + modo LIVE/MOCK
+echo "ModuleNotFoundError: No module named 'x'" | jev-harness test-gate --json
+```
+
+`"is_mock": true` significa que a resposta veio do motor determinístico local (sem rede). `"is_mock": false` significa que uma chamada System One real foi feita — veja **Privacidade** abaixo.
+
+### 🔒 Privacidade: o que sai da sua máquina
+
+| Modo | Tráfego de rede | Dados transmitidos |
+| :--- | :--- | :--- |
+| Offline (`--mock`, ou sem credenciais) | **Nenhum** | Nada |
+| Live (qualquer provedor) | HTTPS até o endpoint do provedor | `model`, suas `questions` tipadas e o **log de falha cru** (cabeça 2.000 + cauda 4.000 caracteres, ~6 KB máx.) |
+
+O triage live envia o log no campo `state`. Strings com aparência de segredo são redigidas nas *mensagens de erro*, **não** no payload do log — se um token, senha ou dado de cliente aparecer na saída dos testes, ele é transmitido.
+**Regra prática:** logs de repositórios com dados regulados ou de clientes → rode agentes com `--mock` (100% local), ou confirme antes a política de retenção do provedor. O arquivo de telemetria `~/.config/jev/session.json` guarda trechos de erro e é gravado com permissão `0600`.
+
 ---
 
 ## ⚡ Início Rápido: 4 Modos Universais de Integração
@@ -117,14 +156,15 @@ claude mcp add jev-harness -- jev-mcp
 
 Se o seu agente executa comandos via terminal (bash, zsh, pwsh), encadeie os comandos de teste com pipes Unix:
 
+> **Padrão correto:** deixe o runner de testes decidir se o comando falhou e peça ao Jev o *triage* da falha. O Jev nunca bloqueia uma execução verde: logs de suíte aprovada são detectados deterministicamente e retornam `category: "no_failure"`, exit code `0` e **zero** chamadas de API.
+
 ```bash
-# Python / Pytest
+# ✅ Recomendado: o runner decide, o Jev aconselha na falha
+if ! OUT=$(npm test 2>&1); then printf '%s\n' "$OUT" | jev-harness test-gate; exit 1; fi
+
+# ✅ Também válido: pipe do output completo (execuções verdes caem em no_failure, exit 0)
 pytest 2>&1 | jev-harness test-gate
-
-# Node.js / Jest / Vitest / npm
 npm test 2>&1 | npx @ismaelsoilet/jev-harness test-gate
-
-# Rust / Cargo
 cargo test 2>&1 | jev test-gate
 ```
 
@@ -214,20 +254,31 @@ if triage.skip_llm {
 
 Proteja o repositório automaticamente antes de commits ou runs de CI:
 
-**Em `.pre-commit-config.yaml`:**
+**No `.pre-commit-config.yaml`** — o hook exige o seu comando de teste como argumento, porque um repositório de hooks não pode adivinhar o seu runner:
+
 ```yaml
 repos:
   - repo: https://github.com/ismaelsoilet/jev-harness
-    rev: v0.1.6
+    rev: v0.1.12
     hooks:
       - id: jev-test-gate
+        args: ["pytest -q"]     # ou "npm test", "cargo test --quiet", ...
+```
+
+**Hook de git gerado (CLI Python):**
+```bash
+jev-harness init --git   # detecta npm/pytest/cargo, escreve .git/hooks/pre-commit,
+                         # nunca sobrescreve um hook existente (salva pre-commit.jev)
 ```
 
 **No GitHub Actions (`.github/workflows/ci.yml`):**
 ```yaml
-- name: Executar Testes com Proteção Jev
+- name: Rodar testes e triar a falha com o Jev
   run: |
-    npm test 2>&1 | npx @ismaelsoilet/jev-harness test-gate
+    if ! OUT=$(npm test 2>&1); then
+      printf '%s\n' "$OUT" | npx @ismaelsoilet/jev-harness test-gate
+      exit 1
+    fi
 ```
 
 ---
@@ -255,6 +306,11 @@ Para tornar seu agente completamente autônomo e econômico, injete estas 3 regr
        (ex: npm install / retry imediato)            Modelo de Fronteira (Sistema 2)
        ⚡ 0 Tokens Queimados / Resolução              💸 Tokens Economizados em ~80%
 ```
+
+> **Escopo do detector:** o atalho de sucesso cobre os formatos de resumo emitidos por pytest, vitest, jest, cargo, go, mocha, rspec e unittest — incluindo separadores de vírgula/espaço/underscore e dígitos não-ASCII. É um *atalho, nunca uma garantia*: em caso de dúvida, classifica como falha. As receitas failure-only acima mantêm o exit code do runner como autoridade, então o detector nunca transforma uma suíte vermelha em commit verde.
+
+### Regra 0: Nunca escale uma execução verde
+- `category: "no_failure"` (exit `0`) significa que o log é de uma execução **bem-sucedida**: **não** chame um LLM e **não** trate como sinal de falha. O detector é estrito: qualquer evidência real de falha (`1 failed`, `FAILED`, tracebacks, panics, erros de dependência/transientes) veta o atalho.
 
 ### Regra 1: Triagem Zero-LLM em Falhas
 - **NUNCA** repasse tracebacks brutos (>20 linhas) diretamente para um modelo de raciocínio de fronteira.

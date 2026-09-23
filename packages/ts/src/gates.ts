@@ -1,4 +1,4 @@
-import { JevClient } from "./client.js";
+import { JevClient, looksLikeTestSuccess } from "./client.js";
 import { loadRepoConfig } from "./config.js";
 import type {
   AbortGateResult,
@@ -43,8 +43,24 @@ export async function triageTestFailure(
   client?: JevClient
 ): Promise<TestTriageResult> {
   const activeClient = client || new JevClient();
+  const trimmedLog = failureLog.trim();
 
-  const cleanLog = safeTruncateHeadTail(failureLog.trim(), 2000, 4000);
+  // Deterministic short-circuit: a green test run is not a failure to triage and must
+  // never escalate or cost an API call.
+  if (looksLikeTestSuccess(trimmedLog)) {
+    return {
+      category: "no_failure",
+      confidence: 1.0,
+      skipLlm: true,
+      skipLlmProb: 1.0,
+      severityScore: 0.0,
+      actionRecommendation:
+        "NO-OP: The log shows a successful test run; no triage and no LLM call are needed.",
+      isMock: true,
+    };
+  }
+
+  const cleanLog = safeTruncateHeadTail(trimmedLog, 2000, 4000);
 
   const questions = {
     category: {

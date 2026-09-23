@@ -242,6 +242,82 @@ Calculation returned 42, expected 100
         self.assertEqual(colon.category, "deep_logic")
         self.assertFalse(colon.skip_llm)
 
+    @unittest.skipIf(os.name == "nt", "POSIX permission semantics")
+    def test_session_files_are_permission_hardened(self):
+        """session.json (error snippets) must not be world-readable."""
+        import stat
+        import tempfile
+        from jev_harness.session import record_triage_step
+
+        with tempfile.TemporaryDirectory() as tmp:
+            old_home, old_cwd = os.environ.get("HOME"), os.getcwd()
+            os.environ["HOME"] = tmp
+            os.chdir(tmp)
+            try:
+                record_triage_step(True, "env_missing", error_snippet="secret-ish log", action="test")
+                base = Path(tmp) / ".config" / "jev"
+                self.assertEqual(stat.S_IMODE(base.stat().st_mode), 0o700)
+                self.assertEqual(stat.S_IMODE((base / "session.json").stat().st_mode), 0o600)
+                self.assertEqual(stat.S_IMODE((base / "session.lock").stat().st_mode), 0o600)
+            finally:
+                os.chdir(old_cwd)
+                if old_home is not None:
+                    os.environ["HOME"] = old_home
+
+    def test_success_detector_recognizes_green_runs(self):
+        """A green run must short-circuit to `no_failure` (no escalation, no API call)."""
+        green_logs = {
+            "cargo": "running 46 tests\ntest result: ok. 46 passed; 0 failed; 0 ignored",
+            "vitest": " Test Files  3 passed (3)\n      Tests  12 passed (12)",
+            "jest": "Test Suites: 3 passed, 3 total\nTests: 12 passed, 12 total",
+            "pytest": "============================= 5 passed in 0.42s ==============================",
+            "unittest": "..\nRan 2 tests in 0.001s\n\nOK",
+            "go": "ok  \tgithub.com/x/y\t0.123s",
+            "mocha": "  12 passing (35ms)",
+            "rspec": "12 examples, 0 failures",
+            "comma_passed": "1,024 passed in 3.2s",
+        }
+        for runner, log in green_logs.items():
+            res = triage_test_failure(log, client=self.client)
+            self.assertEqual(res.category, "no_failure", f"{runner} should be no_failure")
+            self.assertTrue(res.skip_llm, f"{runner} must not escalate")
+
+    def test_success_detector_never_masks_real_failures(self):
+        """The detector must be strict: any failure evidence vetoes the short-circuit."""
+        red_logs = {
+            "vitest": " Test Files  1 failed | 2 passed (3)\n      Tests  1 failed | 11 passed (12)",
+            "jest": "Test Suites: 1 failed, 2 passed\nTests: 1 failed, 11 passed",
+            "pytest": "FAILED tests/test_x.py::test_y - AssertionError: assert 42 == 41\n1 failed, 9 passed",
+            "cargo": "test result: FAILED. 45 passed; 1 failed; 0 ignored",
+            "unittest": "FAILED (failures=1)",
+            "go": "--- FAIL: TestX (0.00s)\nFAIL\tgithub.com/x/y\t0.123s",
+            "missing_dep": "ModuleNotFoundError: No module named 'x'\n5 passed in 0.4s",
+            "timeout_with_pass": "requests.exceptions.Timeout: timed out\n5 passed in 0.4s",
+            "mocha_failing": "10 passing (35ms)\n1 failing",
+            "uppercase_error": "Error: boom while running suite\n5 passed in 0.4s",
+            "socket_hangup": "5 passed in 0.4s\nError: socket hang up",
+            "go_midline_fail": "ok  \tpkg\t0.1s\n--- FAIL: TestX (0.00s)",
+            "vitest_glyph": "10 passed (10)\n× should fail",
+            "colon_failures": "BUILD SUCCESS\nTests run: 10, Failures: 1",
+            "singular_failure": "10 passed\n1 failure",
+            "empty_suite": "Tests: 0 passed, 0 total",
+            "econnreset": "5 passed\nError: read ECONNRESET",
+            "cargo_one_failed": "test result: ok. 46 passed; 1 failed",
+            "comma_thousand_failed": "1000 passed\n1,024 failed",
+            "comma_twelve_thousand": "12,345 failed",
+            "comma_failing": "1,000 failing",
+            "comma_errors": "1,000 errors",
+            "space_sep_count": "1000 passed\n1 000 failed",
+            "underscore_count": "1000 passed\n10_000 failed",
+            "assign_colon": "1000 passed\nfailed: 1",
+            "noun_form": "1000 passed\n1 test failed",
+            "fullwidth_digits": "1000 passed\n\uff11\uff12\uff13 failed",
+            "arabic_digits": "1000 passed\n\u0661\u0662\u0663 failed",
+        }
+        for runner, log in red_logs.items():
+            res = triage_test_failure(log, client=self.client)
+            self.assertNotEqual(res.category, "no_failure", f"{runner} must never be no_failure")
+
     def test_adversarial_port_number_sentence_is_flaky(self):
         res = triage_test_failure("Error: Port 8080 is already in use", client=self.client)
         self.assertEqual(res.category, "flaky_transient")

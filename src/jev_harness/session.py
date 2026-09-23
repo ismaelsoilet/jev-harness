@@ -68,9 +68,19 @@ def _get_storage_path() -> Path:
     global_dir = Path.home() / ".config" / "jev"
     try:
         global_dir.mkdir(parents=True, exist_ok=True)
+        _harden_permissions(global_dir, 0o700)
         return global_dir / "session.json"
     except Exception:
         return Path(tempfile.gettempdir()) / "jev_session_default.json"
+
+
+def _harden_permissions(path: Path, mode: int = 0o600) -> None:
+    """Best-effort POSIX permission hardening (no-op where unsupported)."""
+    try:
+        if path.exists():
+            os.chmod(path, mode)
+    except Exception:
+        pass
 
 
 @contextlib.contextmanager
@@ -83,6 +93,7 @@ def _session_lock(storage_path: Path):
     try:
         try:
             lock_file = open(lock_path, "a+")
+            _harden_permissions(lock_path, 0o600)
         except Exception:
             pass
 
@@ -164,7 +175,9 @@ def save_session(session: SessionState) -> None:
         # Atomic file write with thread/pid unique suffix to avoid collisions on Windows/Unix
         temp_file = p.with_name(f"{p.name}.{os.getpid()}_{threading.get_ident()}_{time.time_ns()}.tmp")
         temp_file.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        _harden_permissions(temp_file, 0o600)
         temp_file.replace(p)
+        _harden_permissions(p, 0o600)
     except Exception:
         pass
 

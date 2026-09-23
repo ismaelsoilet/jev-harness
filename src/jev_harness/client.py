@@ -26,7 +26,97 @@ OPENROUTER_API_URL = "https://openrouter.ai/api/alpha/decisions"
 OPENROUTER_CHAT_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 VERCEL_API_URL = "https://ai-gateway.vercel.sh/v1/evaluate"
 DEFAULT_MODEL = "jev-latest"
-DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.1.11; +https://github.com/ismaelsoilet/jev-harness)"
+DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.1.12; +https://github.com/ismaelsoilet/jev-harness)"
+
+# Success summaries emitted by common runners when a suite is green. Used to short-circuit
+# triage: a passing run must never be escalated, and it must never cost an API call.
+# Non-zero pass counts are required so an empty suite ("0 passed, 0 total") is not a claim.
+_SUCCESS_PATTERNS = (
+    r"test result:\s*ok",                          # cargo test
+    r"[1-9][\d,]*\s+passed\b",                     # pytest / vitest / jest
+    r"[1-9]\d*\s+passing\b",                     # mocha
+    r"test suites?:\s*[1-9]\d*\s+passed",         # jest summary
+    r"[1-9]\d*\s+examples?,\s*0\s+failures",      # rspec
+    r"all tests? passed",
+    r"\bbuild success(?:ful)?\b",
+    r"^\s*ok\s+\S+",                              # go test
+)
+
+# Evidence that vetoes the success short-circuit: a non-zero failure count or a concrete
+# failure marker. "0 failed" / "0 errors" / "failures: 0" / "0 failing" are NOT vetoes.
+_FAILURE_COUNT_PATTERN = (
+    r"{first}{rest}*\s*(?:failures|failure|failed|failing|errors?)\b"
+).format(first=r"[1-9１-９١-٩۱-۹]", rest=r"[\d,._  ０-９٠-٩۰-۹]")
+_FAILURE_ASSIGN_PATTERN = r"(?:failures?|errors?|failed|failing)\s*[:=]\s*[1-9]"
+_FAILURE_NOUN_PATTERN = (
+    r"\b{first}{rest}*\s+tests?\s+failed\b"
+).format(first=r"[1-9１-９١-٩۱-۹]", rest=r"[\d,._  ０-９٠-٩۰-۹]")
+# NOTE: `error:` must not be followed by `\b` — a colon before a space has no word boundary,
+# which would silently disable this veto (caught by adversarial review).
+_FAILURE_MARKER_PATTERN = (
+    r"\b(?:traceback|panic|panicked|assertionerror|assertion failed|not ok)\b|error\s*:"
+)
+_FAILURE_GLYPHS = ("✗", "✘", "✕", "×", "‼", "❌")
+_UNCLEAN_SIGNALS = (
+    "module not found",
+    "no module named",
+    "cannot find module",
+    "cannot find crate",
+    "command not found",
+    "connection refused",
+    "connection reset",
+    "econnrefused",
+    "econnreset",
+    "etimedout",
+    "socket hang up",
+    "address already in use",
+    "timed out",
+    "timeout",
+)
+
+
+def looks_like_test_success(log: str) -> bool:
+    """
+    Returns True only when a log is unequivocally a *successful* run summary.
+
+    Strict by design: a positive success summary is required AND every failure signal
+    (non-zero counts, FAIL/FAILED markers, tracebacks, panics, dependency or transient
+    errors, failure glyphs) must be absent. This guarantees a real failure can never be
+    short-circuited into the `no_failure` verdict.
+    """
+    if not log or not log.strip():
+        return False
+
+    text = log.lower()
+
+    # 1. Failure vetoes.
+    if re.search(_FAILURE_COUNT_PATTERN, text):
+        return False
+    if re.search(_FAILURE_NOUN_PATTERN, text):
+        return False
+    if re.search(_FAILURE_ASSIGN_PATTERN, text):
+        return False
+    if re.search(_FAILURE_MARKER_PATTERN, text):
+        return False
+    if (
+        re.search(r"\bFAILED\b", log)
+        or re.search(r"(?:^|\n)\s*FAIL\b", log)
+        or re.search(r"---\s*FAIL\b", log)
+    ):
+        return False
+    if any(marker in log for marker in _FAILURE_GLYPHS):
+        return False
+    if any(signal in text for signal in _UNCLEAN_SIGNALS):
+        return False
+
+    # 2. Positive success summaries.
+    if any(re.search(pattern, text, re.MULTILINE) for pattern in _SUCCESS_PATTERNS):
+        return True
+    if re.search(r"ran\s+[1-9]\d*\s+tests?", text) and re.search(
+        r"^\s*ok\s*$", text, re.MULTILINE
+    ):
+        return True
+    return False
 
 
 def _urlopen_with_ipv4_fallback(req: urllib.request.Request, timeout: float):

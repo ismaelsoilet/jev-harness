@@ -2,8 +2,10 @@
 Tests for CLI interface and exit code conventions.
 """
 
+import io
 from io import StringIO
 import json
+import os
 from pathlib import Path
 import sys
 import unittest
@@ -188,6 +190,66 @@ class TestCLI(unittest.TestCase):
                 self.assertEqual(cm.exception.code, 0)
                 data = json.loads(out.getvalue())
                 self.assertEqual(data["workflow_phase"], "verify")
+
+    def test_cli_test_gate_green_run_exits_zero_with_no_failure(self):
+        with patch.object(sys, "argv", ["jev-harness", "test-gate", "--json", "--mock"]):
+            with patch("sys.stdin", io.StringIO("Tests: 12 passed, 12 total\n")):
+                with patch("sys.stdout", new_callable=StringIO) as out:
+                    with self.assertRaises(SystemExit) as cm:
+                        main()
+                    self.assertEqual(cm.exception.code, 0)
+                    data = json.loads(out.getvalue())
+                    self.assertEqual(data["category"], "no_failure")
+                    self.assertTrue(data["skip_llm"])
+
+    def test_cli_init_git_generates_runner_aware_hook(self):
+        import tempfile
+        from pathlib import Path as _Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = _Path(tmp)
+            (cwd / ".git" / "hooks").mkdir(parents=True)
+            (cwd / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
+            original = os.getcwd()
+            try:
+                os.chdir(cwd)
+                with patch.object(sys, "argv", ["jev-harness", "init", "--git"]):
+                    with patch("sys.stdout", new_callable=StringIO):
+                        with self.assertRaises(SystemExit) as cm:
+                            main()
+                        self.assertEqual(cm.exception.code, 0)
+                hook = cwd / ".git" / "hooks" / "pre-commit"
+                content = hook.read_text(encoding="utf-8")
+                self.assertIn("Jev Harness pre-commit gate", content)
+                self.assertIn('TEST_CMD="python3 -m pytest -q"', content)
+                self.assertIn("jev-harness test-gate", content)
+                self.assertNotIn("python -m unittest 2>&1", content)
+                self.assertTrue(os.access(hook, os.X_OK))
+            finally:
+                os.chdir(original)
+
+    def test_cli_init_git_preserves_existing_hook(self):
+        import tempfile
+        from pathlib import Path as _Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = _Path(tmp)
+            hooks = cwd / ".git" / "hooks"
+            hooks.mkdir(parents=True)
+            (hooks / "pre-commit").write_text("#!/bin/sh\necho custom\n", encoding="utf-8")
+            original = os.getcwd()
+            try:
+                os.chdir(cwd)
+                with patch.object(sys, "argv", ["jev-harness", "init", "--git"]):
+                    with patch("sys.stdout", new_callable=StringIO):
+                        with self.assertRaises(SystemExit):
+                            main()
+                self.assertEqual((hooks / "pre-commit").read_text(encoding="utf-8"), "#!/bin/sh\necho custom\n")
+                sample = hooks / "pre-commit.jev"
+                self.assertTrue(sample.exists())
+                self.assertIn("Jev Harness pre-commit gate", sample.read_text(encoding="utf-8"))
+            finally:
+                os.chdir(original)
 
     def test_cli_provider_commandcode_status(self):
         with patch.dict("os.environ", {"CMD_API_KEY": "cmd-test-key"}):

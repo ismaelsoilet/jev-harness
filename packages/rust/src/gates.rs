@@ -42,6 +42,25 @@ pub async fn triage_test_failure(
     raw_error_log: &str,
     client: Option<&JevClient>,
 ) -> Result<TestTriageResult, JevError> {
+    // Deterministic short-circuit: a green test run is not a failure to triage and must
+    // never escalate or cost an API call.
+    if crate::client::looks_like_test_success(raw_error_log) {
+        return Ok(TestTriageResult {
+            category: "no_failure".to_string(),
+            confidence: 1.0,
+            skip_llm: true,
+            skip_llm_prob: 1.0,
+            severity_score: 0.0,
+            action_recommendation:
+                "NO-OP: The log shows a successful test run; no triage and no LLM call are needed."
+                    .to_string(),
+            recommendation:
+                "NO-OP: The log shows a successful test run; no triage and no LLM call are needed."
+                    .to_string(),
+            is_mock: true,
+        });
+    }
+
     let fallback_client;
     let active_client = match client {
         Some(c) => c,

@@ -3,7 +3,7 @@ Jev System One Decision Harness & Token Optimizer.
 Fast, non-autoregressive semantic decisions for AI coding agents.
 """
 
-__version__ = "0.1.11"
+__version__ = "0.1.12"
 __author__ = "Ismael Hosni Soilet de Lima"
 __license__ = "MIT"
 
@@ -15,6 +15,7 @@ from .config import (
 from .client import (
     COMMANDCODE_API_URL,
     AnswerType,
+    looks_like_test_success,
     ChoiceAnswer,
     ChoiceQuestion,
     JevClient,
@@ -43,6 +44,7 @@ from .gates import (
 __all__ = [
     "__version__",
     "COMMANDCODE_API_URL",
+    "looks_like_test_success",
     "DEFAULT_ABORT_THRESHOLD",
     "DEFAULT_SKIP_LLM_THRESHOLD",
     "load_repo_config",

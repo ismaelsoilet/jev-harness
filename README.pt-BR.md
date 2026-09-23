@@ -129,6 +129,10 @@ O Jev Harness suporta diversos backends e detecta credenciais automaticamente:
 | **Vercel AI Gateway** | `https://ai-gateway.vercel.sh/v1/evaluate` | $0,042 / 1M | `export AI_GATEWAY_API_KEY=sua-chave` |
 | **Simulação Autônoma** | Heurística Local (< 500µs) | **$0,00** | Ativa por padrão se offline ou sem chave |
 
+> **📅 Data de verificação dos provedores: 22/09/2026.** IDs de modelos, tiers gratuitos e preços mudam semanalmente — agentes e engenheiros devem re-verificá-los (e registrar a própria data) se passaram mais de 30 dias. Passo a passo para obter chaves de cada provedor: **[Guia Universal de Integração para Agentes](docs/AGENT_INTEGRATION_GUIDE.pt-BR.md#-acesso-a-provedores-e-chaves-de-api)**.
+>
+> **🔒 Privacidade:** o modo offline (`--mock`, ou sem credenciais) faz **zero chamadas de rede**. O modo live transmite as perguntas tipadas e o log de falha cru (cabeça 2.000 + cauda 4.000 caracteres) ao endpoint do provedor; a redação de segredos vale para mensagens de erro, não para o payload do log. Use `--mock` em repositórios com dados regulados ou de clientes.
+
 Prioridade de resolução de credenciais:
 1. Variáveis de ambiente (`TYPESAFE_API_KEY`, `CMD_API_KEY`, `COMMAND_CODE_API_KEY`, `OPENCODE_API_KEY`, `OPENROUTER_API_KEY` ou `AI_GATEWAY_API_KEY`)
 2. Arquivo `.jev.json`, `.env` na raiz do repositório ou `~/.commandcode/auth.json`
@@ -541,7 +545,7 @@ Latência ultra-baixa (< 500µs local, zero-overhead) para Tauri, ferramentas de
 
 ```toml
 [dependencies]
-jev-harness = "0.1.11"
+jev-harness = "0.1.12"
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -562,18 +566,32 @@ async fn main() {
 ## 📦 Guardrails para Git & CI/CD
 
 ### Pre-commit Hook (`.pre-commit-config.yaml`)
+O hook exige o seu comando de teste como argumento (um repositório de hooks não pode adivinhar o seu runner):
+
 ```yaml
 repos:
   - repo: https://github.com/ismaelsoilet/jev-harness
-    rev: v0.1.11
+    rev: v0.1.12
     hooks:
       - id: jev-test-gate
+        args: ["pytest -q"]     # ou "npm test", "cargo test --quiet", ...
+```
+
+### Hook de Git gerado (`jev-harness init --git`)
+Detecta o seu runner (`npm`/`pytest`/`cargo`), escreve um hook failure-only e nunca sobrescreve um existente (salva `pre-commit.jev`):
+
+```bash
+jev-harness init --git
 ```
 
 ### Hook do Husky (`.husky/pre-commit`)
+Deixe o runner decidir; peça ao Jev apenas o triage da falha:
+
 ```bash
-npm test 2>&1 | npx @ismaelsoilet/jev-harness test-gate || exit 1
+if ! OUT=$(npm test 2>&1); then printf '%s\n' "$OUT" | jev-harness test-gate; exit 1; fi
 ```
+
+> Execuções verdes são detectadas deterministicamente (`category: "no_failure"`, exit `0`, zero chamadas de API), então `npm test 2>&1 | jev-harness test-gate` também é seguro — mas a forma failure-only acima é mais explícita e não depende de parsing do resumo.
 
 ---
 
@@ -610,6 +628,14 @@ Quando em modo de simulação offline (`--mock` ou durante partições de rede),
 
 ---
 
+## 🌟 O que há de Novo na v0.1.12
+
+- ✅ **Execuções verdes nunca bloqueiam nem escalam**: um detector determinístico e estrito reconhece resumos aprovados de pytest, vitest, jest, cargo, go, mocha, rspec e unittest, retornando `category: "no_failure"` com exit `0` e **zero chamadas de API**. Falhas reais sempre vetam o atalho (`1 failed`, `FAILED`, tracebacks, panics, erros de dependência/transientes). Isso corrige as falsas falhas nas receitas de pre-commit/husky em projetos JS e Rust.
+- 🪝 **Integração pre-commit funcional**: o `jev-test-gate` agora recebe o comando de teste via `args` (o runner decide, o Jev aconselha) através de um console entry point que funciona de qualquer diretório do consumidor (um wrapper shell continua disponível para quem não usa pre-commit), e o `jev-harness init --git` gera um hook que detecta o runner (npm/pytest/cargo), usa `python3`, nunca sobrescreve um hook existente e registra o comando detectado.
+- 🔐 **Arquivos de estado endurecidos**: `~/.config/jev` é criado `0700` e `session.json` / o lock são gravados `0600` (POSIX), então trechos de erro deixam de ser legíveis por outros usuários.
+- 📖 **Documentação**: obtenção de acesso e chaves para cada backend (console TypeSafe, OpenCode Zen, Command Code, OpenRouter alpha, Vercel AI Gateway) com **data de verificação** e instruções de re-checagem para agentes, além de uma matriz explícita de privacidade (o que sai da máquina em live vs offline).
+- 🧪 **Bateria de 207 Testes**: 100% de aprovação em 207 testes (113 Python, 49 Rust, 45 TypeScript).
+
 ## 🌟 O que há de Novo na v0.1.11
 
 - 🐛 **Corrigida uma regressão de classificação da v0.1.10**: uma linha crua `RuntimeError:` / `ValueError:` / `TypeError:` não mascara mais uma causa raiz concreta de dependência ou transitória. Logs como `RuntimeError: ... Caused by: ModuleNotFoundError` e `RuntimeError: ... Timeout` voltam a ser triados como `env_missing` / `flaky_transient` (`skip_llm=true`), enquanto exceções de lógica real sem causa raiz de ambiente/transiente continuam escalando como `deep_logic`.
@@ -622,7 +648,7 @@ Quando em modo de simulação offline (`--mock` ou durante partições de rede),
 - 🚦 **Gate de release endurecido**: o `release.yml` agora exige toda a matriz de CI (Linux/macOS/Windows, Python 3.9-3.13, Node 18-22, Rust) via workflow reutilizável antes de publicar no PyPI, npm ou crates.io — uma CI vermelha não consegue mais publicar uma release.
 - 🧹 **Zero avisos de clippy** em todo o workspace Rust.
 - 🧩 **Paridade heurística tri-runtime**: o motor TypeScript agora pontua uma asserção explícita exatamente como Python e Rust, então o snippet de precedência da regra 04 (`FAIL` + `Expected:`/`Received:` em linhas separadas contendo nome de módulo) é `deep_logic`/`skip_llm=false` em todos os runtimes. Asserções em múltiplas linhas são detectadas, e mensagens como `Port 8080 is already in use` são `flaky_transient`.
-- 🧪 **Bateria de 197 Testes**: 100% de aprovação em 197 testes (107 Python, 47 Rust, 43 TypeScript).
+- 🧪 **Bateria de 197 Testes**: 100% de aprovação em 197 testes (107 Python, 47 Rust, 43 TypeScript) na v0.1.11; substituída pela bateria de 207 testes na v0.1.12.
 
 ## 🌟 O que há de Novo na v0.1.10
 

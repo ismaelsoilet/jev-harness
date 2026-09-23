@@ -21,7 +21,64 @@ export const OPENCODE_API_URL = "https://opencode.ai/zen/v1/systemone";
 export const OPENROUTER_API_URL = "https://openrouter.ai/api/alpha/decisions";
 export const VERCEL_API_URL = "https://ai-gateway.vercel.sh/v1/evaluate";
 export const DEFAULT_MODEL = "jev-latest";
-export const DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.1.11; +https://github.com/ismaelsoilet/jev-harness)";
+export const DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.1.12; +https://github.com/ismaelsoilet/jev-harness)";
+
+/**
+ * Returns true only when a log is unequivocally a *successful* run summary.
+ *
+ * Strict by design: a positive success summary is required AND every failure signal
+ * (non-zero counts, FAIL/FAILED markers, tracebacks, panics, dependency or transient
+ * errors) must be absent, so a real failure can never be short-circuited.
+ */
+export function looksLikeTestSuccess(log: string): boolean {
+  if (!log || !log.trim()) return false;
+
+  const text = log.toLowerCase();
+
+  // 1. Failure vetoes.
+  if (/[1-9\uff11-\uff19\u0661-\u0669\u06f1-\u06f9][\d,._\u00a0 \uff10-\uff19\u0660-\u0669\u06f0-\u06f9]*\s*(?:failures|failure|failed|failing|errors?)\b/.test(text))
+    return false;
+  if (/\b[1-9\uff11-\uff19\u0661-\u0669\u06f1-\u06f9][\d,._\u00a0 \uff10-\uff19\u0660-\u0669\u06f0-\u06f9]*\s+tests?\s+failed\b/.test(text))
+    return false;
+  if (/(?:failures?|errors?|failed|failing)\s*[:=]\s*[1-9]/.test(text)) return false;
+  // NOTE: `error:` must not be followed by \b — a colon before a space has no word boundary.
+  if (/\b(?:traceback|panic|panicked|assertionerror|assertion failed|not ok)\b|error\s*:/.test(text)) return false;
+  if (/\bFAILED\b/.test(log) || /(?:^|\n)\s*FAIL\b/.test(log) || /---\s*FAIL\b/.test(log)) return false;
+  if (/[✗❌✘✕×‼]/.test(log)) return false;
+  const unclean = [
+    "module not found",
+    "no module named",
+    "cannot find module",
+    "cannot find crate",
+    "command not found",
+    "connection refused",
+    "connection reset",
+    "econnrefused",
+    "econnreset",
+    "etimedout",
+    "socket hang up",
+    "address already in use",
+    "timed out",
+    "timeout",
+  ];
+  if (unclean.some((signal) => text.includes(signal))) return false;
+
+  // 2. Positive success summaries (non-zero pass counts required).
+  const successPatterns = [
+    /test result:\s*ok/,
+    /[1-9][\d,]*\s+passed\b/,
+    /[1-9]\d*\s+passing\b/,
+    /test suites?:\s*[1-9]\d*\s+passed/,
+    /[1-9]\d*\s+examples?,\s*0\s+failures/,
+    /all tests? passed/,
+    /\bbuild success(?:ful)?\b/,
+    /^\s*ok\s+\S+/m,
+  ];
+  if (successPatterns.some((pattern) => pattern.test(text))) return true;
+
+  if (/ran\s+[1-9]\d*\s+tests?/.test(text) && /^\s*ok\s*$/m.test(text)) return true;
+  return false;
+}
 
 export class JevClient {
   public apiKey?: string;

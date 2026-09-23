@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from .client import ChoiceQuestion, JevClient, NoulQuestion, ScoreQuestion
+from .client import ChoiceQuestion, JevClient, NoulQuestion, ScoreQuestion, looks_like_test_success
 from .config import load_repo_config
 from .session import (
     detect_repeated_failure,
@@ -132,6 +132,29 @@ def triage_test_failure(
     }
 
     clean_log = failure_log.strip()
+
+    # Deterministic short-circuit: a green test run is not a failure to triage and must
+    # never escalate or cost an API call. Strict detector: see `looks_like_test_success`.
+    if looks_like_test_success(clean_log):
+        success_result = TestTriageResult(
+            category="no_failure",
+            confidence=1.0,
+            skip_llm=True,
+            skip_llm_prob=1.0,
+            severity_score=0.0,
+            action_recommendation=(
+                "NO-OP: The log shows a successful test run; no triage and no LLM call are needed."
+            ),
+            is_mock=True,
+            details={
+                "model": "deterministic-success-detector",
+                "usage": {"input_tokens": 0, "output_tokens": 0},
+            },
+        )
+        # Not counted as a triage interception: there was no failure to intercept, so
+        # recording "saved tokens" here would inflate the ROI metrics.
+        return success_result
+
     if len(clean_log) > 6000:
         clean_log = clean_log[:2000] + "\n...[truncated]...\n" + clean_log[-4000:]
 

