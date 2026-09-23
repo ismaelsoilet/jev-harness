@@ -142,7 +142,7 @@ function getPackageVersion(): string {
   } catch {
     // fallback
   }
-  return "0.1.13";
+  return "0.1.14";
 }
 
 export async function runCli(argv: string[] = process.argv.slice(2)): Promise<number> {
@@ -315,6 +315,7 @@ This repository is connected to the global **Jev System One Harness**.
       console.log(`  [+] Created env template: ${path.relative(cwd, envExample)}`);
     }
 
+    let gitGateActive = true;
     if (args.includes("--git") || args.includes("--all")) {
       const gitHooks = path.join(cwd, ".git", "hooks");
       if (fs.existsSync(gitHooks)) {
@@ -331,7 +332,8 @@ This repository is connected to the global **Jev System One Harness**.
           const sample = path.join(gitHooks, "pre-commit.jev");
           fs.writeFileSync(sample, hookScript, "utf-8");
           fs.chmodSync(sample, 0o755);
-          console.log(`  [!] An existing pre-commit hook was preserved. Merge ${path.relative(cwd, sample)} into it to enable the Jev gate.`);
+          gitGateActive = false;
+          console.log(`  [!] An existing pre-commit hook was preserved; the Jev gate is NOT active yet. Merge ${path.relative(cwd, sample)} into it (or use the pre-commit framework) to enable it.`);
         } else {
           fs.writeFileSync(preCommit, hookScript, "utf-8");
           fs.chmodSync(preCommit, 0o755);
@@ -366,6 +368,14 @@ This repository is connected to the global **Jev System One Harness**.
         );
         console.log(`  [+] Created Cursor MCP config: ${path.relative(cwd, cursorMcp)}`);
       }
+    }
+
+    if (gitGateActive) {
+      console.log("\n[OK] Repository configured successfully! You can now run 'jev-harness status'.\n");
+    } else {
+      console.log(
+        "\n[!] Repository configured, but the Jev commit gate is NOT active (an existing hook was preserved). Merge .git/hooks/pre-commit.jev to enable it.\n"
+      );
     }
     return 0;
   }
@@ -476,6 +486,12 @@ This repository is connected to the global **Jev System One Harness**.
   if (command === "test-gate" || command === "triage") {
     const logIdx = args.findIndex((a) => a === "--log" || a === "-l" || a === "--sample");
     let logVal = logIdx !== -1 ? args[logIdx + 1] : undefined;
+    if (logIdx !== -1 && (args[logIdx] === "--log" || args[logIdx] === "-l") && logVal && !fs.existsSync(logVal)) {
+      // `--log` is documented as a file: a typo must not be triaged as if it were the log text.
+      console.error(`Error: log file not found: ${logVal}`);
+      console.error("Hint: pass the log text as a positional argument, use --sample for a literal string, or pipe it via stdin.");
+      return 2;
+    }
     if (!logVal) {
       // Check for positional argument after command
       const cmdIdx = args.indexOf(command);

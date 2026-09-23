@@ -589,7 +589,7 @@ Ultra-low latency (< 500µs local, zero-overhead) for systems programming, Tauri
 
 ```toml
 [dependencies]
-jev-harness = "0.1.13"
+jev-harness = "0.1.14"
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -641,7 +641,7 @@ The hook needs your test command as an argument (a hook repository cannot guess 
 ```yaml
 repos:
   - repo: https://github.com/ismaelsoilet/jev-harness
-    rev: v0.1.13
+    rev: v0.1.14
     hooks:
       - id: jev-test-gate
         args: ["pytest -q"]     # or "npm test", "cargo test --quiet", ...
@@ -751,6 +751,13 @@ You can also trigger releases via GitHub Actions:
 
 *(Requires `PYPI_API_TOKEN` and `CARGO_REGISTRY_TOKEN` in GitHub Repository Secrets; npm uses OpenID Connect (OIDC) Trusted Publishing with cryptographic Sigstore provenance without static tokens).*
 
+## 🌟 What's New in v0.1.14
+
+- 🐛 **A mistyped `--log` path is no longer triaged as if it were the log text.** `jev-harness test-gate --log /missing/file` previously produced a fabricated `ENV_MISSING` / `skip_llm=true` verdict with exit `0`; it now exits `2` with a clear hint (use a positional argument, `--sample`, or stdin). Fixed in all three runtimes.
+- 🪝 **No more false sense of protection after `init --git`.** When a foreign `pre-commit` hook is preserved, the CLI no longer prints a plain success message: it states that **the gate is not active until you merge `.git/hooks/pre-commit.jev`**.
+- 📖 **Guide polish from a fresh-agent run**: the MCP smoke test shows the project-virtualenv absolute path, `init` documents exactly what it writes and that it must run inside a git repository, and exit code `2` now has a concrete example.
+- 🧪 **211-Test Battery**: 100% pass rate across 211 tests (117 Python, 49 Rust, 45 TypeScript).
+
 ## 🌟 What's New in v0.1.13
 
 - 🔌 **MCP integration actually works out of the box**: the guide now lists the **real** tool names and their arguments (`jev_triage_test_failure`, `jev_abort_check`, `jev_route_task`, `jev_verify_completion`, `jev_modulate_reasoning_effort`, `jev_should_nudge_continuation`), a 20-second smoke test, a valid `tools/call` example, a virtualenv note for client configs and an OpenCode snippet. The previous names (`jev_should_abort_trajectory`, `jev_route_model_tier`, `jev_verify_step_completion`, `jev_get_telemetry`) did not exist.
@@ -758,7 +765,7 @@ You can also trigger releases via GitHub Actions:
 - 🛡️ **`init` never clobbers**: existing agent skills are preserved (like `.jev.json` and `.env.jev.example`), and only the hook it generated itself (marker, including pre-v0.1.13 variants) is regenerated.
 - 📋 **MCP/CLI output parity**: the Python MCP server now returns `action_recommendation` alongside `recommendation` (and `summary` alongside `reasoning_summary`), matching the TypeScript runtime.
 - 🧭 **Clearer onboarding**: the Quickstart states that **no API key is required** (offline mode is free and makes zero network calls), `status` guidance is fully in English, `.env.jev.example` lists every provider, and the README scopes `AGENTS.md` to people working on the repository itself.
-- 🧪 **210-Test Battery**: 100% pass rate across 210 tests (116 Python, 49 Rust, 45 TypeScript). A fresh, context-free AI agent reproduced the full integration twice from the published docs; every gap it found is fixed here.
+- 🧪 **210-Test Battery**: 100% pass rate across 211 tests (117 Python, 49 Rust, 45 TypeScript). A fresh, context-free AI agent reproduced the full integration twice from the published docs; every gap it found is fixed here.
 
 ## 🌟 What's New in v0.1.12
 
@@ -780,7 +787,7 @@ You can also trigger releases via GitHub Actions:
 - 🚦 **Release gate hardened**: `release.yml` now requires the full CI matrix (Linux/macOS/Windows, Python 3.9-3.13, Node 18-22, Rust) through a reusable workflow gate before publishing to PyPI, npm or crates.io — a red CI can no longer ship a release.
 - 🧹 **Zero clippy warnings** across the Rust workspace.
 - 🧩 **Tri-runtime heuristic parity**: the TypeScript engine now scores an explicit assertion exactly like Python and Rust, so the rules/04 precedence snippet (`FAIL` + cross-line `Expected:`/`Received:` containing a module name) is `deep_logic`/`skip_llm=false` on every runtime. Assertions spanning multiple lines are detected, and `Port 8080 is already in use`-style messages are `flaky_transient`.
-- 🧪 **197-Test Battery**: 100% pass rate across 197 tests (107 Python, 47 Rust, 43 TypeScript) at v0.1.11; superseded by the 210-test battery in v0.1.12.
+- 🧪 **197-Test Battery**: 100% pass rate across 197 tests (107 Python, 47 Rust, 43 TypeScript) at v0.1.11; superseded by the 211-test battery in v0.1.12.
 
 ## 🌟 What's New in v0.1.10
 

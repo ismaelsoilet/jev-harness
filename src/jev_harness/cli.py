@@ -356,6 +356,7 @@ This repository is connected to the global **Jev System One Harness**.
             print(f"  [!] Antigravity configuration notice: {e}")
 
     # 6. Install Git pre-commit hook if requested
+    git_gate_active = True
     if getattr(args, "git", False) or getattr(args, "all", False):
         git_hooks = cwd / ".git" / "hooks"
         if git_hooks.exists():
@@ -374,9 +375,10 @@ This repository is connected to the global **Jev System One Harness**.
                 sample = git_hooks / "pre-commit.jev"
                 sample.write_text(hook_script, encoding="utf-8")
                 sample.chmod(0o755)
+                git_gate_active = False
                 print(
-                    "  [!] An existing pre-commit hook was preserved. "
-                    f"Merge {sample.relative_to(cwd)} into it to enable the Jev gate."
+                    "  [!] An existing pre-commit hook was preserved; the Jev gate is NOT active yet. "
+                    f"Merge {sample.relative_to(cwd)} into it (or use the pre-commit framework) to enable it."
                 )
             else:
                 pre_commit.write_text(hook_script, encoding="utf-8")
@@ -385,12 +387,28 @@ This repository is connected to the global **Jev System One Harness**.
                 detail = f" (test command: {detected})" if detected else " (no test command detected yet)"
                 print(f"  [+] Installed Git pre-commit guardrail: {pre_commit.relative_to(cwd)}{detail}")
 
-    print("\n[OK] Repository configured successfully! You can now run 'jev-harness status'.\n")
+    if git_gate_active:
+        print("\n[OK] Repository configured successfully! You can now run 'jev-harness status'.\n")
+    else:
+        print(
+            "\n[!] Repository configured, but the Jev commit gate is NOT active "
+            "(an existing hook was preserved). Merge .git/hooks/pre-commit.jev to enable it.\n"
+        )
     return 0
 
 
 def cmd_test_gate(args: argparse.Namespace) -> int:
-    raw_input = getattr(args, "log", None) or getattr(args, "sample", None) or getattr(args, "log_pos", None)
+    log_path = getattr(args, "log", None)
+    raw_input = log_path or getattr(args, "sample", None) or getattr(args, "log_pos", None)
+    if log_path and not Path(log_path).is_file():
+        # `--log` is documented as a file: a typo must not be triaged as if it were the log text.
+        print(f"Error: log file not found: {log_path}", file=sys.stderr)
+        print(
+            "Hint: pass the log text as a positional argument, use --sample for a literal string, "
+            "or pipe it via stdin.",
+            file=sys.stderr,
+        )
+        return 2
     text = _read_input(raw_input).strip()
     if not text:
         print("Error: No test failure log provided. Pass --log <file_or_string> or as positional argument or pipe via stdin.", file=sys.stderr)

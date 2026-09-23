@@ -409,6 +409,7 @@ pub async fn run_cli() {
                     println!("  [+] Created Cursor MCP config: {}", cursor_mcp.display());
                 }
             }
+            let mut git_gate_active = true;
             if git || all {
                 let git_hooks = cwd.join(".git").join("hooks");
                 if git_hooks.is_dir() {
@@ -428,7 +429,8 @@ pub async fn run_cli() {
                             use std::os::unix::fs::PermissionsExt;
                             let _ = fs::set_permissions(&sample, fs::Permissions::from_mode(0o755));
                         }
-                        println!("  [!] An existing pre-commit hook was preserved. Merge {} into it to enable the Jev gate.", sample.display());
+                        git_gate_active = false;
+                        println!("  [!] An existing pre-commit hook was preserved; the Jev gate is NOT active yet. Merge {} into it (or use the pre-commit framework) to enable it.", sample.display());
                     } else {
                         let _ = fs::write(&pre_commit, &hook_script);
                         #[cfg(unix)]
@@ -445,6 +447,11 @@ pub async fn run_cli() {
                         println!("  [+] Installed Git pre-commit guardrail: {}{}", pre_commit.display(), detail);
                     }
                 }
+            }
+            if git_gate_active {
+                println!("\n[OK] Repository configured successfully! You can now run 'jev-harness status'.\n");
+            } else {
+                println!("\n[!] Repository configured, but the Jev commit gate is NOT active (an existing hook was preserved). Merge .git/hooks/pre-commit.jev to enable it.\n");
             }
             process::exit(0);
         }
@@ -523,6 +530,14 @@ pub async fn run_cli() {
             log,
             sample,
         } => {
+            if let Some(path) = log.as_ref() {
+                if !std::path::Path::new(path).is_file() {
+                    // `--log` is documented as a file: a typo must not be triaged as log text.
+                    eprintln!("Error: log file not found: {}", path);
+                    eprintln!("Hint: pass the log text as a positional argument, use --sample for a literal string, or pipe it via stdin.");
+                    process::exit(2);
+                }
+            }
             let text = match read_input(log_pos, log.or(sample)) {
                 Ok(t) if !t.trim().is_empty() => t,
                 _ => {

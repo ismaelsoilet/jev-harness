@@ -97,7 +97,7 @@ claude mcp add jev-harness -- npx -y @ismaelsoilet/jev-harness mcp
 claude mcp add jev-harness -- jev-mcp
 ```
 
-### MCP tools exposed by the server (v0.1.12)
+### MCP tools exposed by the server (v0.1.13)
 
 The server exposes **six** tools. Call `tools/list` yourself if you need the live schema — the argument names below are the ones to pass in `tools/call`:
 
@@ -116,7 +116,12 @@ The server exposes **six** tools. Call `tools/list` yourself if you need the liv
 # Python (installed with the package)
 printf '%s\n%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
-  '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | jev-mcp | head -2
+  '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | jev-mcp
+
+# Project virtualenv (no activation needed; use the absolute path)
+printf '%s\n%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | ./.venv/bin/jev-mcp
 
 # Node (no install needed)
 printf '%s\n%s\n' \
@@ -238,7 +243,7 @@ cargo test 2>&1 | jev test-gate
 #### Semantic Exit Codes:
 - `0`: **Safe to proceed deterministically** (`skip_llm = true`). Jev outputs the exact fix (e.g. `pip install pytest-mock`).
 - `1`: **Deep logic failure** (`skip_llm = false`) or **Trajectory Abort Recommended**. Only now should the agent invoke a frontier reasoning model.
-- `2`: Syntax or invocation error.
+- `2`: Syntax or invocation error (for example an invalid flag, an unknown subcommand, or a `--log` path that does not exist).
 
 #### Automated Trajectory Guard (Check before repeating steps):
 ```bash
@@ -326,19 +331,19 @@ Protect your repository automatically before commits or CI runs:
 ```yaml
 repos:
   - repo: https://github.com/ismaelsoilet/jev-harness
-    rev: v0.1.12
+    rev: v0.1.13
     hooks:
       - id: jev-test-gate
         args: ["pytest -q"]     # or "npm test", "cargo test --quiet", ...
 ```
 
-**Generated git hook (Python CLI):**
+**Generated git hook (CLI):**
 ```bash
-jev-harness init --git   # detects npm/pytest/cargo, writes .git/hooks/pre-commit,
-                         # never overwrites an existing hook (saves pre-commit.jev instead)
-                         # and prefers the project virtualenv binaries
+jev-harness init --git   # must run inside a git repository
 jev-harness init --git --test-cmd "make test-fast"
 ```
+
+What `init` writes: `.git/hooks/pre-commit` (executable; detects npm/pytest/cargo, prefers the project virtualenv binaries, regenerable), `.jev.json`, `.env.jev.example` and `.agents/skills/jev-harness/SKILL.md`; `.cursor/mcp.json` only with `--cursor`/`--all`. It **never overwrites existing files**; if a foreign hook is present it is preserved and the gate is written to `.git/hooks/pre-commit.jev` — **the gate is NOT active until you merge it**, and `init` says so.
 > **Virtualenv note:** the generated hook uses `./.venv/bin/...` when a virtualenv exists, so it works without activating the environment. If you install the CLI globally and run tests inside a venv, the hook still resolves both through that venv.
 
 **In GitHub Actions (`.github/workflows/ci.yml`):**

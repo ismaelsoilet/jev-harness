@@ -191,6 +191,14 @@ class TestCLI(unittest.TestCase):
                 data = json.loads(out.getvalue())
                 self.assertEqual(data["workflow_phase"], "verify")
 
+    def test_cli_test_gate_missing_log_file_exits_two(self):
+        with patch.object(sys, "argv", ["jev-harness", "test-gate", "--log", "/definitely/not/a/file.log", "--mock"]):
+            with patch("sys.stderr", new_callable=StringIO) as err:
+                with self.assertRaises(SystemExit) as cm:
+                    main()
+                self.assertEqual(cm.exception.code, 2)
+                self.assertIn("log file not found", err.getvalue())
+
     def test_cli_test_gate_green_run_exits_zero_with_no_failure(self):
         with patch.object(sys, "argv", ["jev-harness", "test-gate", "--json", "--mock"]):
             with patch("sys.stdin", io.StringIO("Tests: 12 passed, 12 total\n")):

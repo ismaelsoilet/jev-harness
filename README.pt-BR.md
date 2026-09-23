@@ -545,7 +545,7 @@ Latência ultra-baixa (< 500µs local, zero-overhead) para Tauri, ferramentas de
 
 ```toml
 [dependencies]
-jev-harness = "0.1.13"
+jev-harness = "0.1.14"
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -571,7 +571,7 @@ O hook exige o seu comando de teste como argumento (um repositório de hooks nã
 ```yaml
 repos:
   - repo: https://github.com/ismaelsoilet/jev-harness
-    rev: v0.1.13
+    rev: v0.1.14
     hooks:
       - id: jev-test-gate
         args: ["pytest -q"]     # ou "npm test", "cargo test --quiet", ...
@@ -633,6 +633,13 @@ Quando em modo de simulação offline (`--mock` ou durante partições de rede),
 
 ---
 
+## 🌟 O que há de Novo na v0.1.14
+
+- 🐛 **Um caminho `--log` errado deixa de ser triado como se fosse o texto do log.** `jev-harness test-gate --log /arquivo/inexistente` antes produzia um veredito fabricado `ENV_MISSING` / `skip_llm=true` com exit `0`; agora sai `2` com uma dica clara (use argumento posicional, `--sample` ou stdin). Corrigido nos três runtimes.
+- 🪝 **Fim da falsa sensação de proteção após `init --git`.** Quando um hook `pre-commit` alheio é preservado, a CLI deixa de imprimir uma mensagem de sucesso simples: informa que **o gate não está ativo até você fazer o merge de `.git/hooks/pre-commit.jev`**.
+- 📖 **Ajustes no guia a partir de uma execução com agente novo**: o smoke test MCP mostra o caminho absoluto do virtualenv do projeto, o `init` documenta exatamente o que escreve e que precisa rodar dentro de um repositório git, e o exit code `2` agora tem exemplo concreto.
+- 🧪 **Bateria de 211 Testes**: 100% de aprovação em 211 testes (117 Python, 49 Rust, 45 TypeScript).
+
 ## 🌟 O que há de Novo na v0.1.13
 
 - 🔌 **Integração MCP funciona de imediato**: o guia agora lista os nomes **reais** das ferramentas e seus argumentos (`jev_triage_test_failure`, `jev_abort_check`, `jev_route_task`, `jev_verify_completion`, `jev_modulate_reasoning_effort`, `jev_should_nudge_continuation`), um smoke test de 20 segundos, um exemplo válido de `tools/call`, nota de virtualenv para configs de cliente e snippet do OpenCode. Os nomes anteriores (`jev_should_abort_trajectory`, `jev_route_model_tier`, `jev_verify_step_completion`, `jev_get_telemetry`) não existiam.
@@ -640,7 +647,7 @@ Quando em modo de simulação offline (`--mock` ou durante partições de rede),
 - 🛡️ **`init` nunca destrói nada**: skills existentes são preservadas (como `.jev.json` e `.env.jev.example`), e apenas o hook gerado por ele próprio (marcador, incluindo variantes anteriores à v0.1.13) é regenerado.
 - 📋 **Paridade de saída MCP/CLI**: o servidor MCP em Python agora retorna `action_recommendation` junto de `recommendation` (e `summary` junto de `reasoning_summary`), igual ao runtime TypeScript.
 - 🧭 **Onboarding mais claro**: o Início Rápido informa que **nenhuma chave de API é necessária** (o modo offline é grátis e faz zero chamadas de rede), as instruções do `status` estão em inglês, o `.env.jev.example` lista todos os provedores e o README delimita o `AGENTS.md` a quem trabalha no próprio repositório.
-- 🧪 **Bateria de 210 Testes**: 100% de aprovação em 210 testes (116 Python, 49 Rust, 45 TypeScript). Um agente de IA novo, sem contexto, reproduziu a integração completa duas vezes a partir dos docs publicados; cada lacuna que encontrou está corrigida aqui.
+- 🧪 **Bateria de 210 Testes**: 100% de aprovação em 211 testes (117 Python, 49 Rust, 45 TypeScript). Um agente de IA novo, sem contexto, reproduziu a integração completa duas vezes a partir dos docs publicados; cada lacuna que encontrou está corrigida aqui.
 
 ## 🌟 O que há de Novo na v0.1.12
 
@@ -662,7 +669,7 @@ Quando em modo de simulação offline (`--mock` ou durante partições de rede),
 - 🚦 **Gate de release endurecido**: o `release.yml` agora exige toda a matriz de CI (Linux/macOS/Windows, Python 3.9-3.13, Node 18-22, Rust) via workflow reutilizável antes de publicar no PyPI, npm ou crates.io — uma CI vermelha não consegue mais publicar uma release.
 - 🧹 **Zero avisos de clippy** em todo o workspace Rust.
 - 🧩 **Paridade heurística tri-runtime**: o motor TypeScript agora pontua uma asserção explícita exatamente como Python e Rust, então o snippet de precedência da regra 04 (`FAIL` + `Expected:`/`Received:` em linhas separadas contendo nome de módulo) é `deep_logic`/`skip_llm=false` em todos os runtimes. Asserções em múltiplas linhas são detectadas, e mensagens como `Port 8080 is already in use` são `flaky_transient`.
-- 🧪 **Bateria de 197 Testes**: 100% de aprovação em 197 testes (107 Python, 47 Rust, 43 TypeScript) na v0.1.11; substituída pela bateria de 210 testes na v0.1.12.
+- 🧪 **Bateria de 197 Testes**: 100% de aprovação em 197 testes (107 Python, 47 Rust, 43 TypeScript) na v0.1.11; substituída pela bateria de 211 testes na v0.1.12.
 
 ## 🌟 O que há de Novo na v0.1.10
 
