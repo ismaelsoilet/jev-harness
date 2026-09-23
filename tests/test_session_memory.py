@@ -39,16 +39,19 @@ from jev_harness.session import (
 
 class SessionTestCase(unittest.TestCase):
     def setUp(self):
-        self._tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self._tmp.cleanup)
-        self.root = Path(self._tmp.name)
         self._cwd = os.getcwd()
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
         os.chdir(self.root)
-        self.addCleanup(os.chdir, self._cwd)
+        self.addCleanup(self._cleanup_dirs)
         self._env = patch.dict(os.environ, {"HOME": str(self.root), "USERPROFILE": str(self.root)})
         self._env.start()
         self.addCleanup(self._env.stop)
         self.client = JevClient(force_mock=True)
+
+    def _cleanup_dirs(self):
+        os.chdir(self._cwd)
+        self._tmp.cleanup()
 
 
 class TestGateMemory(SessionTestCase):
@@ -102,10 +105,13 @@ class TestGateMemory(SessionTestCase):
     def test_memory_is_isolated_per_repository(self):
         triage_test_failure("AssertionError: 1 != 2", client=self.client, record_session=True)
         other = tempfile.TemporaryDirectory()
-        self.addCleanup(other.cleanup)
-        os.chdir(other.name)
-        (Path(other.name) / ".jev").mkdir()
-        self.assertEqual(gate_history("triage"), [], "another repository must not see this history")
+        try:
+            os.chdir(other.name)
+            (Path(other.name) / ".jev").mkdir()
+            self.assertEqual(gate_history("triage"), [], "another repository must not see this history")
+        finally:
+            os.chdir(self.root)
+            other.cleanup()
 
     def test_history_is_bounded(self):
         for index in range(40):
