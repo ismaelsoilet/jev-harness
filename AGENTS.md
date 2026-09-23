@@ -19,6 +19,7 @@ This document serves as the primary entry portal. The repository organizes its s
 5. 🚀 **[Release Protocol & Quad-Sync Synchronization](.agents/rules/05_release_and_quad_sync_protocol.md)**: Synchronous pipeline across 4 registries (GitHub, PyPI, npm, Crates.io).
 6. 📝 **[Code Style and Language Conventions](.agents/rules/06_code_style_and_conventions.md)**: Strict standards for Python (pure stdlib), TypeScript (native ESM), and Rust (Tokio 2021).
 7. 🤖 **[Universal Agent Implementation Guide](docs/AGENT_INTEGRATION_GUIDE.md)** ([Português](docs/AGENT_INTEGRATION_GUIDE.pt-BR.md)): Step-by-step playbook to plug Jev Harness via MCP, CLI, or native SDK into any project in 2 minutes.
+8. 🗺️ **[System 1.5 — Architecture, Opportunities and Implementation Plan](SYSTEM_1_5_IMPLEMENTATION.md)**: positioning between System 1 (Jev) and System 2, verified facts, ecosystem comparison and the phased implementation plan. **Not a release plan** — the next release (v0.2.0) follows the protocol in `.agents/rules/05`.
 
 ---
 

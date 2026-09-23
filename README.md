@@ -12,6 +12,7 @@
   <a href="https://typesafe.ai"><img src="https://img.shields.io/badge/powered%20by-TypeSafe%20Jev%20System%20One-orange.svg" alt="TypeSafe Jev"></a>
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-Compatible-purple.svg" alt="MCP Compatible"></a>
   <a href="#"><img src="https://img.shields.io/badge/dependencies-0%20(pure%20stdlib)-success.svg" alt="Zero Dependencies"></a>
+  <a href="SYSTEM_1_5_IMPLEMENTATION.md"><img src="https://img.shields.io/badge/docs-System%201.5%20roadmap-8A2BE2.svg" alt="System 1.5 Docs"></a>
 </p>
 
 <p align="center">
@@ -23,6 +24,16 @@
 > `jev-harness` is an ultra-fast, zero-dependency token optimizer, test failure triage gate, and semantic guardrail for AI coding agents (OpenCode, Command Code, Claude Code, Cursor, Antigravity IDE, Windsurf, Zed, and Pi). Powered by **TypeSafe AI's Jev System One** non-autoregressive decision model.
 >
 > 🤖 **Operating as an AI Agent?** If you are **working on this repository**, read [`AGENTS.md`](AGENTS.md) ([Português](AGENTS.pt-BR.md)) first. If you are **integrating the tool into your own project**, you do not need it — use the [**Universal AI Agent Integration Guide**](docs/AGENT_INTEGRATION_GUIDE.md) (2-minute setup, no API key required to start).
+>
+> **What it is:** a deterministic-first **System 1.5 decision layer** for the code-quality loop — test-failure triage, doom-loop breaking, completion veto, reasoning-effort governance and model routing — callable as a CLI, MCP server, git/CI hook and typed SDKs across **three runtimes (Python, TypeScript, Rust)**.
+> **What it is not:** a coding agent; a runtime supervisor (that is [Foreman](https://github.com/thruwire/foreman)); a tool-call guardrail ([jev-guard](https://github.com/leepokai/jev-guard)); a context sieve ([Winnow](https://github.com/GhalebDweikat/winnow)); or a capability router ([JevRouter](https://github.com/BillionsBobby/JevRouter)). See [Where it fits](#-where-it-fits-the-system-15-decision-layer).
+
+<details>
+<summary><b>📑 Table of contents</b></summary>
+
+- [The Problem](#-the-problem) · [How It Works](#-how-it-works-system-1--system-15--system-2) · [Where It Fits](#-where-it-fits-the-system-15-decision-layer) · [Features](#-features) · [Quickstart](#-quickstart) · [CLI](#-cli-usage) · [Astra-Jev effort governance](#-astra-jev-dynamic-reasoning-effort-governance-2026-frontier-models) · [Integrations](#-universal-agent--ide-integrations) · [SDKs](#-python-sdk) ([TS](#-typescript--javascript-sdk--cli), [Rust](#-rust-crate--standalone-cli)) · [Git & CI guardrails](#-git--cicd-guardrails) · [Economics & benchmarks](#-economics--benchmarks-september-2026-frontier) · [Architecture & roadmap](#-architecture--roadmap) · [Contributing](#-contributing--submissions) · [Release](#-multi-registry-release--synchronization-pypi-npm-cratesio) · [Changelog](#-whats-new-in-v0114)
+
+</details>
 
 ---
 
@@ -32,17 +43,17 @@ When an autonomous coding agent encounters a test failure or compiler error, the
 
 | Failure Scenario | Without Jev Harness | With Jev Harness |
 | :--- | :--- | :--- |
-| **Missing dependency** (`ModuleNotFoundError`, `Cannot find module`, `TS2307`, `E0463`) | 💸 **50,000 LLM tokens burned** (~$0.50 - $2.50) + 15s delay to output `pip/npm install ...` | ⚡ **Jev triage in 90ms ($0.00004)** → Action: install package deterministically. **0 LLM tokens**. |
+| **Missing dependency** (`ModuleNotFoundError`, `Cannot find module`, `TS2307`, `E0463`) | 💸 **~50,000 LLM tokens (estimate)** (~$0.50 - $2.50) + 15s delay to output `pip/npm install ...` | ⚡ **Jev triage** (measured: < 1 ms offline in-process, ~80–100 ms offline CLI, ~0.5–1 s live; ≈ **$0.00002/call** at ~470 input tokens) → Action: install package deterministically. **0 LLM tokens**. |
 | **Flaky transient error** (network timeout, port busy, ECONNREFUSED) | 💸 LLM hallucinates architectural changes to "fix" an ephemeral glitch | ⚡ **Jev detects flaky transient** → Auto-retry worker once. **0 code changes**. |
 | **Circular refactoring** (Doom Loop: attempting the same fix 3+ times) | 💸 **200,000+ tokens burned** in endless circular loops | 🛑 **Jev Abort Gate triggers** (`exit 1`) → Stops loop, alerts developer. |
 | **Trivial typo / formatting** | 💸 Heavy reasoning frontier tier used for simple regex/typo | ⚡ **Jev Route** directs task to local script or Gemini 3.8 Flash. |
 
 ---
 
-## 🏗️ How It Works: System One vs. System Two
+## 🏗️ How It Works: System 1 → System 1.5 → System 2
 
-Daniel Kahneman's cognitive paradigm applied to agentic engineering:
-- **System 1 (Fast, Intuitive, Calibrated):** **Jev** makes non-autoregressive, parallel, typed decisions in **70ms to 300ms** at **$0.042 per 1M tokens** ($0 output tokens).
+Daniel Kahneman's cognitive paradigm applied to agentic engineering, with this harness acting as the executive layer in between:
+- **System 1 (Fast, Intuitive, Calibrated):** **Jev** makes non-autoregressive, parallel, typed decisions. The provider reports ~100 ms typical latency (70 ms floor); measured end-to-end from this harness: **~80–100 ms** offline CLI and **~0.5–1.0 s** live on the free tier. Pricing: **$0.042 per 1M input tokens** ($0 output tokens).
 - **System 2 (Slow, Deliberative, Generative):** Frontier LLMs (GPT-6 Astra, Claude Fable 5.1) write code and solve deep algorithmic logic.
 
 ```
@@ -62,7 +73,7 @@ Daniel Kahneman's cognitive paradigm applied to agentic engineering:
                                                            ▼
                                                ┌───────────────────────┐
                                                │   jev-harness gate    │
-                                               │ (Jev System One 70ms) │
+                                               │ (Jev System One) │
                                                └───────────┬───────────┘
                                                            │
                         ┌──────────────────────────────────┴──────────────────────────────────┐
@@ -80,11 +91,29 @@ Daniel Kahneman's cognitive paradigm applied to agentic engineering:
 
 ## ✨ Features
 
-- 🛡️ **Zero External Dependencies:** Built entirely with Python's standard library (`urllib.request`, `dataclasses`, `json`). No `pip` bloat, instant startup (< 50ms).
+- 🛡️ **Zero External Dependencies:** Built entirely with Python's standard library (`urllib.request`, `dataclasses`, `json`). No `pip` bloat; measured offline CLI cold start ~80–100 ms, in-process gates in tens of microseconds.
 - 🔌 **Universal MCP Server:** Exposes Jev decision tools over stdio (`jev-mcp`) for Cursor, Claude Desktop, Antigravity, Windsurf, Zed, and OpenCode.
 - 🚦 **UNIX Philosophy Compliant:** Standard exit codes (`0` for safe/skip_llm, `1` for abort/logic defect, `2` for syntax error) allow clean pipe composition: `pytest | jev-harness test-gate`.
-- 🔄 **Autonomous Simulation Fallback:** If offline or without an API key, an intelligent heuristic engine runs locally so your CI and scripts never crash.
-- 🌐 **Multi-Provider Support:** Seamlessly connects to TypeSafe AI direct, OpenCode Zen, or OpenRouter.
+- 🔄 **Autonomous Simulation Fallback:** without an API key, or on HTTP `401`/`403` from any provider, a deterministic engine runs locally and every degraded result is flagged `is_mock=true`. Other provider errors (e.g. HTTP 500, timeouts) surface instead of being hidden; configurable fail-open/fail-closed is planned in the [implementation plan](SYSTEM_1_5_IMPLEMENTATION.md) (E0.2).
+- 🌐 **Multi-Provider Support:** TypeSafe AI direct, OpenCode Zen, Command Code, Vercel AI Gateway, and OpenRouter (alpha access).
+
+---
+
+## 🧭 Where It Fits: The System 1.5 Decision Layer
+
+`jev-harness` is one role in the emerging **System 1.5** category: connecting a fast System One decision model (**Jev**) to System 2 frontier models through deterministic software. The category already has specialised tools — use each where it belongs (stars/snapshot: 2026-09-23):
+
+| Tool | Role | Works offline? |
+| :--- | :--- | :--- |
+| **jev-harness** (this repo) | Quality gates: test triage, doom-loop breaking, completion veto, effort governance, model routing | ✅ Deterministic engine, no key needed |
+| [Foreman](https://github.com/thruwire/foreman) | Runs and supervises coding workers (steer / stop / retry / verify / finish) | ❌ Requires a key |
+| [JevRouter](https://github.com/BillionsBobby/JevRouter) | Routes model / subagent / skill / MCP capabilities with policy and receipts | ❌ Requires a key |
+| [Winnow](https://github.com/GhalebDweikat/winnow) | Filters what enters the agent's context window | ❌ Requires a key |
+| [jev-guard](https://github.com/leepokai/jev-guard) | Guardrails for tool calls (deny / ask / allow) and prompt-injection screening | ❌ Requires a key |
+
+**Our unique combination:** the only tool in this set that (1) works **fully offline** with a deterministic engine, (2) ships **three runtimes with semantic parity** for gate verdicts (Python / TypeScript / Rust — known mock-probability divergence is tracked as E3.9), and (3) owns the **test / commit / CI quality gate**.
+
+📚 Architecture & roadmap: [System 1.5 plan](SYSTEM_1_5_PLAN.md) · [Ecosystem & opportunities](SYSTEM_1_5_OPPORTUNITIES.md) · [Implementation plan](SYSTEM_1_5_IMPLEMENTATION.md).
 
 ---
 
@@ -311,7 +340,7 @@ jev-harness init --all
 
 Inspired by Vechen's ([@miu21590](https://x.com/miu21590)) groundbreaking work on *Astra-Codex* and the **[Astra-Ares](https://github.com/miuuyy/Astra-Ares)** framework, **Astra-Jev** introduces autonomous, per-generation reasoning effort modulation governed by TypeSafe Jev System One.
 
-Instead of locking an entire multi-turn coding session into heavy, slow reasoning (or risking bugs by running exclusively in low reasoning), Astra-Jev evaluates the cognitive demand of the immediate next generation in **< 500µs locally (70ms remote)**.
+Instead of locking an entire multi-turn coding session into heavy, slow reasoning (or risking bugs by running exclusively in low reasoning), Astra-Jev evaluates the cognitive demand of the immediate next generation in **< 500µs locally** (in-process; live latency depends on the provider — measured ~0.5–1.0 s on the free tier).
 
 ```
                   ┌────────────────────────────────────────────────────────┐
@@ -390,7 +419,7 @@ jev-harness reasoning-effort \
   --context "$TASK_STEP_DESCRIPTION" \
   --target-provider openai --json
 ```
-Inject the resulting `reasoning_effort: "low" | "medium" | "high"` into the root API payload. Zero message mutation = 100% prompt cache preserved across 50+ turns.
+Inject the resulting `reasoning_effort: "low" | "medium" | "high"` into the root API payload. The harness never rewrites your message history, so it does not invalidate the provider's prefix cache by design.
 
 ### 3. Pi & Oh My Pi (`pi` / `oh-my-pi`)
 Equip Mario Zechner's minimalist terminal agent (`pi`) and `oh-my-pi` workflows:
@@ -678,28 +707,39 @@ if ! OUT=$(npm test 2>&1); then printf '%s\n' "$OUT" | jev-harness test-gate; ex
 | :--- | :--- | :--- | :--- |
 | **Input Pricing** | $10.00 / 1M tokens | $0.75 / 1M tokens | **$0.042 / 1M tokens (~238x cheaper)** |
 | **Output Pricing** | $50.00 / 1M tokens | $3.75 / 1M tokens | **$0.00 (Free - Non-autoregressive)** |
-| **Latency** | 10,000ms – 30,000ms | 1,500ms – 4,000ms | **70ms – 300ms (~100x faster)** |
+| **Latency** | 10,000ms – 30,000ms | 1,500ms – 4,000ms | **Provider claim: ~100 ms typical (70 ms floor). Measured harness E2E: ~0.5–1.0 s live (free tier), < 1 ms offline in-process** |
 | **Output Structure**| Free-form prose & streaming tokens | Structured JSON tool calls | **Strictly typed: Choice, Score, Noul** |
-| **Determinism** | Stochastic reasoning | Stochastic generation | **Zero-hallucination calibrated bounds** |
+| **Determinism** | Stochastic reasoning | Stochastic generation | **Calibrated probabilities — not infallible (see the model's documented [jaggedness](https://docs.typesafe.ai/model-jaggedness/jev-1.13))** |
 
-### Tri-Runtime Offline Heuristic Latency Benchmarks (< 500µs Local Guarantee)
+### Tri-Runtime Offline Latency (measured 2026-09-23, in-process mock)
 
-When operating in offline simulation mode (`--mock` or during network partitions), `jev-harness` executes local System One decision gates with zero external network overhead. All gates strictly satisfy the **$p99 < 500\mu\text{s}$** contract across all three runtimes ($N = 1,000$ iterations empirically measured):
+When `--mock` (or no credentials) is active, every gate runs locally with zero network. Budget: **p99 < 500µs** — asserted in CI for Rust, measured for all three runtimes on 2026-09-23 (`N = 1000` for triage, `N = 500` for abort/effort, standard Linux host):
 
-| Runtime | Decision Gate | $p50$ | $p95$ | $p99$ | Mean | Spec Compliance |
-| :--- | :--- | :---: | :---: | :---: | :---: | :---: |
-| **Rust** (`packages/rust`) | `triage_test_failure` | **10.3 µs** | **22.0 µs** | **37.5 µs** | 13.5 µs | ✅ **PASS** (< 38 µs) |
-| | `should_abort_trajectory` | **6.2 µs** | **10.0 µs** | **22.9 µs** | 7.0 µs | ✅ **PASS** (< 23 µs) |
-| | `modulate_reasoning_effort` | **5.1 µs** | **7.1 µs** | **15.3 µs** | 5.6 µs | ✅ **PASS** (< 16 µs) |
-| | *pure `simulate_system_one`* | **0.7 µs** | **0.9 µs** | **1.3 µs** | 1.0 µs | ✅ **PASS** (< 2 µs) |
-| **TypeScript** (`packages/ts`) | `triageTestFailure` | **13.6 µs** | **37.5 µs** | **213.9 µs** | 26.9 µs | ✅ **PASS** (< 214 µs) |
-| | `shouldAbortTrajectory` | **7.8 µs** | **21.6 µs** | **93.7 µs** | 10.5 µs | ✅ **PASS** (< 94 µs) |
-| | `modulateReasoningEffort` | **6.3 µs** | **17.1 µs** | **89.4 µs** | 9.0 µs | ✅ **PASS** (< 90 µs) |
-| **Python** (`src/jev_harness`) | `triage_test_failure` | **53.5 µs** | **95.0 µs** | **135.6 µs** | 63.1 µs | ✅ **PASS** (< 136 µs) |
-| | `should_abort_trajectory` | **37.0 µs** | **67.1 µs** | **88.8 µs** | 42.3 µs | ✅ **PASS** (< 89 µs) |
-| | `modulate_reasoning_effort` | **33.7 µs** | **62.6 µs** | **103.7 µs** | 41.0 µs | ✅ **PASS** (< 104 µs) |
+| Runtime | Decision Gate | p50 | p95 | p99 | Mean |
+| :--- | :--- | ---: | ---: | ---: | ---: |
+| **Rust** (`packages/rust`) | `triage_test_failure` | 22.0 µs | 38.7 µs | 58.5 µs | 26.1 µs |
+| | `should_abort_trajectory` | 14.6 µs | 30.3 µs | 43.1 µs | 16.8 µs |
+| | `modulate_reasoning_effort` | 15.5 µs | 29.9 µs | 40.5 µs | 17.6 µs |
+| | *pure `simulate_system_one`* | 1.9 µs | 1.9 µs | 2.8 µs | 1.9 µs |
+| **TypeScript** (`packages/ts`) | `triageTestFailure` | 39.5 µs | 143.2 µs | 340.3 µs | 57.2 µs |
+| | `shouldAbortTrajectory` | 37.1 µs | 106.0 µs | 234.4 µs | 47.3 µs |
+| | `modulateReasoningEffort` | 21.9 µs | 77.2 µs | 338.4 µs | 34.1 µs |
+| **Python** (`src/jev_harness`) | `triage_test_failure` | 124.9 µs | 208.1 µs | 295.5 µs | 140.4 µs |
+| | `should_abort_trajectory` | 112.4 µs | 181.3 µs | 229.2 µs | 125.0 µs |
+| | `modulate_reasoning_effort` | 78.1 µs | 131.3 µs | 162.0 µs | 86.8 µs |
 
-> ⚡ **Zero-Overhead Guarantee:** Because heuristic checks execute in tens of microseconds, piping test runners or pre-execution hooks through `jev-harness` introduces undetectable overhead into agent loops while preventing runaway token costs and circular doom loops.
+> ⚡ **Reproduce / zero-overhead:** Rust asserts its budget in `packages/rust/tests/gates_test.rs` (`cargo test --test gates_test -- --nocapture`); Python and TypeScript values are a **point-in-time sample** (2026-09-23, this host, in-process forced-mock client), not a CI assertion. Re-measure on your hardware before citing; the **budget**, not the exact microsecond, is the contract. Piping test runners through the gates still adds overhead far below human perception.
+
+---
+
+## 🗺️ Architecture & Roadmap
+
+| Document | What it answers |
+| :--- | :--- |
+| [System 1.5 — Architecture & verified facts](SYSTEM_1_5_PLAN.md) | Where the tool sits between System 1 (Jev) and System 2; what is verified today (v0.1.14) and what is missing |
+| [System 1.5 — Ecosystem & opportunities](SYSTEM_1_5_OPPORTUNITIES.md) | How we compare with Foreman, JevRouter, Winnow and jev-guard; 21 prioritised opportunities; the "can we be 1.5?" verdict |
+| [System 1.5 — Implementation plan](SYSTEM_1_5_IMPLEMENTATION.md) | Epics, acceptance criteria, tests and sequencing (H1–H3) |
+| [Universal Agent Integration Guide](docs/AGENT_INTEGRATION_GUIDE.md) | Copy-paste setup for MCP, CLI, hooks and CI in any project |
 
 ---
 
@@ -729,11 +769,11 @@ To update the packages and documentation across all 3 registries:
 Use the automated multi-runtime script to check, bump versions, and publish:
 
 ```bash
-# 1. Run full test battery (Python, TS, Rust - 122 tests)
+# 1. Run full test battery (Python, TS, Rust - 211 tests)
 ./scripts/release.sh --check
 
 # 2. Synchronously bump version in pyproject.toml, package.json, and Cargo.toml
-./scripts/release.sh --bump 0.1.6
+./scripts/release.sh --bump 0.1.14
 
 # 3. Publish to a specific registry or all at once:
 ./scripts/release.sh --publish rust    # Publishes to crates.io
@@ -741,7 +781,7 @@ Use the automated multi-runtime script to check, bump versions, and publish:
 ./scripts/release.sh --publish python  # Builds wheel/sdist for PyPI
 
 # 4. Create git tag and push to GitHub
-./scripts/release.sh --git-tag 0.1.6
+./scripts/release.sh --git-tag 0.1.14
 ```
 
 ### 2. Automated GitHub Actions CD (`.github/workflows/release.yml`)
@@ -765,7 +805,7 @@ You can also trigger releases via GitHub Actions:
 - 🛡️ **`init` never clobbers**: existing agent skills are preserved (like `.jev.json` and `.env.jev.example`), and only the hook it generated itself (marker, including pre-v0.1.13 variants) is regenerated.
 - 📋 **MCP/CLI output parity**: the Python MCP server now returns `action_recommendation` alongside `recommendation` (and `summary` alongside `reasoning_summary`), matching the TypeScript runtime.
 - 🧭 **Clearer onboarding**: the Quickstart states that **no API key is required** (offline mode is free and makes zero network calls), `status` guidance is fully in English, `.env.jev.example` lists every provider, and the README scopes `AGENTS.md` to people working on the repository itself.
-- 🧪 **210-Test Battery**: 100% pass rate across 211 tests (117 Python, 49 Rust, 45 TypeScript). A fresh, context-free AI agent reproduced the full integration twice from the published docs; every gap it found is fixed here.
+- 🧪 **211-Test Battery**: 100% pass rate across 211 tests (117 Python, 49 Rust, 45 TypeScript). A fresh, context-free AI agent reproduced the full integration twice from the published docs; every gap it found is fixed here.
 
 ## 🌟 What's New in v0.1.12
 
@@ -843,7 +883,7 @@ You can also trigger releases via GitHub Actions:
 
 ## 🌟 What's New in v0.1.5
 
-- ⚡ **Astra-Jev Dynamic Reasoning Effort Governance**: Pioneered from Vechen (@miu21590) with native Jev System One semantic governance. Modulates per-generation reasoning effort in <500µs local / 70ms remote.
+- ⚡ **Astra-Jev Dynamic Reasoning Effort Governance**: Pioneered from Vechen (@miu21590) with native Jev System One semantic governance. Modulates per-generation reasoning effort in <500µs local (remote latency depends on the provider; provider-claimed 70ms floor).
 - 🌐 **2026 Frontier Models & Dialect Compiling**: Full provider parameters dialect mapping across OpenAI (`reasoning_effort`), Anthropic (`thinking.type: adaptive`, `output_config.effort`), Gemini (`thinking_level`), DeepSeek (`extra_body.thinking: enabled`, preserving `reasoning_content`), Qwen (`enable_thinking`, `thinking_budget`), Kimi, and Xiaomi MiMo.
 - 🛡️ **Zero-Failure Model Safeguards**: Automatically detects direct single-pass models (`gpt-5.6-luna`, `gemini-3.8-live`) to prevent fatal HTTP 400 Bad Request rejections.
 - 🧠 **Prompt Cache (KV Cache) Advisories**: Includes cache-safety recommendations to prevent prefix cache invalidation across 100k+ token sessions.
