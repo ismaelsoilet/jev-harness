@@ -10,6 +10,13 @@ Honored keys:
     - model                 (str)   -> overrides the provider default model
     - skip_llm_threshold    (float) -> triage gate confidence threshold
     - abort_threshold       (float) -> trajectory abort gate threshold
+    - shadow                (bool)  -> decide and report, but never change the exit code
+    - receipts              (bool)  -> append-only decision receipts in `.jev/receipts.jsonl`
+    - receipts_ttl_days     (int)   -> retention: drop receipts older than this (default 30)
+    - receipts_max_entries  (int)   -> retention: keep at most this many receipts (default 5000)
+    - cache                 (bool)  -> local decision cache for the CLI (default true there)
+    - cache_ttl_seconds     (int)   -> how long a cached decision stays valid (default 3600)
+    - debounce_seconds      (int)   -> minimum interval between equal nudge/abort evaluations (default 5)
 
 Credential keys (`api_key`, `provider`) are intentionally resolved by
 `JevClient._resolve_credentials`, which owns the environment/global cascade.
@@ -92,6 +99,20 @@ def load_repo_config() -> Dict[str, Any]:
                 value = data.get(key)
                 if isinstance(value, (int, float)) and not isinstance(value, bool):
                     config[key] = _clamp_probability(float(value))
+
+            if isinstance(data.get("shadow"), bool):
+                config["shadow"] = data["shadow"]
+
+            if isinstance(data.get("receipts"), bool):
+                config["receipts"] = data["receipts"]
+
+            if isinstance(data.get("cache"), bool):
+                config["cache"] = data["cache"]
+
+            for key in ("receipts_ttl_days", "receipts_max_entries", "cache_ttl_seconds", "debounce_seconds"):
+                value = data.get(key)
+                if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+                    config[key] = value
     except Exception:
         pass
 

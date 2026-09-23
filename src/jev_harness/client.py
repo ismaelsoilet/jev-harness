@@ -7,17 +7,23 @@ with zero external dependencies (pure Python standard library) and fallback simu
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import http.client
 import json
+import math
 import os
 from pathlib import Path
 import re
 import socket
 import sys
+import time
 from typing import Any, Dict, List, Optional, Union
 import urllib.error
 import urllib.request
 
 from .config import load_repo_config
+from .perception import redact_secrets
+from .uncertainty import validate_question_options
+from .state import render_state_text
 
 TYPESAFE_API_URL = "https://api.typesafe.ai/v1/systemone"
 OPENCODE_API_URL = "https://opencode.ai/zen/v1/systemone"
@@ -26,7 +32,12 @@ OPENROUTER_API_URL = "https://openrouter.ai/api/alpha/decisions"
 OPENROUTER_CHAT_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 VERCEL_API_URL = "https://ai-gateway.vercel.sh/v1/evaluate"
 DEFAULT_MODEL = "jev-latest"
-DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.1.14; +https://github.com/ismaelsoilet/jev-harness)"
+
+# Provider payload limits (jev-1.13: 64k tokens total; 32k for state + longest question).
+# Characters are a conservative proxy (~4 chars/token) with no external tokenizer.
+MAX_STATE_CHARS = 128_000
+MAX_TOTAL_CHARS = 256_000
+DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.2.0; +https://github.com/ismaelsoilet/jev-harness)"
 
 # Success summaries emitted by common runners when a suite is green. Used to short-circuit
 # triage: a passing run must never be escalated, and it must never cost an API call.
@@ -75,6 +86,41 @@ _UNCLEAN_SIGNALS = (
 )
 
 
+# A failure log is *untrusted input*: the model-jaggedness docs show that adversarial
+# content in the state can steer a decision. These markers mean "this text is trying to
+# give the judge instructions", so the log is escalated instead of classified.
+_INJECTION_PATTERNS = (
+    # Instruction override aimed at the judge.
+    r"ignore\s+(?:all\s+|any\s+|the\s+)?(?:previous|prior|above|earlier|foregoing)\s+"
+    r"(?:instruction|prompt|rule|direction|message)s?",
+    r"disregard\s+(?:all\s+|any\s+|the\s+)?(?:above|previous|prior|earlier|system)",
+    r"\b(?:ignore|bypass|override)\s+(?:the\s+)?(?:gate|harness|instructions?|safety|polic(?:y|ies))\b",
+    # Chat-template turn markers: a real failure log never carries them.
+    r"<\|(?:im_start|im_end|system|assistant|user)\|>",
+    r"\[/?(?:INST|SYS)\]",
+    r"###\s*(?:system|instruction|assistant)\b",
+    r'"role"\s*:\s*"(?:system|assistant)"\s*,\s*"content"',
+    # The log dictating the harness verdict (verb-based, so quoting harness *output* as
+    # data is not flagged).
+    r"\bskip_llm\s*[:=]\s*(?:true|false)\b",
+    r"\b(?:classif|labell?|mark|report|record|return|output|respond|answer)\w*\b[^.\n]{0,60}\b"
+    r"(?:as\s+)?(?:env_missing|flaky_transient|syntax_trivial|no_failure)\b",
+    r"\b(?:do\s+not|don't|never)\s+(?:call|invoke|use|escalate\s+to)\s+(?:the\s+)?"
+    r"(?:llm|model|api|system\s*2|frontier)\b",
+)
+
+
+def looks_like_prompt_injection(log: str) -> bool:
+    """
+    Returns True when a failure log is trying to address the judge instead of describing a
+    failure. Untrusted log content must never be able to talk the harness into skipping the
+    expensive path, so a match escalates the triage (`deep_logic`, `skip_llm=False`).
+    """
+    if not log:
+        return False
+    return any(re.search(pattern, log, re.IGNORECASE | re.MULTILINE) for pattern in _INJECTION_PATTERNS)
+
+
 def looks_like_test_success(log: str) -> bool:
     """
     Returns True only when a log is unequivocally a *successful* run summary.
@@ -119,11 +165,135 @@ def looks_like_test_success(log: str) -> bool:
     return False
 
 
+# Mock distribution contract (E3.9). The three runtimes must produce identical probabilities
+# for the same input, so these constants are mirrored in `packages/ts/src/client.ts` and
+# `packages/rust/src/client.rs` and asserted against `tests/fixtures/mock_golden.json`.
+# A signal *conflict* (an explicit assertion next to an environment/transient signal) lowers
+# the peak on purpose: the CI can then exercise `escalate_to_system2` deterministically.
+MOCK_CHOICE_BEST_PEAKED = 0.85
+MOCK_CHOICE_BEST_CONFLICT = 0.55
+MOCK_SCORE_BEST_PEAKED = 0.80
+
+
+def _parse_cost(value: Any) -> float:
+    """Provider cost for one decision: accepts a number or a numeric string, else 0.0."""
+    if isinstance(value, bool) or value is None:
+        return 0.0
+    try:
+        cost = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return cost if math.isfinite(cost) and cost >= 0 else 0.0
+
+
+def _mock_abort_step_text(structured: Optional[Dict[str, Any]], state_lower: str) -> str:
+    """The proposed step as plain text: the structured field first, the legacy marker second."""
+    if structured is not None:
+        value = structured.get("proposed_step")
+        if isinstance(value, str) and value.strip():
+            return value.lower()
+    text = state_lower
+    for marker in ("proposed next step:", "proposed_next_step:"):
+        if marker in text:
+            text = text.split(marker)[-1]
+    return text
+
+
+def _mock_is_abort_action(
+    question: "ChoiceQuestion", structured: Optional[Dict[str, Any]], state_lower: str
+) -> bool:
+    """True for the abort gate's action question (proceed / replan / abort_and_ask)."""
+    del structured, state_lower
+    return "abort_and_ask" in question.criteria and "proceed" in question.criteria
+
+
+def _mock_abort_action_choice(
+    question: "ChoiceQuestion", structured: Optional[Dict[str, Any]], state_lower: str
+) -> str:
+    """Derives the action from the same signals the dead-end question uses."""
+    step = _mock_abort_step_text(structured, state_lower)
+    forward = any(
+        word in step
+        for word in [
+            "implement", "fix", "resolve", "correct", "update", "create", "write", "add",
+            "install", "apply", "corrigir", "implementar", "executar", "validar", "corregir",
+        ]
+    )
+    repetitive = any(
+        word in step
+        for word in ["same", "repetir", "tentar novamente", "intentar de nuevo", "4a vez", "again", "identical"]
+    )
+    fatal = any(
+        key in state_lower
+        for key in [
+            "impossible", "impossivel", "imposible", "circular", "deadlock", "dead end",
+            "inviavel", "inviable", "hopeless", "fatal",
+        ]
+    )
+    if repetitive or fatal:
+        return "abort_and_ask" if "abort_and_ask" in question.criteria else list(question.criteria)[0]
+    if forward and "proceed" in question.criteria:
+        return "proceed"
+    return ""
+
+
+def _mock_distribution(options: Sequence[str], best: str, peak: float) -> Dict[str, float]:
+    """Peaked distribution over `options` summing to 1.0 (1.0 when there is a single option)."""
+    if len(options) <= 1:
+        return {opt: 1.0 for opt in options}
+    rest = (1.0 - peak) / (len(options) - 1)
+    return {opt: (peak if opt == best else rest) for opt in options}
+
+
+def _mock_has_signal_conflict(
+    is_explicit_assertion: bool,
+    has_deadlock_or_loop: bool,
+    has_env_signal: bool,
+    has_flaky_signal: bool,
+) -> bool:
+    """Two signal families disagreeing (an assertion/deadlock next to an environment or
+    transient cause) lowers the mock's peak so escalation can be exercised deterministically."""
+    return (is_explicit_assertion or has_deadlock_or_loop) and (has_env_signal or has_flaky_signal)
+
+
+def _required_number(answer: Dict[str, Any], key: str, qid: str) -> float:
+    """Reads a required JSON number. A missing, boolean, textual or non-finite value is a
+    malformed answer, matching the strictness the Rust runtime gets from serde."""
+    value = answer.get(key)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"malformed response: answer '{qid}' is missing a numeric {key!r}")
+    try:
+        number = float(value)
+    except OverflowError:
+        raise ValueError(f"malformed response: answer '{qid}' has an out-of-range {key!r}")
+    if not math.isfinite(number):
+        # `json.loads` accepts the non-standard NaN/Infinity literals; TS and Rust reject them.
+        raise ValueError(f"malformed response: answer '{qid}' has a non-finite {key!r}")
+    return number
+
+
+def _required_text(answer: Dict[str, Any], key: str, qid: str) -> str:
+    """Reads a required string field. A missing or type-mismatched value is a malformed answer."""
+    value = answer.get(key)
+    if not isinstance(value, str):
+        raise ValueError(f"malformed response: answer '{qid}' is missing a textual {key!r}")
+    return value
+
+
 def _urlopen_with_ipv4_fallback(req: urllib.request.Request, timeout: float):
-    """Attempts normal urlopen, falling back to IPv4 socket resolution if IPv6 network is unreachable."""
+    """Attempts urlopen, retrying with IPv4-only DNS only when IPv6 resolution fails.
+
+    HTTPError and other transport errors must propagate untouched: retrying them here would
+    multiply provider requests and bypass the caller's Retry-After/backoff policy.
+    """
     try:
         return urllib.request.urlopen(req, timeout=timeout)
+    except urllib.error.HTTPError:
+        raise
     except urllib.error.URLError as e:
+        reason = getattr(e, "reason", e)
+        if not isinstance(reason, socket.gaierror):
+            raise
         orig_getaddrinfo = socket.getaddrinfo
 
         def ipv4_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
@@ -147,6 +317,12 @@ class ChoiceQuestion:
     instructions: str
     criteria: Dict[str, str]
 
+    def __post_init__(self) -> None:
+        # E3.1: a single-option question has no distribution to measure.
+        from .uncertainty import validate_question_options
+
+        validate_question_options(list(self.criteria))
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "type": "choice",
@@ -164,6 +340,11 @@ class ScoreQuestion:
     """
     instructions: str
     criteria: List[str]
+
+    def __post_init__(self) -> None:
+        from .uncertainty import validate_question_options
+
+        validate_question_options(list(self.criteria))
 
     def __post_init__(self) -> None:
         if len(self.criteria) < 2:
@@ -206,7 +387,7 @@ class ScoreAnswer:
     score: float
     confidence: float
     probabilities: Dict[str, float] = field(default_factory=dict)
-    legend: List[str] = field(default_factory=list)
+    legend: Any = field(default_factory=list)  # live: level -> description map; clients may send a list
 
 
 @dataclass
@@ -223,6 +404,13 @@ class JevResponse:
     answers: Dict[str, AnswerType]
     usage: Dict[str, int]
     is_mock: bool = False
+    degraded_reason: str = ""
+    # Provider-reported spend for this decision (0.0 when the provider omits it, or in mock
+    # mode). Deliberately separate from the session's *estimated* savings model.
+    cost_usd: float = 0.0
+    # Provenance for a decision served from the local cache (E3.2) / coalesced (E3.3).
+    cached: bool = False
+    debounced: bool = False
     raw_response: Optional[Dict[str, Any]] = None
 
 
@@ -240,9 +428,21 @@ class JevClient:
         timeout: float = 15.0,
         force_mock: bool = False,
         provider: Optional[str] = None,
+        max_retries: int = 3,
+        retry_base_delay: float = 0.5,
+        fail_open: bool = True,
+        measure_usage: bool = True,
+        cache: bool = False,
     ):
         self.timeout = timeout
         self.force_mock = force_mock
+        self.max_retries = max(1, int(max_retries))
+        self.retry_base_delay = max(0.0, float(retry_base_delay))
+        self.fail_open = bool(fail_open)
+        self.measure_usage = bool(measure_usage)
+        # Opt-in for embedders: a library caller asking twice for the same decision gets two
+        # decisions unless they ask for the cache. The CLI enables it (and offers --no-cache).
+        self.cache = bool(cache)
         resolved_key, resolved_provider = self._resolve_credentials()
         self.provider = provider or resolved_provider
         self.api_key = api_key or resolved_key
@@ -261,24 +461,36 @@ class JevClient:
         else:
             self.base_url = TYPESAFE_API_URL
 
-        # Resolution order: explicit argument > repository `.jev.json` override > provider
-        # default. The generic placeholder (`jev-latest`, what `jev-harness init` scaffolds) is
-        # treated as "no override" so scaffolded configs never clobber provider model IDs.
+        # Resolution order: explicit argument > `JEV_MODEL` env var > repository `.jev.json`
+        # override > provider default. The generic placeholder (`jev-latest`, what
+        # `jev-harness init` scaffolds) is treated as "no override" so scaffolded configs never
+        # clobber provider model IDs.
         repo_model = load_repo_config().get("model")
+        env_model = os.getenv("JEV_MODEL")
         if model:
             self.model = model
+            self.model_source = "argument"
+        elif env_model and env_model.strip():
+            self.model = env_model.strip()
+            self.model_source = "env"
         elif repo_model and repo_model != DEFAULT_MODEL:
             self.model = str(repo_model)
+            self.model_source = ".jev.json"
         elif self.provider == "opencode":
             self.model = "jev-1.13-free"
+            self.model_source = "provider_default"
         elif self.provider == "commandcode":
             self.model = "typesafe/jev"
+            self.model_source = "provider_default"
         elif self.provider == "openrouter":
             self.model = "typesafe/jev-1.13"
+            self.model_source = "provider_default"
         elif self.provider == "vercel":
             self.model = "typesafe-ai/jev"
+            self.model_source = "provider_default"
         else:
             self.model = DEFAULT_MODEL
+            self.model_source = "provider_default"
 
     @staticmethod
     def _resolve_credentials() -> tuple[Optional[str], str]:
@@ -391,6 +603,7 @@ class JevClient:
         state: Union[str, Dict[str, Any], List[Any]],
         questions: Dict[str, QuestionType],
         model: Optional[str] = None,
+        gate: str = "system_one",
     ) -> JevResponse:
         """
         Sends a single batch request to Jev System One API.
@@ -400,14 +613,31 @@ class JevClient:
             raise ValueError("Questions dictionary cannot be empty.")
 
         state_str = json.dumps(state) if isinstance(state, (dict, list)) else str(state)
+        # E3.5: redact before anything is transmitted, for every gate (the CLI, MCP and SDK all
+        # funnel through here). The guard below then measures the string that actually leaves.
+        state_str = redact_secrets(state_str)
         chosen_model = model or self.model
 
         # Fallback to simulation/mock if no key is configured or forced mock
         if not self.is_live:
             return self._simulate_system_one(state_str, questions, chosen_model)
 
+        questions_chars = len(json.dumps({qid: q.to_dict() for qid, q in questions.items()}))
+        if len(state_str) > MAX_STATE_CHARS or len(state_str) + questions_chars > MAX_TOTAL_CHARS:
+            raise RuntimeError(
+                f"Payload exceeds the provider limit: {len(state_str)} state chars + {questions_chars} question chars "
+                f"(limit: {MAX_STATE_CHARS} state / {MAX_TOTAL_CHARS} total, ~32k/64k tokens). "
+                "Trim the state or split the questions."
+            )
+
         if self.provider == "openrouter" and "chat/completions" in self.base_url:
             return self._call_openrouter(state_str, questions, chosen_model)
+
+        # E3.1: a question with a single option has no distribution to measure; refuse it here so
+        # every runtime (CLI, MCP, SDK) behaves the same way.
+        for question in questions.values():
+            if isinstance(question, (ChoiceQuestion, ScoreQuestion)):
+                validate_question_options(list(question.criteria))
 
         payload: Dict[str, Any] = {
             "model": chosen_model,
@@ -429,37 +659,223 @@ class JevClient:
         req_data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(self.base_url, data=req_data, headers=headers, method="POST")
 
-        try:
-            with _urlopen_with_ipv4_fallback(req, timeout=self.timeout) as resp:
-                resp_data = json.loads(resp.read().decode("utf-8"))
-                return self._parse_response(resp_data, chosen_model, is_mock=False)
-        except urllib.error.HTTPError as e:
+        cache_hit = None
+        cache_gate = gate
+        if self.cache and self.is_live:
+            cache_hit = self._cache_lookup(cache_gate, state_str, questions, chosen_model)
+
+        provider_map = {
+            "opencode": "OpenCode Zen",
+            "commandcode": "Command Code",
+            "openrouter": "OpenRouter",
+            "vercel": "Vercel AI Gateway",
+        }
+        provider_label = provider_map.get(self.provider, "TypeSafe")
+
+        if cache_hit is not None:
+            return cache_hit
+
+        attempt = 0
+        while True:
+            attempt += 1
+            attempt_started = time.monotonic()
             try:
-                err_body = e.read().decode("utf-8", errors="replace") if getattr(e, "fp", None) is not None else str(e)
+                with _urlopen_with_ipv4_fallback(req, timeout=self.timeout) as resp:
+                    raw_body = resp.read().decode("utf-8", errors="replace")
+                try:
+                    resp_data = json.loads(raw_body)
+                except ValueError:
+                    if attempt < self.max_retries:
+                        time.sleep(self._retry_delay(attempt))
+                        continue
+                    return self._degrade_or_raise(
+                        f"{provider_label} returned a non-JSON response",
+                        "invalid_response",
+                        state_str,
+                        questions,
+                        chosen_model,
+                    )
+                try:
+                    response = self._parse_response(resp_data, chosen_model, is_mock=False)
+                    self._record_measurement(response, time.monotonic() - attempt_started)
+                    self._cache_store(cache_gate, state_str, questions, chosen_model, resp_data, response)
+                    return response
+                except (ValueError, TypeError, AttributeError, KeyError) as e:
+                    # A 200 with type-mismatched fields (score: "N/A", answers: [...]) is a parse
+                    # failure, not a crash: it follows the same failure policy as a bad status.
+                    if attempt < self.max_retries:
+                        time.sleep(self._retry_delay(attempt))
+                        continue
+                    return self._degrade_or_raise(
+                        f"{provider_label} returned a malformed response: {self._redact_secrets(str(e), self.api_key)}",
+                        "invalid_response",
+                        state_str,
+                        questions,
+                        chosen_model,
+                    )
+            except urllib.error.HTTPError as e:
+                try:
+                    err_body = e.read().decode("utf-8", errors="replace") if getattr(e, "fp", None) is not None else str(e)
+                except Exception:
+                    err_body = str(e)
+                err_body = self._redact_secrets(err_body, self.api_key)
+                if e.code in (401, 403):
+                    try:
+                        return self._degrade_or_raise(
+                            f"{provider_label} auth failed (HTTP {e.code})",
+                            f"auth_{e.code}",
+                            state_str,
+                            questions,
+                            chosen_model,
+                        )
+                    except RuntimeError as err:
+                        raise err from e
+                retryable = e.code == 429 or e.code >= 500
+                if retryable and attempt < self.max_retries:
+                    retry_after = e.headers.get("Retry-After") if getattr(e, "headers", None) else None
+                    time.sleep(self._retry_delay(attempt, retry_after))
+                    continue
+                try:
+                    return self._degrade_or_raise(
+                        f"{provider_label} API returned HTTP {e.code}: {err_body}",
+                        f"http_{e.code}",
+                        state_str,
+                        questions,
+                        chosen_model,
+                    )
+                except RuntimeError as err:
+                    raise err from e
+            except (urllib.error.URLError, TimeoutError, OSError, http.client.HTTPException) as e:
+                # Dropped connections raise RemoteDisconnected/ConnectionResetError (OSError) and
+                # malformed responses raise BadStatusLine (HTTPException): both are transport
+                # failures and must follow the policy, never escape as a traceback.
+                reason = self._redact_secrets(str(e.reason if hasattr(e, "reason") else e), self.api_key)
+                if attempt < self.max_retries:
+                    time.sleep(self._retry_delay(attempt))
+                    continue
+                # A read timeout surfaces as URLError(socket.timeout) on some platforms:
+                # classify by elapsed time so the marker matches the other runtimes.
+                elapsed = time.monotonic() - attempt_started
+                timed_out = isinstance(e, TimeoutError) or elapsed >= max(0.1, self.timeout * 0.9)
+                try:
+                    return self._degrade_or_raise(
+                        f"Failed to connect to {provider_label} API ({self.base_url}): {reason}",
+                        "timeout" if timed_out else "connection",
+                        state_str,
+                        questions,
+                        chosen_model,
+                    )
+                except RuntimeError as err:
+                    raise err from e
+
+    def _cache_key(self, gate: str, state_str: str, questions: Dict[str, QuestionType], model: str) -> str:
+        from .cache import cache_key
+
+        material = json.dumps({qid: q.to_dict() for qid, q in questions.items()}, sort_keys=True, ensure_ascii=False)
+        return cache_key(gate, f"{state_str}\x00{material}", model, self.provider, False)
+
+    def _cache_lookup(
+        self, gate: str, state_str: str, questions: Dict[str, QuestionType], model: str
+    ) -> Optional["JevResponse"]:
+        """E3.2/E3.3: returns a cached live decision, or None. Never used in shadow mode."""
+        try:
+            from .cache import DEBOUNCE_GATES, debounce_seconds, get as cache_get
+
+            window = debounce_seconds() if gate in DEBOUNCE_GATES else None
+            payload, debounced = cache_get(
+                gate, self._cache_key(gate, state_str, questions, model), model, self.provider, False,
+                window_seconds=window,
+            )
+            if payload is None:
+                return None
+            response = self._parse_response(payload, model, is_mock=False)
+            response.cached = True
+            response.debounced = bool(debounced)
+            return response
+        except Exception:
+            return None
+
+    def _cache_store(
+        self,
+        gate: str,
+        state_str: str,
+        questions: Dict[str, QuestionType],
+        model: str,
+        raw: Dict[str, Any],
+        response: "JevResponse",
+    ) -> None:
+        """Stores a live decision. A degraded answer is a symptom, never a cacheable decision."""
+        if not self.cache or not self.is_live or response.degraded_reason:
+            return
+        try:
+            from .cache import put as cache_put
+
+            sanitized = {
+                key: raw.get(key)
+                for key in ("model", "answers", "usage", "cost")
+                if raw.get(key) is not None
+            }
+            cache_put(
+                gate,
+                self._cache_key(gate, state_str, questions, model),
+                model,
+                self.provider,
+                False,
+                sanitized,
+            )
+        except Exception:
+            return
+
+    def _record_measurement(self, response: "JevResponse", duration_s: float) -> None:
+        """E1.4: records what the provider reported for a live decision (never for mock/fallback)."""
+        if response.is_mock or self.measure_usage is False:
+            return
+        usage = response.usage if isinstance(response.usage, dict) else {}
+        try:
+            from .session import record_measured_usage
+
+            record_measured_usage(
+                int(usage.get("input_tokens", 0) or 0),
+                int(usage.get("output_tokens", 0) or 0),
+                response.cost_usd,
+                int(max(0.0, duration_s) * 1000),
+            )
+        except Exception:
+            # Telemetry must never break a decision.
+            pass
+
+    def _degrade_or_raise(
+        self,
+        message: str,
+        reason: str,
+        state_str: str,
+        questions: Dict[str, Any],
+        chosen_model: str,
+    ) -> "JevResponse":
+        """Applies the failure policy: fail-open marks the degraded answer, fail-closed raises."""
+        if self.fail_open:
+            sys.stderr.write(f"[JEV WARNING] {message}; falling back to offline simulation.\n")
+            return self._mark_degraded(self._simulate_system_one(state_str, questions, chosen_model), reason)
+        raise RuntimeError(message)
+
+    def _retry_delay(self, attempt: int, retry_after: Optional[str] = None) -> float:
+        """Exponential backoff, honoring a provider Retry-After, capped to keep CI fast."""
+        if retry_after:
+            try:
+                seconds = float(str(retry_after).strip())
             except Exception:
-                err_body = str(e)
-            err_body = self._redact_secrets(err_body, self.api_key)
-            provider_map = {
-                "opencode": "OpenCode Zen",
-                "commandcode": "Command Code",
-                "openrouter": "OpenRouter",
-                "vercel": "Vercel AI Gateway",
-            }
-            provider_label = provider_map.get(self.provider, "TypeSafe")
-            if e.code in (401, 403):
-                sys.stderr.write(f"[JEV WARNING] {provider_label} auth failed (HTTP {e.code}); falling back to offline simulation.\n")
-                return self._simulate_system_one(state_str, questions, chosen_model)
-            raise RuntimeError(f"{provider_label} API returned HTTP {e.code}: {err_body}") from e
-        except (urllib.error.URLError, TimeoutError) as e:
-            provider_map = {
-                "opencode": "OpenCode Zen",
-                "commandcode": "Command Code",
-                "openrouter": "OpenRouter",
-                "vercel": "Vercel AI Gateway",
-            }
-            provider_label = provider_map.get(self.provider, "TypeSafe")
-            reason = self._redact_secrets(str(e.reason if hasattr(e, "reason") else e), self.api_key)
-            raise RuntimeError(f"Failed to connect to {provider_label} API ({self.base_url}): {reason}") from e
+                seconds = None
+            # A negative or non-finite Retry-After is meaningless: fall back to the backoff,
+            # as TS and Rust do.
+            if seconds is not None and math.isfinite(seconds) and seconds >= 0:
+                return min(30.0, seconds)
+        return max(0.0, min(5.0, self.retry_base_delay * (2 ** max(0, attempt - 1))))
+
+    @staticmethod
+    def _mark_degraded(resp: "JevResponse", reason: str) -> "JevResponse":
+        """Flags a fallback response so consumers can distinguish it from a real decision."""
+        resp.degraded_reason = reason
+        return resp
 
     @staticmethod
     def _redact_secrets(text: str, secret: Optional[str] = None) -> str:
@@ -509,67 +925,86 @@ class JevClient:
         }
         req_data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(self.base_url, data=req_data, headers=headers, method="POST")
-        try:
-            with _urlopen_with_ipv4_fallback(req, timeout=self.timeout) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                content = data["choices"][0]["message"]["content"]
-                parsed_json = json.loads(content)
-                return self._parse_response(parsed_json, model, is_mock=False)
-        except Exception as e:
-            sys.stderr.write(
-                f"[JEV WARNING] OpenRouter-compatible endpoint failed ({type(e).__name__}); "
-                "falling back to offline simulation.\n"
-            )
-            return self._simulate_system_one(state_str, questions, model)
+        cache_hit = self._cache_lookup("openrouter-chat", state_str, questions, model) if self.cache else None
+        if cache_hit is not None:
+            return cache_hit
+        attempt = 0
+        while True:
+            attempt += 1
+            attempt_started = time.monotonic()
+            try:
+                with _urlopen_with_ipv4_fallback(req, timeout=self.timeout) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    content = data["choices"][0]["message"]["content"]
+                    parsed_json = json.loads(content)
+                    response = self._parse_response(parsed_json, model, is_mock=False)
+                    self._record_measurement(response, time.monotonic() - attempt_started)
+                    self._cache_store("openrouter-chat", state_str, questions, model, parsed_json, response)
+                    return response
+            except Exception as e:
+                retryable = isinstance(
+                    e, (urllib.error.URLError, TimeoutError, OSError, http.client.HTTPException, ValueError, KeyError)
+                )
+                if retryable and attempt < self.max_retries:
+                    time.sleep(self._retry_delay(attempt))
+                    continue
+                # Same failure policy as the native endpoint: fail-open marks the fallback,
+                # fail-closed surfaces the error instead of returning a silent simulation.
+                return self._degrade_or_raise(
+                    f"OpenRouter-compatible endpoint failed ({self._redact_secrets(str(e), self.api_key)})",
+                    "invalid_response",
+                    state_str,
+                    questions,
+                    model,
+                )
 
     def _parse_response(self, data: Dict[str, Any], model: str, is_mock: bool) -> JevResponse:
         parsed_answers: Dict[str, AnswerType] = {}
-        raw_answers = data.get("answers") or {}
+        raw_answers = data.get("answers")
+        if raw_answers is None:
+            raw_answers = {}
+        if not isinstance(raw_answers, dict):
+            raise ValueError("malformed response: 'answers' must be a JSON object")
 
         for qid, ans in raw_answers.items():
             if not isinstance(ans, dict):
-                continue
+                raise ValueError(f"malformed response: answer '{qid}' must be a JSON object")
             ans_type = ans.get("type")
             if ans_type == "choice":
                 parsed_answers[qid] = ChoiceAnswer(
-                    choice=ans.get("choice", ""),
-                    confidence=float(ans.get("confidence", 1.0)),
+                    choice=_required_text(ans, "choice", qid),
+                    confidence=_required_number(ans, "confidence", qid),
                     probabilities=ans.get("probabilities", {}),
                 )
             elif ans_type == "score":
                 parsed_answers[qid] = ScoreAnswer(
-                    score=float(ans.get("score", 0.0)),
-                    confidence=float(ans.get("confidence", 1.0)),
+                    score=_required_number(ans, "score", qid),
+                    confidence=_required_number(ans, "confidence", qid),
                     probabilities=ans.get("probabilities", {}),
                     legend=ans.get("legend", []),
                 )
             elif ans_type == "noul":
-                parsed_answers[qid] = NoulAnswer(
-                    noul=float(ans.get("noul", 0.0)),
-                )
+                parsed_answers[qid] = NoulAnswer(noul=_required_number(ans, "noul", qid))
             else:
-                if "choice" in ans:
-                    parsed_answers[qid] = ChoiceAnswer(
-                        choice=ans.get("choice", ""),
-                        confidence=float(ans.get("confidence", 1.0)),
-                        probabilities=ans.get("probabilities", {}),
-                    )
-                elif "score" in ans:
-                    parsed_answers[qid] = ScoreAnswer(
-                        score=float(ans.get("score", 0.0)),
-                        confidence=float(ans.get("confidence", 1.0)),
-                        probabilities=ans.get("probabilities", {}),
-                        legend=ans.get("legend", []),
-                    )
-                elif "noul" in ans:
-                    parsed_answers[qid] = NoulAnswer(noul=float(ans.get("noul", 0.0)))
+                # An answer the runtime cannot interpret must never be dropped: the gate would
+                # silently use its default score instead of the provider's judgement.
+                raise ValueError(f"malformed response: answer '{qid}' has an unsupported type {ans_type!r}")
 
-        usage = data.get("usage") or {"input_tokens": len(data.get("state", "")) // 4, "output_tokens": 0}
+        raw_usage = data.get("usage")
+        usage = raw_usage if isinstance(raw_usage, dict) else {
+            "input_tokens": len(str(data.get("state", ""))) // 4,
+            "output_tokens": 0,
+        }
+        if not parsed_answers and not is_mock:
+            # A live response with nothing usable would silently make every gate fall back to
+            # its defaults; that must be a visible degradation instead.
+            raise ValueError("malformed response: no answers could be parsed")
         return JevResponse(
             model=data.get("model", model),
             answers=parsed_answers,
             usage=usage,
             is_mock=is_mock,
+            cost_usd=_parse_cost(data.get("cost")),
             raw_response=data,
         )
 
@@ -581,6 +1016,8 @@ class JevClient:
         Uses deterministic heuristic pattern-matching to provide realistic, valid answers.
         """
         answers: Dict[str, AnswerType] = {}
+        structured_state: Optional[Dict[str, Any]] = state if isinstance(state, dict) else None
+        state = render_state_text(state)
         state_lower = state.lower()
         state_tokens = set(re.findall(r"\w+", state_lower))
 
@@ -676,14 +1113,27 @@ class JevClient:
             if isinstance(q, ChoiceQuestion):
                 if "deep_logic" in q.criteria:
                     best_choice = "deep_logic"
+
                 elif "lightweight_system2" in q.criteria:
                     best_choice = "lightweight_system2"
                 elif "proceed" in q.criteria:
                     best_choice = "proceed"
+                    # The abort gate's action must agree with this engine's own dead-end signal:
+                    # token overlap picking "abort_and_ask" beside a low dead-end probability made
+                    # the gate contradict its own evidence. An undecidable case keeps "proceed" and
+                    # the generic scoring below decides.
+                    if _mock_is_abort_action(q, structured_state, state_lower):
+                        derived_abort = _mock_abort_action_choice(q, structured_state, state_lower)
+                        if derived_abort:
+                            best_choice = derived_abort
                 else:
                     best_choice = list(q.criteria.keys())[0]
+                derived_choice = ""
+                if _mock_is_abort_action(q, structured_state, state_lower):
+                    derived_choice = _mock_abort_action_choice(q, structured_state, state_lower)
                 best_score = 0
-                for opt, desc in q.criteria.items():
+                for opt in sorted(q.criteria):
+                    desc = q.criteria[opt]
                     opt_tokens = set(re.findall(r"\w+", f"{opt} {desc}".lower()))
                     common = opt_tokens.intersection(state_tokens)
                     match_score = len(common)
@@ -710,11 +1160,21 @@ class JevClient:
                     elif opt == "heavy_system2" and has_heavy_keywords:
                         match_score += 15
 
+                    if derived_choice:
+                        continue  # the action is derived from the dead-end signal, not overlap
                     if match_score > best_score:
                         best_score = match_score
                         best_choice = opt
 
-                probs = {k: (0.85 if k == best_choice else 0.15 / max(1, len(q.criteria) - 1)) for k in q.criteria}
+                probs = _mock_distribution(
+                    list(q.criteria),
+                    best_choice,
+                    MOCK_CHOICE_BEST_CONFLICT
+                    if _mock_has_signal_conflict(
+                        is_explicit_assertion, has_deadlock_or_loop, has_env_signal, has_flaky_signal
+                    )
+                    else MOCK_CHOICE_BEST_PEAKED,
+                )
                 is_effort_q = (
                     qid == "effort"
                     or any(eff in q.criteria for eff in ("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"))
@@ -787,31 +1247,23 @@ class JevClient:
                             best_choice = "1"
                     if best_choice not in q.criteria:
                         best_choice = list(q.criteria.keys())[0]
-                    probs = {k: (0.88 if k == best_choice else 0.12 / max(1, len(q.criteria) - 1)) for k in q.criteria}
+                    probs = _mock_distribution(
+                        list(q.criteria),
+                        best_choice,
+                        MOCK_CHOICE_BEST_CONFLICT
+                        if _mock_has_signal_conflict(
+                            is_explicit_assertion, has_deadlock_or_loop, has_env_signal, has_flaky_signal
+                        )
+                        else MOCK_CHOICE_BEST_PEAKED,
+                    )
 
                 elif qid == "workflow_phase" or ("execute" in q.criteria and "complete" in q.criteria):
-                    is_waiting_user = "?" in state_lower or any(k in state_lower for k in [
-                        "waiting for your", "waiting on user", "wait for my go-ahead", "please confirm", "which option",
-                        "do you approve", "would you like me to", "do you want me to", "need your api key", "aguardando sua aprovação",
-                        "qual opção você prefere", "preciso que você confirme", "need clarification", "need permission"
-                    ])
-                    is_unverified = any(k in state_lower for k in [
-                        "without running tests", "tests not run", "unverified", "haven't run pytest",
-                        "todo: run tests", "falta rodar os testes", "sem testar", "need to verify",
-                        "to verify", "run pytest", "run cargo test", "run npm test", "need to run",
-                        "updated file", "edited file", "finished editing", "modified file", "wrote code",
-                        "atualizei o arquivo", "alterei o arquivo", "terminei de editar", "arquivo alterado"
-                    ])
-                    is_unfinished = any(k in state_lower for k in [
-                        "next i'll", "next i will", "1 of 5", "2 of 5", "3 of 5", "4 of 5",
-                        "step 1 done", "unfinished", "a seguir vou", "próximo passo farei",
-                        "falta implementar", "todo:", "remaining steps", "continuarei", "now i will", "next step"
-                    ])
-                    is_done = any(k in state_lower for k in [
-                        "all done", "100% passing", "all criteria satisfied", "tudo concluído",
-                        "todas as etapas concluídas", "task complete", "konnichiwa! all done",
-                        "all tests passed", "tests passed (0 failed)", "completed and verified"
-                    ])
+                    # Canonical phase contract (parity with TypeScript/Rust): same lists, same
+                    # precedence, so the three runtimes classify a transcript identically.
+                    is_waiting_user = "?" in state_lower or any(k in state_lower for k in ["waiting for your", "waiting on user", "wait for my go-ahead", "please confirm", "which option", "do you approve", "would you like me to", "do you want me to", "need your api key", "aguardando sua aprovação", "aguardando usuário", "qual opção você prefere", "qual opção", "preciso que você confirme", "preciso de permissão", "need clarification", "please clarify", "need permission"])
+                    is_unverified = any(k in state_lower for k in ["without running tests", "tests not run", "unverified", "haven't run pytest", "todo: run tests", "falta rodar os testes", "sem testar", "need to verify", "to verify", "run pytest", "run cargo test", "run npm test", "need to run", "updated file", "edited file", "finished editing", "modified file", "wrote code", "atualizei o arquivo", "alterei o arquivo", "terminei de editar", "arquivo alterado"])
+                    is_unfinished = any(k in state_lower for k in ["next i'll", "next i will", "now i will", "continuarei", "a seguir vou", "próximo passo farei", "1 of 5", "2 of 5", "3 of 5", "4 of 5", "step 1 of", "step 1 done", "unfinished", "remaining", "todo:", "pendente", "partial", "parcial", "in progress", "falta implementar", "falta rodar os testes", "sem testar", "without running tests", "tests not run", "haven't run pytest", "need to run", "need to verify", "to verify", "unverified", "run pytest", "run cargo test", "run npm test", "updated file", "edited file", "finished editing", "modified file", "wrote code", "atualizei o arquivo", "alterei o arquivo", "terminei de editar", "arquivo alterado", "next step"])
+                    is_done = any(k in state_lower for k in ["all done", "100% passing", "all criteria satisfied", "tudo concluído", "todas as etapas concluídas", "task complete", "konnichiwa! all done", "all tests passed", "tests passed (0 failed)", "completed and verified", "completed all", "concluído com sucesso", "todos os testes passaram"])
                     if is_waiting_user and "ask" in q.criteria:
                         best_choice = "ask"
                     elif is_done and "complete" in q.criteria:
@@ -820,15 +1272,16 @@ class JevClient:
                         best_choice = "verify"
                     elif is_unfinished and "execute" in q.criteria:
                         best_choice = "execute"
-                    elif any(k in state_lower for k in ["verify", "test", "fable-judge", "verificar", "testar"]) and "verify" in q.criteria:
-                        best_choice = "verify"
-                    elif any(k in state_lower for k in ["plan", "blueprint", "plano", "planejar"]) and "plan" in q.criteria:
-                        best_choice = "plan"
-                    elif any(k in state_lower for k in ["research", "investigate", "pesquisar", "investigar"]) and "research" in q.criteria:
-                        best_choice = "research"
-                    elif "execute" in q.criteria:
                         best_choice = "execute"
-                    probs = {k: (0.88 if k == best_choice else 0.12 / max(1, len(q.criteria) - 1)) for k in q.criteria}
+                    probs = _mock_distribution(
+                        list(q.criteria),
+                        best_choice,
+                        MOCK_CHOICE_BEST_CONFLICT
+                        if _mock_has_signal_conflict(
+                            is_explicit_assertion, has_deadlock_or_loop, has_env_signal, has_flaky_signal
+                        )
+                        else MOCK_CHOICE_BEST_PEAKED,
+                    )
 
                 answers[qid] = ChoiceAnswer(choice=best_choice, confidence=0.88, probabilities=probs)
 
@@ -843,7 +1296,7 @@ class JevClient:
                     matched_idx = 1
                 elif qid == "viability" and (any(w in state_lower for w in ["deadlock", "circular", "impossible", "impossivel", "imposible", "doomed", "inviavel", "inviable"]) or has_deadlock_or_loop):
                     matched_idx = 1
-                elif not has_explicit_failure and any(w in state_lower for w in ["satisfy", "satisfaz", "satisface", "atende", "passed", "passou", "pasó", "sucesso", "éxito", "success", "excellent", "exhaustively", "complete", "concluido", "completado"]) and not any(neg in state_lower for neg in ["not ok", "failed", "falhou"]):
+                elif not has_explicit_failure and any(w in state_lower for w in ["satisfy", "satisfaz", "satisface", "atende", "passed", "passou", "pasó", "pass", "sucesso", "éxito", "success", "excellent", "exhaustively", "complete", "concluido", "completado", "proceed"]) and not any(neg in state_lower for neg in ["not ok", "failed", "falhou"]):
                     matched_idx = n_levels
                 elif qid != "viability" and any(w in state_lower for w in ["trivial", "minor", "pequeno", "menor"]) and not has_heavy_keywords:
                     matched_idx = 1
@@ -856,7 +1309,9 @@ class JevClient:
                         matched_idx = idx
 
                 score_val = float(matched_idx)
-                probs = {str(i): (0.80 if i == matched_idx else 0.20 / max(1, n_levels - 1)) for i in range(1, n_levels + 1)}
+                probs = _mock_distribution(
+                    [str(i) for i in range(1, n_levels + 1)], str(matched_idx), MOCK_SCORE_BEST_PEAKED
+                )
                 answers[qid] = ScoreAnswer(score=score_val, confidence=0.85, probabilities=probs, legend=q.criteria)
 
             elif isinstance(q, NoulQuestion):
@@ -868,7 +1323,17 @@ class JevClient:
                 negation_pattern = r"\b(?:not|do\s+not|don't|não|nao|no|never|sem|evitar|avoid)\s+(?:\w+\s+){0,3}(?:abort|abortar|stop|parar|detener|falhar|fail|deadlock|circular|dead\s*end)"
                 is_negated_abort = bool(re.search(negation_pattern, state_lower))
 
-                proposed_part = state_lower.split("proposed next step:")[-1] if "proposed next step:" in state_lower else state_lower
+                # Prefer the structured field (E0.4); fall back to the legacy textual split.
+                proposed_part = ""
+                if structured_state is not None:
+                    field_value = structured_state.get("proposed_step")
+                    if isinstance(field_value, str):
+                        proposed_part = field_value.lower()
+                if not proposed_part:
+                    proposed_part = state_lower
+                    for marker in ("proposed next step:", "proposed_next_step:"):
+                        if marker in proposed_part:
+                            proposed_part = proposed_part.split(marker)[-1]
                 is_forward_progress = any(w in proposed_part for w in [
                     "implement", "fix", "resolve", "correct", "update", "create", "write", "corrigir", "implementar", "executar", "validar", "corregir"
                 ])

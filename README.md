@@ -31,7 +31,7 @@
 <details>
 <summary><b>📑 Table of contents</b></summary>
 
-- [The Problem](#-the-problem) · [How It Works](#-how-it-works-system-1--system-15--system-2) · [Where It Fits](#-where-it-fits-the-system-15-decision-layer) · [Features](#-features) · [Quickstart](#-quickstart) · [CLI](#-cli-usage) · [Astra-Jev effort governance](#-astra-jev-dynamic-reasoning-effort-governance-2026-frontier-models) · [Integrations](#-universal-agent--ide-integrations) · [SDKs](#-python-sdk) ([TS](#-typescript--javascript-sdk--cli), [Rust](#-rust-crate--standalone-cli)) · [Git & CI guardrails](#-git--cicd-guardrails) · [Economics & benchmarks](#-economics--benchmarks-september-2026-frontier) · [Architecture & roadmap](#-architecture--roadmap) · [Contributing](#-contributing--submissions) · [Release](#-multi-registry-release--synchronization-pypi-npm-cratesio) · [Changelog](#-whats-new-in-v0114)
+- [The Problem](#-the-problem) · [How It Works](#-how-it-works-system-1--system-15--system-2) · [Where It Fits](#-where-it-fits-the-system-15-decision-layer) · [Features](#-features) · [Quickstart](#-quickstart) · [CLI](#-cli-usage) · [Astra-Jev effort governance](#-astra-jev-dynamic-reasoning-effort-governance-2026-frontier-models) · [Integrations](#-universal-agent--ide-integrations) · [SDKs](#-python-sdk) ([TS](#-typescript--javascript-sdk--cli), [Rust](#-rust-crate--standalone-cli)) · [Git & CI guardrails](#-git--cicd-guardrails) · [Economics & benchmarks](#-economics--benchmarks-september-2026-frontier) · [Architecture & roadmap](#-architecture--roadmap) · [Contributing](#-contributing--submissions) · [Release](#-multi-registry-release--synchronization-pypi-npm-cratesio) · [Changelog](#-whats-new-in-v020)
 
 </details>
 
@@ -94,7 +94,17 @@ Daniel Kahneman's cognitive paradigm applied to agentic engineering, with this h
 - 🛡️ **Zero External Dependencies:** Built entirely with Python's standard library (`urllib.request`, `dataclasses`, `json`). No `pip` bloat; measured offline CLI cold start ~80–100 ms, in-process gates in tens of microseconds.
 - 🔌 **Universal MCP Server:** Exposes Jev decision tools over stdio (`jev-mcp`) for Cursor, Claude Desktop, Antigravity, Windsurf, Zed, and OpenCode.
 - 🚦 **UNIX Philosophy Compliant:** Standard exit codes (`0` for safe/skip_llm, `1` for abort/logic defect, `2` for syntax error) allow clean pipe composition: `pytest | jev-harness test-gate`.
-- 🔄 **Autonomous Simulation Fallback:** without an API key, or on HTTP `401`/`403` from any provider, a deterministic engine runs locally and every degraded result is flagged `is_mock=true`. Other provider errors (e.g. HTTP 500, timeouts) surface instead of being hidden; configurable fail-open/fail-closed is planned in the [implementation plan](SYSTEM_1_5_IMPLEMENTATION.md) (E0.2).
+- 🔄 **Resilient Provider Fallback:** retryable failures (`429`, `5xx`, timeouts, network errors) retry with capped exponential backoff and honor `Retry-After`; after the attempts, the default **fail-open** policy degrades to the deterministic engine and marks the answer (`is_mock=true` + `degraded_reason`: `auth_401`, `http_429`, `http_500`, `timeout`, `connection`, `invalid_response`). A `200` the runtime cannot interpret — a wrong field type (`score: "N/A"`), an unknown answer type, a missing required field or `answers: []` — takes the same path in all three runtimes: a marked degradation, never a crash, a silent `NaN` or a silently defaulted score. `--fail-closed` surfaces errors instead (exit `2`, no traceback), `--retries N` tunes attempts.
+- 👻 **Shadow Mode:** `--shadow` (or `"shadow": true` in `.jev.json`) decides and reports `[SHADOW] would exit N` while always exiting `0`, so the pipeline keeps running while you measure the gates on real traffic. CLI misuse (a missing `--log` file, an invalid flag) still exits `2`.
+- 🧾 **Audit trail & self-diagnosis:** `jev-harness doctor` checks config, credentials (fingerprint only), model origin, limits, state permissions, receipts/cache and the git hook — every problem comes with the fix command. `jev-harness receipts` reads the append-only decision trail (hashes + metadata, never raw logs; `0600`, TTL and size bounded, `--no-receipts` to disable).
+- 🧪 **Calibration corpus & replay gate:** `jev-harness replay --corpus tests/corpus` runs 160 labelled cases through every gate, prints a confusion matrix, precision/recall/F1 and ECE per gate, and fails CI on a regression against `docs/REPLAY_REPORT.json` or when an adversarial log is classified deterministically.
+- ⚡ **Decision cache & debounce:** identical live decisions are served from `.jev/cache.json` (`--no-cache` bypasses it), and repeated `nudge-gate`/`abort-check` evaluations inside the debounce window coalesce (`debounced: true`). Shadow runs and degraded answers are never cached; hit-rate shows up in `metrics`.
+- 🤖 **CI triage Action:** a composite GitHub Action turns a failed step into a categorised annotation with the next deterministic action — offline by default (no key, no network), never blocks a green run, and blocking is opt-in via `fail-on`.
+- 🎯 **Uncertainty envelope:** every gate result carries an additive `uncertainty` block (`margin`, `normalized_entropy`, `confidence`, `escalate_to_system2`, `escalation_reason`) derived from the provider's real distribution — zeros and single-option questions guarded, both key conventions accepted, and a green run is never escalated. It never changes `skip_llm` or an exit code.
+- ✂️ **Focused perception & state redaction:** the triage gate sends the provider a `focused_slice` (the assertion line and its neighbours, ≤15 lines) plus a `causal_context` block instead of only the raw log, and **redacts credential-shaped material from the state itself** — in all three runtimes.
+- 🧩 **Structured recovery, never auto-executed:** a missing dependency becomes data (`{action_type, package_name, package_manager, argv, is_safe_auto_run, rationale}`) — no shell string, per-ecosystem name validation, and `is_safe_auto_run` requires the package to be in your manifests **and** an explicit `--allow-auto-recovery`.
+- 🧠 **Session memory & effort lease:** the gates reuse this repository's recent decisions (an explicit `--history` still wins), and a decision opens a bounded effort lease that answers in sub-milliseconds with `--use-lease` — invalidated immediately by `--tool-error` (break-glass).
+- 🔌 **Host plugins & interop:** ready bundles for **Claude Code** (`plugins/claude-code`, manifest + skill + MCP registration) and **Codex/OpenCode** (`plugins/codex`), plus a documented interop section with the dated ecosystem table and an offline link checker in CI.
 - 🌐 **Multi-Provider Support:** TypeSafe AI direct, OpenCode Zen, Command Code, Vercel AI Gateway, and OpenRouter (alpha access).
 
 ---
@@ -160,13 +170,13 @@ Jev Harness supports multiple backend providers and auto-detects credentials:
 
 > **📅 Provider verification date: 2026-09-22.** Model IDs, free tiers and prices change weekly — agents and engineers should re-verify them (and record their own date) if more than 30 days have passed. Step-by-step key acquisition for every provider: **[Universal AI Agent Integration Guide](docs/AGENT_INTEGRATION_GUIDE.md#-provider-access--api-keys)**.
 >
-> **🔒 Privacy:** offline mode (`--mock`, or no credentials) makes **zero network calls**. Live mode transmits the typed questions and the raw failure log (head 2,000 + tail 4,000 characters) to the provider endpoint; secret redaction applies to error messages, not to the log payload. Use `--mock` for repositories with regulated or customer data.
+> **🔒 Privacy:** offline mode (`--mock`, or no credentials) makes **zero network calls**. Live mode transmits the typed questions and the failure log (head 2,000 + tail 4,000 characters) to the provider endpoint. Since v0.2.0 the **state itself is redacted** in all three runtimes: credential-shaped material (API keys, JWTs, GitHub/AWS tokens, DB URLs, private keys) is masked before it leaves the process — in every gate and over MCP/SDK alike. That is shape-based hygiene, **not** a data-loss-prevention layer: structured customer data that does not look like a credential is still transmitted, so use `--mock` for repositories with regulated data.
 
 Credential resolution priority:
 1. Environment variables (`TYPESAFE_API_KEY`, `CMD_API_KEY`, `COMMAND_CODE_API_KEY`, `OPENCODE_API_KEY`, `OPENROUTER_API_KEY`, or `AI_GATEWAY_API_KEY`)
 2. Local repository `.jev.json`, `.env`, or `~/.commandcode/auth.json`
 3. Global configuration `~/.config/jev/credentials.env`
-4. **Autonomous Simulation Fallback**: active when no credentials are configured, and on HTTP `401`/`403` auth failures from **any** provider. The engine prints a `[JEV WARNING]` to stderr and every degraded result is flagged `is_mock=true`. Other failures (e.g. HTTP 500) still raise, so real outages stay visible.
+4. **Resilient Fallback**: active when no credentials are configured and on retryable provider failures (`429`/`5xx`/timeouts/network) or `401`/`403` from **any** provider. Retries use capped backoff + `Retry-After`; the engine prints `[JEV WARNING]` to stderr and every degraded result is flagged `is_mock=true` with a `degraded_reason`. Use `--fail-closed` to surface those errors instead (CLI exit `2`, no traceback).
 
 ```bash
 # Check current connection & provider status anytime
@@ -182,9 +192,12 @@ jev-harness status
 | `model` | string | provider default | Overrides the model sent to the provider. The scaffold placeholder `jev-latest` means "use the provider-optimized default", so it never clobbers provider model IDs. |
 | `skip_llm_threshold` | float `0`-`1` | `0.65` | Minimum confidence for `test-gate` to set `skip_llm=true` (a `deep_logic` verdict is never bypassed). |
 | `abort_threshold` | float `0`-`1` | `0.70` | Minimum dead-end probability for `abort-check` to abort a trajectory. |
+| `shadow` | bool | `false` | Decide and report, but never change the exit code (see [Shadow Mode](#-features)). |
 | `api_key` / `provider` | string | — | Optional credentials. Environment variables take precedence. |
 
 Values are clamped to `[0, 1]`, and a corrupted file degrades to defaults instead of breaking CI. The same keys work identically in Python, TypeScript and Rust.
+
+**Pinning the model.** The effective model resolves as explicit argument → `JEV_MODEL` env var → `model` in `.jev.json` → provider default (run `jev-harness status` to see both the model and where it came from). The alias `jev-latest` **moves**: the provider may change what it points to. Once your `skip_llm_threshold` is calibrated against a model version, pin it — for example `"model": "jev-1.13.0"` — so a provider release cannot silently change your decisions.
 
 ---
 
@@ -203,6 +216,15 @@ jev-harness test-gate --log error.log
 
 # Or get machine-readable JSON
 jev-harness test-gate --log error.log --json
+
+# Observe decisions without blocking a pipeline (always exits 0)
+jev-harness test-gate --shadow --log error.log
+
+# Fail hard on provider outages instead of degrading to the offline engine
+jev-harness test-gate --fail-closed --log error.log
+
+# Bound how long retryable provider failures are retried (default: 3 attempts)
+jev-harness test-gate --retries 1 --log error.log
 ```
 
 **Output Example:**
@@ -316,6 +338,21 @@ Assumption Model:                26,200 tokens/$0.31 per intercepted triage; 80,
 ```
 
 > 📊 **These figures are a planning estimate, not metered usage.** The per-event assumptions are fixed constants (26,200 tokens/$0.31 per intercepted triage, 80,000 tokens/$1.20 per aborted loop). `--json` exposes `estimates_are_heuristic: true` so downstream tooling can label them correctly.
+
+### 8. Self-diagnosis, audit trail and calibration (`doctor` / `receipts` / `replay`)
+
+```bash
+# Is my installation healthy? (never prints secrets; --live spends ONE request)
+jev-harness doctor
+jev-harness doctor --live --json
+
+# What did this repository decide? (append-only, hashes + metadata only)
+jev-harness receipts --tail 10
+jev-harness receipts --json
+
+# How accurate are the gates? (confusion matrix, P/R/F1, ECE per gate; fails on regression)
+jev-harness replay --corpus tests/corpus
+```
 
 ### 7. One-Command Agent Setup (`init`)
 Automatically scaffold MCP configurations for your active agent or IDE:
@@ -618,7 +655,7 @@ Ultra-low latency (< 500µs local, zero-overhead) for systems programming, Tauri
 
 ```toml
 [dependencies]
-jev-harness = "0.1.14"
+jev-harness = "0.2.0"
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -670,7 +707,7 @@ The hook needs your test command as an argument (a hook repository cannot guess 
 ```yaml
 repos:
   - repo: https://github.com/ismaelsoilet/jev-harness
-    rev: v0.1.14
+    rev: v0.2.0
     hooks:
       - id: jev-test-gate
         args: ["pytest -q"]     # or "npm test", "cargo test --quiet", ...
@@ -736,7 +773,7 @@ When `--mock` (or no credentials) is active, every gate runs locally with zero n
 
 | Document | What it answers |
 | :--- | :--- |
-| [System 1.5 — Architecture & verified facts](SYSTEM_1_5_PLAN.md) | Where the tool sits between System 1 (Jev) and System 2; what is verified today (v0.1.14) and what is missing |
+| [System 1.5 — Architecture & verified facts](SYSTEM_1_5_PLAN.md) | Where the tool sits between System 1 (Jev) and System 2; what is verified today (v0.2.0) and what is missing |
 | [System 1.5 — Ecosystem & opportunities](SYSTEM_1_5_OPPORTUNITIES.md) | How we compare with Foreman, JevRouter, Winnow and jev-guard; 21 prioritised opportunities; the "can we be 1.5?" verdict |
 | [System 1.5 — Implementation plan](SYSTEM_1_5_IMPLEMENTATION.md) | Epics, acceptance criteria, tests and sequencing (H1–H3) |
 | [Universal Agent Integration Guide](docs/AGENT_INTEGRATION_GUIDE.md) | Copy-paste setup for MCP, CLI, hooks and CI in any project |
@@ -769,11 +806,11 @@ To update the packages and documentation across all 3 registries:
 Use the automated multi-runtime script to check, bump versions, and publish:
 
 ```bash
-# 1. Run full test battery (Python, TS, Rust - 211 tests)
+# 1. Run full test battery (Python, TS, Rust - 569 tests)
 ./scripts/release.sh --check
 
 # 2. Synchronously bump version in pyproject.toml, package.json, and Cargo.toml
-./scripts/release.sh --bump 0.1.14
+./scripts/release.sh --bump 0.2.0
 
 # 3. Publish to a specific registry or all at once:
 ./scripts/release.sh --publish rust    # Publishes to crates.io
@@ -781,7 +818,7 @@ Use the automated multi-runtime script to check, bump versions, and publish:
 ./scripts/release.sh --publish python  # Builds wheel/sdist for PyPI
 
 # 4. Create git tag and push to GitHub
-./scripts/release.sh --git-tag 0.1.14
+./scripts/release.sh --git-tag 0.2.0
 ```
 
 ### 2. Automated GitHub Actions CD (`.github/workflows/release.yml`)
@@ -790,6 +827,26 @@ You can also trigger releases via GitHub Actions:
 - **Manual:** Go to **GitHub Actions → Release & Publish → Run workflow**, specify the version, and click run.
 
 *(Requires `PYPI_API_TOKEN` and `CARGO_REGISTRY_TOKEN` in GitHub Repository Secrets; npm uses OpenID Connect (OIDC) Trusted Publishing with cryptographic Sigstore provenance without static tokens).*
+
+## 🌟 What's New in v0.2.0
+
+- 🦀 **Rust live parity fixed (breaking for direct crate users)**: live `Score` answers were silently dropped because the parser expected an integer score and a list legend while the provider returns a float and a level map. `ScoreAnswer.score` is now `f64`, `legend` accepts a map or a list, and `probabilities` are parsed — `severity`, `viability`, `rigor` and `complexity` now match Python/TypeScript in live mode. Two other public signatures changed in 0.2.0: `JevClient::retry_delay_ms` now takes `Option<f64>` (fractional `Retry-After`) and `JevClient::parse_api_response` returns an error instead of silently dropping an unparseable answer. The crate is pre-1.0, so this ships as a minor release.
+- 🔁 **Provider resilience**: retry with capped, jitter-free exponential backoff and `Retry-After` support (`429`/`5xx`/timeouts, fractional seconds included); after the attempts, the default **fail-open** policy degrades to the deterministic offline engine and marks the answer (`is_mock=true` + `degraded_reason`: `auth_401`, `http_429`, `http_500`, `timeout`, `connection`, `invalid_response`). `--fail-closed` surfaces the error instead (exit `2`, no traceback); `--retries N` tunes attempts.
+- 🧩 **Malformed provider payloads are a first-class failure**: a `200` with type-mismatched fields (`score: "N/A"`, `answers: []`, `null` numerics), an unknown answer `type` or a missing required field used to crash Python with a raw traceback, produce a silent `NaN` in TypeScript and silently drop the answer in Rust — three different semantics for the same input, and a gate quietly falling back to its default score. All three now treat it as `invalid_response`, retry it like a bad status, degrade under fail-open and raise under fail-closed, and `degraded_reason` is finally **visible** in `--json`, in the MCP payloads and in the human `Mode:` line.
+- 📦 **Payload guard**: `state` and questions are validated against the provider limits (128k state chars / 256k total, ~32k/64k tokens) before any network call, counting code points consistently across the three runtimes.
+- 📌 **Model pinning and origin**: the effective model resolves as explicit argument → `JEV_MODEL` → `"model"` in `.jev.json` → provider default, and `status` now reports **where it came from** (`Model origin: repository .jev.json`), warning that `jev-latest` is a moving alias. Pin a version once your thresholds are calibrated.
+- 🐛 **No more traceback on long literal input**: a task, state or `--log` value longer than the OS path limit used to crash `route`/`verify`/`effort` with `[Errno 36] File name too long` (exit `1` with a traceback); such a value is now treated as literal text (or reported as "log file not found"), and an oversized live payload exits `2` with a clear message.
+- 👻 **Shadow mode**: `--shadow` (or `"shadow": true` in `.jev.json`) decides and reports `[SHADOW] would exit N` on stderr while always exiting `0` — in all three runtimes, including when the provider fails, where it reports `[SHADOW] would exit 2` instead of breaking the pipeline. CLI misuse still exits `2`; `test-gate --json` exposes `shadow` and `would_exit`.
+- 🧪 **569-Test Battery**: 393 Python + 89 TypeScript + 87 Rust, including a shared live-payload fixture, real HTTP/TCP retry servers, malformed-payload probes, and shadow/payload-limit/model-pinning parity.
+- 🧾 **Trust, audit and self-diagnosis**: `doctor` (OK/AVISO/FALHA + the fix command, `--json` for agents), `receipts` (append-only audit trail with a stable input hash, hashes only, `0600`, TTL/size bounded), `.jev/` git-ignored by the repo and by `init`, measured `usage`/`cost` split from the heuristic estimates in `metrics`, and a decision cache with a reported hit-rate (`--no-cache` to bypass).
+- 🧪 **Measured calibration instead of assumed accuracy**: a 160-case labelled corpus (`tests/corpus`, 84 hand-labelled) plus `replay`, which prints the confusion matrix, precision/recall/F1 and ECE per gate and fails CI on a regression or on an adversarial log being classified deterministically. The first baseline and its open findings are published in `docs/REPLAY_REPORT.md`.
+- 🛡️ **Untrusted logs are treated as untrusted**: a deterministic prompt-injection detector escalates (never skips the LLM) when the failure log addresses the judge, in all three runtimes — required by the adversarial corpus gate.
+- 🤖 **CI triage Action** (`examples/github-action`): annotates a failed job with the category and the deterministic action, offline by default and never blocking a green run.
+- 🎯 **Decision quality made explicit**: `uncertainty` per result (shape + escalation), `recovery` as structured data with an allowlist-backed safety flag, a focused slice instead of a raw log for the provider, state-level secret redaction, session memory in the gates and a bounded effort lease with a caller break-glass. All additive: no exit code or `skip_llm` changed.
+- 🔀 **Tri-runtime parity is now enforced, not claimed**: `tests/fixtures/corpus_parity.json` locks 160 corpus cases × 6 gates across Python, TypeScript and Rust. Building it exposed and fixed real divergences, including a non-deterministic `HashMap` iteration order in the Rust mock.
+- 📦 **Distribution**: host plugin bundles (Claude Code, Codex/OpenCode), an interop section with sourced dates, and an offline documentation link checker wired into CI.
+- 🧭 **System 1.5 documentation**: architecture, ecosystem comparison and implementation plan are linked from the README (`SYSTEM_1_5_*.md`).
+- 🔒 **Privacy/ops unchanged**: offline mode still makes zero network calls; degraded live answers are always labeled, never silent.
 
 ## 🌟 What's New in v0.1.14
 

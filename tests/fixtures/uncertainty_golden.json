@@ -1,0 +1,149 @@
+{
+ "_comment": "E3.1 golden vectors: uncertainty shape metrics and escalation precedence must be identical in Python, TypeScript and Rust.",
+ "escalation": {
+  "deep_logic": {
+   "category": "deep_logic",
+   "confidence": 0.9,
+   "expected": {
+    "confidence": 0.9,
+    "escalate_to_system2": true,
+    "escalation_reason": "category is deep_logic: a reasoning model is the natural next step",
+    "margin": 0.8,
+    "normalized_entropy": 0.468995594
+   },
+   "probabilities": {
+    "1": 0.9,
+    "2": 0.1
+   }
+  },
+  "env_low_confidence": {
+   "category": "env_missing",
+   "confidence": 0.4,
+   "expected": {
+    "confidence": 0.4,
+    "escalate_to_system2": true,
+    "escalation_reason": "confidence 0.40 is below the 0.65 threshold",
+    "margin": 0.2,
+    "normalized_entropy": 0.970950594
+   },
+   "probabilities": {
+    "1": 0.6,
+    "2": 0.4
+   }
+  },
+  "flaky_high_confidence": {
+   "category": "flaky_transient",
+   "confidence": 0.9,
+   "expected": {
+    "confidence": 0.9,
+    "escalate_to_system2": false,
+    "escalation_reason": "",
+    "margin": 0.8,
+    "normalized_entropy": 0.468995594
+   },
+   "probabilities": {
+    "1": 0.9,
+    "2": 0.1
+   }
+  },
+  "no_failure": {
+   "category": "no_failure",
+   "confidence": 0.9,
+   "expected": {
+    "confidence": 0.9,
+    "escalate_to_system2": false,
+    "escalation_reason": "a passing run is never escalated",
+    "margin": 0.8,
+    "normalized_entropy": 0.468995594
+   },
+   "probabilities": {
+    "1": 0.9,
+    "2": 0.1
+   }
+  }
+ },
+ "vectors": {
+  "bimodal_k4": {
+   "probabilities": {
+    "1": 0.45,
+    "2": 0.45,
+    "3": 0.05,
+    "4": 0.05
+   },
+   "shape": {
+    "levels": 4,
+    "margin": 0.0,
+    "normalized_entropy": 0.734497797
+   }
+  },
+  "empty": {
+   "probabilities": {},
+   "shape": {
+    "levels": null,
+    "margin": null,
+    "normalized_entropy": null
+   }
+  },
+  "one_based_k3": {
+   "probabilities": {
+    "1": 0.6,
+    "2": 0.3,
+    "3": 0.1
+   },
+   "shape": {
+    "levels": 3,
+    "margin": 0.3,
+    "normalized_entropy": 0.817345422
+   }
+  },
+  "peaked_k5": {
+   "probabilities": {
+    "0": 0.85,
+    "1": 0.0375,
+    "2": 0.0375,
+    "3": 0.0375,
+    "4": 0.0375
+   },
+   "shape": {
+    "levels": 5,
+    "margin": 0.8125,
+    "normalized_entropy": 0.391846891
+   }
+  },
+  "single_level": {
+   "probabilities": {
+    "1": 1.0
+   },
+   "shape": {
+    "levels": 1,
+    "margin": null,
+    "normalized_entropy": null
+   }
+  },
+  "uniform_k4": {
+   "probabilities": {
+    "1": 0.25,
+    "2": 0.25,
+    "3": 0.25,
+    "4": 0.25
+   },
+   "shape": {
+    "levels": 4,
+    "margin": 0.0,
+    "normalized_entropy": 1.0
+   }
+  },
+  "with_zeros_k3": {
+   "probabilities": {
+    "0": 0.7,
+    "1": 0.3,
+    "2": 0.0
+   },
+   "shape": {
+    "levels": 2,
+    "margin": 0.4,
+    "normalized_entropy": 0.881290899
+   }
+  }
+ }
+}

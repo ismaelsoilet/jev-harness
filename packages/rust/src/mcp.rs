@@ -210,7 +210,10 @@ pub async fn process_message(line: &str, client: &JevClient) -> Option<Value> {
 
             let result_val: Result<Value, String> = match tool_name {
                 "jev_triage_test_failure" => {
-                    let log = arguments.get("failure_log").and_then(|v| v.as_str()).unwrap_or("");
+                    let log = arguments
+                        .get("failure_log")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
                     if log.trim().is_empty() {
                         return Some(json!({
                             "jsonrpc": "2.0",
@@ -224,7 +227,10 @@ pub async fn process_message(line: &str, client: &JevClient) -> Option<Value> {
                         .map_err(|e| e.to_string())
                 }
                 "jev_abort_check" => {
-                    let step = arguments.get("proposed_step").and_then(|v| v.as_str()).unwrap_or("");
+                    let step = arguments
+                        .get("proposed_step")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
                     if step.trim().is_empty() {
                         return Some(json!({
                             "jsonrpc": "2.0",
@@ -232,14 +238,20 @@ pub async fn process_message(line: &str, client: &JevClient) -> Option<Value> {
                             "error": { "code": -32602, "message": "Missing required argument 'proposed_step'" }
                         }));
                     }
-                    let history = arguments.get("recent_attempts_summary").and_then(|v| v.as_str()).unwrap_or("");
+                    let history = arguments
+                        .get("recent_attempts_summary")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
                     should_abort_trajectory(step, history, Some(client))
                         .await
                         .map(|r| serde_json::to_value(&r).unwrap_or(json!({})))
                         .map_err(|e| e.to_string())
                 }
                 "jev_route_task" => {
-                    let task = arguments.get("task_description").and_then(|v| v.as_str()).unwrap_or("");
+                    let task = arguments
+                        .get("task_description")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
                     if task.trim().is_empty() {
                         return Some(json!({
                             "jsonrpc": "2.0",
@@ -253,8 +265,14 @@ pub async fn process_message(line: &str, client: &JevClient) -> Option<Value> {
                         .map_err(|e| e.to_string())
                 }
                 "jev_verify_completion" => {
-                    let criteria = arguments.get("acceptance_criteria").and_then(|v| v.as_str()).unwrap_or("");
-                    let output = arguments.get("produced_output").and_then(|v| v.as_str()).unwrap_or("");
+                    let criteria = arguments
+                        .get("acceptance_criteria")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let output = arguments
+                        .get("produced_output")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
                     if criteria.trim().is_empty() || output.trim().is_empty() {
                         return Some(json!({
                             "jsonrpc": "2.0",
@@ -268,7 +286,10 @@ pub async fn process_message(line: &str, client: &JevClient) -> Option<Value> {
                         .map_err(|e| e.to_string())
                 }
                 "jev_modulate_reasoning_effort" => {
-                    let context = arguments.get("context").and_then(|v| v.as_str()).unwrap_or("");
+                    let context = arguments
+                        .get("context")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
                     if context.trim().is_empty() {
                         return Some(json!({
                             "jsonrpc": "2.0",
@@ -276,10 +297,19 @@ pub async fn process_message(line: &str, client: &JevClient) -> Option<Value> {
                             "error": { "code": -32602, "message": "Missing required argument 'context'" }
                         }));
                     }
-                    let provider = arguments.get("provider").and_then(|v| v.as_str()).unwrap_or("openai");
+                    let provider = arguments
+                        .get("provider")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("openai");
                     let model = arguments.get("model").and_then(|v| v.as_str());
-                    let session_tokens = arguments.get("session_context_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-                    let max_lease = arguments.get("max_lease_steps").and_then(|v| v.as_u64()).unwrap_or(10) as u32;
+                    let session_tokens = arguments
+                        .get("session_context_tokens")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0) as usize;
+                    let max_lease = arguments
+                        .get("max_lease_steps")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(10) as u32;
 
                     let supported_efforts_vec: Option<Vec<&str>> = arguments
                         .get("supported_efforts")
@@ -300,7 +330,10 @@ pub async fn process_message(line: &str, client: &JevClient) -> Option<Value> {
                     .map_err(|e| e.to_string())
                 }
                 "jev_should_nudge_continuation" => {
-                    let transcript = arguments.get("transcript_tail").and_then(|v| v.as_str()).unwrap_or("");
+                    let transcript = arguments
+                        .get("transcript_tail")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
                     if transcript.trim().is_empty() {
                         return Some(json!({
                             "jsonrpc": "2.0",
@@ -308,8 +341,14 @@ pub async fn process_message(line: &str, client: &JevClient) -> Option<Value> {
                             "error": { "code": -32602, "message": "Missing required argument 'transcript_tail'" }
                         }));
                     }
-                    let prev_nudge = arguments.get("previous_nudge_summary").and_then(|v| v.as_str()).unwrap_or("");
-                    let threshold = arguments.get("threshold").and_then(|v| v.as_f64()).unwrap_or(0.5);
+                    let prev_nudge = arguments
+                        .get("previous_nudge_summary")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let threshold = arguments
+                        .get("threshold")
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(0.5);
 
                     should_nudge_continuation(transcript, prev_nudge, threshold, Some(client))
                         .await
@@ -327,7 +366,8 @@ pub async fn process_message(line: &str, client: &JevClient) -> Option<Value> {
 
             match result_val {
                 Ok(val) => {
-                    let formatted_text = serde_json::to_string_pretty(&val).unwrap_or_else(|_| val.to_string());
+                    let formatted_text =
+                        serde_json::to_string_pretty(&val).unwrap_or_else(|_| val.to_string());
                     Some(json!({
                         "jsonrpc": "2.0",
                         "id": id,
@@ -367,7 +407,9 @@ pub async fn process_message(line: &str, client: &JevClient) -> Option<Value> {
     }
 }
 
-pub async fn run_mcp_server(client: Option<JevClient>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub async fn run_mcp_server(
+    client: Option<JevClient>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let active_client = client.unwrap_or_default();
     let stdin = tokio::io::stdin();
     let mut reader = BufReader::new(stdin).lines();

@@ -9,14 +9,27 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from .client import ChoiceQuestion, JevClient, NoulQuestion, ScoreQuestion, looks_like_test_success
+from .client import (
+    ChoiceQuestion,
+    JevClient,
+    NoulQuestion,
+    ScoreQuestion,
+    looks_like_prompt_injection,
+    looks_like_test_success,
+)
 from .config import load_repo_config
+from .perception import perception_fields, redact_secrets
+from .recovery import build_recovery
+from .uncertainty import uncertainty_from_answer
+from .state import build_state, merge_state
 from .session import (
     detect_repeated_failure,
+    record_gate_decision,
     record_abort_event,
     record_abort_step,
     record_nudge_event,
     record_reasoning_effort_event,
+    set_lease,
     record_route_event,
     record_step_attempt,
     record_triage_event,
@@ -33,7 +46,12 @@ class TestTriageResult:
     severity_score: float
     action_recommendation: str
     is_mock: bool = False
+    degraded_reason: str = ""
     details: Optional[Dict[str, Any]] = None
+    # E3.6: structured recovery (never a shell string; auto-run requires an allowlist + a flag).
+    recovery: Optional[Dict[str, Any]] = None
+    # E3.1: additive uncertainty envelope (never changes skip_llm or exit codes).
+    uncertainty: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -44,6 +62,11 @@ class AbortGateResult:
     viability_score: float
     reasoning_summary: str
     is_mock: bool = False
+    degraded_reason: str = ""
+    cached: bool = False
+    debounced: bool = False
+    # E3.1: additive uncertainty envelope (never changes skip_llm or exit codes).
+    uncertainty: Optional[Dict[str, Any]] = None
 
 
 # Alias for compatibility
@@ -58,6 +81,9 @@ class ModelRouteResult:
     rationale: str
     recommended_model: str
     is_mock: bool = False
+    degraded_reason: str = ""
+    # E3.1: additive uncertainty envelope (never changes skip_llm or exit codes).
+    uncertainty: Optional[Dict[str, Any]] = None
 
 
 # Alias for compatibility
@@ -72,6 +98,9 @@ class VerificationResult:
     confidence: float
     needs_rework: bool
     is_mock: bool = False
+    degraded_reason: str = ""
+    # E3.1: additive uncertainty envelope (never changes skip_llm or exit codes).
+    uncertainty: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -86,6 +115,9 @@ class ReasoningEffortResult:
     cache_safe_recommendation: str = ""
     lease_steps: int = 1
     is_mock: bool = False
+    degraded_reason: str = ""
+    # E3.1: additive uncertainty envelope (never changes skip_llm or exit codes).
+    uncertainty: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -98,12 +130,20 @@ class NudgeGateResult:
     suggested_nudge_prompt: str
     rationale: str
     is_mock: bool = False
+    degraded_reason: str = ""
+    cached: bool = False
+    debounced: bool = False
+    # E3.1: additive uncertainty envelope (never changes skip_llm or exit codes).
+    uncertainty: Optional[Dict[str, Any]] = None
 
 
 def triage_test_failure(
     failure_log: str,
     client: Optional[JevClient] = None,
     record_session: bool = False,
+    extra_state: Optional[Dict[str, Any]] = None,
+    allow_auto_recovery: bool = False,
+    repo_root: Optional[Path] = None,
 ) -> TestTriageResult:
     """
     Evaluates a test error or traceback to determine whether calling a heavy System 2 LLM
@@ -155,10 +195,38 @@ def triage_test_failure(
         # recording "saved tokens" here would inflate the ROI metrics.
         return success_result
 
+    # Untrusted-input guard: a log that addresses the judge (prompt injection) is escalated
+    # instead of classified. It runs after the green short-circuit on purpose — a green run
+    # must never escalate or cost an API call (Rule 0), and a log without failure signals has
+    # nothing to triage anyway.
+    if looks_like_prompt_injection(clean_log):
+        return TestTriageResult(
+            category="deep_logic",
+            confidence=1.0,
+            skip_llm=False,
+            skip_llm_prob=0.0,
+            severity_score=3.0,
+            action_recommendation=(
+                "ESCALATE: the log contains text addressed at the decision engine (possible prompt "
+                "injection). Review the failure manually; no deterministic action is taken."
+            ),
+            is_mock=True,
+            details={"model": "deterministic-injection-detector", "injection_detected": True},
+        )
+
     if len(clean_log) > 6000:
         clean_log = clean_log[:2000] + "\n...[truncated]...\n" + clean_log[-4000:]
 
-    resp = client.system_one(state=clean_log, questions=questions)
+    # E3.5: redact before anything leaves the process, and give the provider a focused slice of
+    # the failure instead of only the truncated log (the offline engine ignores those fields).
+    clean_log = redact_secrets(clean_log)
+    resp = client.system_one(
+        state=merge_state(
+            build_state(failure_log=clean_log, **perception_fields(clean_log)), extra_state
+        ),
+        questions=questions,
+        gate="triage",
+    )
 
     cat_ans = resp.answers.get("category")
     skip_ans = resp.answers.get("skip_llm")
@@ -193,11 +261,19 @@ def triage_test_failure(
         severity_score=sev_score,
         action_recommendation=rec,
         is_mock=resp.is_mock,
+        degraded_reason=resp.degraded_reason,
         details={"model": resp.model, "usage": resp.usage},
+        recovery=(
+            build_recovery(clean_log, repo_root=repo_root, allow_auto_recovery=allow_auto_recovery)
+            if category == "env_missing"
+            else None
+        ),
+        uncertainty=uncertainty_from_answer(cat_ans, category=category),
     )
     if record_session:
         try:
             record_triage_step(result.skip_llm, result.category, error_snippet=clean_log[:200], action=rec)
+            record_gate_decision("triage", result.category, action=rec)
         except Exception:
             pass
     return result
@@ -208,6 +284,7 @@ def should_abort_trajectory(
     recent_attempts_summary: str = "",
     client: Optional[JevClient] = None,
     record_session: bool = False,
+    extra_state: Optional[Dict[str, Any]] = None,
 ) -> AbortGateResult:
     """
     Early-abort check: Determines if the agent's proposed plan or refactor direction
@@ -216,14 +293,29 @@ def should_abort_trajectory(
     client = client or JevClient()
 
     auto_history = recent_attempts_summary
-    if not auto_history and record_session:
+    if not auto_history:
+        # E3.4: fall back to what this repository actually decided recently instead of relying on
+        # the caller to remember. An explicit --history always wins.
         try:
-            if detect_repeated_failure(proposed_step):
-                auto_history = "WARNING: Identical failure or refactor pattern repeated across recent agent turns."
-        except Exception:
-            pass
+            from .session import gate_history
 
-    state = f"RECENT ATTEMPTS & CONTEXT:\n{auto_history}\n\nPROPOSED NEXT STEP:\n{proposed_step}"
+            parts = []
+            if detect_repeated_failure(proposed_step):
+                parts.append("WARNING: Identical failure or refactor pattern repeated across recent agent turns.")
+            remembered = gate_history("abort")[-5:]
+            if remembered:
+                lines = [
+                    f"- {record.get('decision')} ({record.get('action')}) @ {record.get('ts')}"
+                    for record in remembered
+                ]
+                parts.append("Recent abort decisions in this repository:\n" + "\n".join(lines))
+            triage_memory = gate_history("triage")[-3:]
+            if triage_memory:
+                lines = [f"- {record.get('decision')}" for record in triage_memory]
+                parts.append("Recent triage outcomes:\n" + "\n".join(lines))
+            auto_history = "\n\n".join(parts)
+        except Exception:
+            auto_history = ""
 
     questions = {
         "dead_end": NoulQuestion(
@@ -243,7 +335,13 @@ def should_abort_trajectory(
         ),
     }
 
-    resp = client.system_one(state=state, questions=questions)
+    resp = client.system_one(
+        # Field order matters: the offline engine reads everything after the step marker as the
+        # proposed step, so the history must come first (as in the legacy concatenated format).
+        state=merge_state(build_state(previous_attempts=auto_history, proposed_step=proposed_step), extra_state),
+        questions=questions,
+        gate="abort",
+    )
 
     dead_end_ans = resp.answers.get("dead_end")
     action_ans = resp.answers.get("action")
@@ -269,10 +367,15 @@ def should_abort_trajectory(
         viability_score=viability,
         reasoning_summary=summary,
         is_mock=resp.is_mock,
+        degraded_reason=resp.degraded_reason,
+        cached=bool(getattr(resp, "cached", False)),
+        debounced=bool(getattr(resp, "debounced", False)),
+        uncertainty=uncertainty_from_answer(dead_end_ans),
     )
     if record_session:
         try:
             record_abort_step(abort_res.should_abort, proposed_step, action=abort_res.action)
+            record_gate_decision("abort", "abort" if abort_res.should_abort else "proceed", action=abort_res.action)
         except Exception:
             pass
     return abort_res
@@ -282,6 +385,7 @@ def route_model_tier(
     task_description: str,
     client: Optional[JevClient] = None,
     record_session: bool = False,
+    extra_state: Optional[Dict[str, Any]] = None,
 ) -> ModelRouteResult:
     """
     Decides the most cost-effective intelligence tier for a given task.
@@ -303,7 +407,11 @@ def route_model_tier(
         ),
     }
 
-    resp = client.system_one(state=task_description, questions=questions)
+    resp = client.system_one(
+        state=merge_state(build_state(task=task_description), extra_state),
+        questions=questions,
+        gate="route",
+    )
 
     tier_ans = resp.answers.get("tier")
     comp_ans = resp.answers.get("complexity")
@@ -329,6 +437,8 @@ def route_model_tier(
         rationale=rationale,
         recommended_model=model_rec,
         is_mock=resp.is_mock,
+        degraded_reason=resp.degraded_reason,
+        uncertainty=uncertainty_from_answer(tier_ans),
     )
     if record_session:
         try:
@@ -342,6 +452,7 @@ def verify_step_completion(
     acceptance_criteria: str,
     produced_output: str,
     client: Optional[JevClient] = None,
+    extra_state: Optional[Dict[str, Any]] = None,
 ) -> VerificationResult:
     """
     Evaluates whether a code change or artifact actually satisfies acceptance criteria
@@ -361,7 +472,13 @@ def verify_step_completion(
         ),
     }
 
-    resp = client.system_one(state=state, questions=questions)
+    resp = client.system_one(
+        state=merge_state(
+            build_state(acceptance_criteria=acceptance_criteria, produced_output=produced_output), extra_state
+        ),
+        questions=questions,
+        gate="verify",
+    )
 
     sat_ans = resp.answers.get("satisfaction")
     rigor_ans = resp.answers.get("rigor")
@@ -380,6 +497,8 @@ def verify_step_completion(
         confidence=conf,
         needs_rework=needs_rework,
         is_mock=resp.is_mock,
+        degraded_reason=resp.degraded_reason,
+        uncertainty=uncertainty_from_answer(rigor_ans),
     )
 
 
@@ -584,6 +703,8 @@ ASTRA_EFFORT_DESCRIPTIONS: Dict[str, str] = {
 def modulate_reasoning_effort(
     context: str,
     provider: str = "openai",
+    extra_state: Optional[Dict[str, Any]] = None,
+    use_lease: bool = False,
     model: Optional[str] = None,
     session_context_tokens: int = 0,
     client: Optional[JevClient] = None,
@@ -605,6 +726,10 @@ def modulate_reasoning_effort(
         for eff in active_efforts
     }
     valid_leases = [n for n in (1, 2, 5, 10) if n <= max(1, max_lease_steps)]
+    if len(valid_leases) < 2:
+        # E3.1: a single-option question has no distribution to measure, so the option space keeps
+        # two levels and the answer is clamped below.
+        valid_leases = [1, 2]
     lease_descriptions = {
         1: "Reassess after the next generation; fresh evidence or a phase boundary could change the reasoning requirement.",
         2: "A short continuation of two generations is predictable at the same reasoning depth.",
@@ -642,7 +767,42 @@ def modulate_reasoning_effort(
     if len(clean_context) > 4000:
         clean_context = clean_context[:1500] + "\n...[truncated]...\n" + clean_context[-2500:]
 
-    resp = client.system_one(state=clean_context, questions=questions)
+    # E3.7: a live lease answers in sub-milliseconds and costs nothing — but only when the caller
+    # opts in (`use_lease`), so a lease opened for one trajectory never silently decides another
+    # task. A reported tool error invalidates the lease, so the next call re-decides (break-glass).
+    try:
+        from .session import consume_lease
+
+        leased = consume_lease() if use_lease else None
+        if leased and leased.get("effort"):
+            effort_level = str(leased["effort"])
+            return ReasoningEffortResult(
+                effort=effort_level,
+                confidence=1.0,
+                complexity_score=0.0,
+                rationale=(
+                    f"Leased effort '{effort_level}' is still valid for this trajectory "
+                    f"({leased.get('steps_remaining', 0)} step(s) left after this one); no call needed."
+                ),
+                provider=provider,
+                provider_params=dict(leased.get("provider_params") or {}),
+                is_reasoning_supported=True,
+                cache_safe_recommendation=(
+                    "Lease preserved: the request shape is unchanged inside the lease window."
+                ),
+                lease_steps=int(leased.get("steps_remaining", 0) or 0),
+            )
+    except Exception:
+        pass
+
+    resp = client.system_one(
+        state=merge_state(
+            build_state(context=clean_context, provider=provider, session_context_tokens=session_context_tokens),
+            extra_state,
+        ),
+        questions=questions,
+        gate="effort",
+    )
 
     effort_ans = resp.answers.get("effort")
     lease_ans = resp.answers.get("lease")
@@ -681,11 +841,17 @@ def modulate_reasoning_effort(
         cache_safe_recommendation=cache_rec,
         lease_steps=lease_steps,
         is_mock=resp.is_mock,
+        degraded_reason=resp.degraded_reason,
+        uncertainty=uncertainty_from_answer(effort_ans),
     )
 
     if record_session:
         try:
             record_reasoning_effort_event(result.effort, provider=provider)
+            record_gate_decision("effort", result.effort, action=provider)
+            # E3.7: the decision itself opens the lease for the next generations.
+            if result.lease_steps > 0:
+                set_lease(result.effort, result.provider_params, result.lease_steps)
         except Exception:
             pass
 
@@ -695,6 +861,7 @@ def modulate_reasoning_effort(
 def should_nudge_continuation(
     transcript_tail: str,
     previous_nudge_summary: str = "",
+    extra_state: Optional[Dict[str, Any]] = None,
     threshold: float = 0.5,
     client: Optional[JevClient] = None,
     record_session: bool = False,
@@ -707,6 +874,17 @@ def should_nudge_continuation(
     client = client or JevClient()
 
     has_prev_nudge = bool(previous_nudge_summary and previous_nudge_summary.strip())
+    if not has_prev_nudge:
+        try:
+            from .session import gate_history
+
+            remembered = gate_history("nudge-gate")
+            if remembered:
+                last = remembered[-1]
+                previous_nudge_summary = f"{last.get('decision')} ({last.get('action')}) @ {last.get('ts')}"
+                has_prev_nudge = True
+        except Exception:
+            pass
     state_parts = [f"Transcript Tail:\n{transcript_tail.strip()}"]
     if has_prev_nudge:
         state_parts.append(f"Previous Nudge Summary:\n{previous_nudge_summary.strip()}")
@@ -737,7 +915,17 @@ def should_nudge_continuation(
     if has_prev_nudge:
         questions["progress"] = NoulQuestion(instructions="Did the last nudge produce real progress?")
 
-    resp = client.system_one(state=clean_state, questions=questions)
+    resp = client.system_one(
+        state=merge_state(
+            build_state(
+                transcript_tail=transcript_tail.strip(),
+                previous_nudge=previous_nudge_summary if has_prev_nudge else None,
+            ),
+            extra_state,
+        ),
+        questions=questions,
+        gate="nudge",
+    )
 
     phase_ans = resp.answers.get("workflow_phase")
     nudge_ans = resp.answers.get("nudge")
@@ -799,6 +987,7 @@ def should_nudge_continuation(
     if record_session:
         try:
             record_nudge_event(should_nudge)
+            record_gate_decision("nudge-gate", result.workflow_phase, action="nudge" if result.should_nudge else "hold")
         except Exception:
             pass
 
@@ -811,4 +1000,8 @@ def should_nudge_continuation(
         suggested_nudge_prompt=suggested_prompt,
         rationale=rationale,
         is_mock=resp.is_mock,
+        degraded_reason=resp.degraded_reason,
+        cached=bool(getattr(resp, "cached", False)),
+        debounced=bool(getattr(resp, "debounced", False)),
+        uncertainty=uncertainty_from_answer(nudge_ans),
     )

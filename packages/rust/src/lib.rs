@@ -12,6 +12,7 @@ pub mod config;
 pub mod gates;
 pub mod mcp;
 pub mod types;
+pub mod uncertainty;
 
 pub use client::{looks_like_test_success, JevClient, COMMANDCODE_API_URL};
 pub use config::{

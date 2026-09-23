@@ -22,6 +22,197 @@ pub const DEFAULT_USER_AGENT: &str = concat!(
     "; +https://github.com/ismaelsoilet/jev-harness)"
 );
 
+/// E3.5 — masks credential-shaped material before a log is sent to a provider.
+/// Mirrors `redact_secrets` in Python/TypeScript: all three runtimes can transmit a failure log,
+/// so all three must mask the same shapes.
+static SECRET_PATTERNS: LazyLock<Vec<(&'static str, regex::Regex)>> = LazyLock::new(|| {
+    [
+        (
+            "group",
+            r#"(?i)\b(?:api[_-]?key|apikey|access[_-]?token|auth[_-]?token|secret|password|passwd|pwd|client[_-]?secret|private[_-]?key|bearer)\b\s*[:=]\s*["']?([A-Za-z0-9._\-/+]{6,})["']?"#,
+        ),
+        ("plain", r"(?i)\b(?:sk|pk|rk|vck|xox[baprs])[-_][A-Za-z0-9._\-]{12,}"),
+        ("plain", r"(?i)\bgh[pousr]_[A-Za-z0-9]{20,}"),
+        ("plain", r"\bAKIA[0-9A-Z]{16}\b"),
+        ("key", r"(?s)-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----"),
+        ("plain", r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"),
+        ("url", r"(?i)((?:postgres|mysql|mongodb|redis)(?:\+\w+)?)://[^\s:@/]+:[^\s@/]+@"),
+    ]
+    .iter()
+    .map(|(kind, pattern)| (*kind, regex::Regex::new(pattern).expect("secret pattern")))
+    .collect()
+});
+
+pub fn redact_secrets(text: &str) -> String {
+    if text.is_empty() {
+        return String::new();
+    }
+    let mut redacted = text.to_string();
+    for (kind, pattern) in SECRET_PATTERNS.iter() {
+        redacted = match *kind {
+            "group" => pattern
+                .replace_all(&redacted, |caps: &regex::Captures<'_>| match caps.get(1) {
+                    Some(value) => caps[0].replace(value.as_str(), "[REDACTED]"),
+                    None => "[REDACTED]".to_string(),
+                })
+                .to_string(),
+            "key" => pattern
+                .replace_all(&redacted, "[REDACTED PRIVATE KEY]")
+                .to_string(),
+            "url" => pattern
+                .replace_all(&redacted, "${1}://[REDACTED]@")
+                .to_string(),
+            _ => pattern.replace_all(&redacted, "[REDACTED]").to_string(),
+        };
+    }
+    redacted
+}
+
+/// Renders a structured state (E0.4) as labelled text with **real newlines**.
+///
+/// The wire keeps the JSON form (structure + path references), but the offline engine is
+/// line-oriented: JSON escapes every newline, which would collapse a multi-line log into a single
+/// line and silently change every line-anchored pattern. Mirrors `render_state_text` in
+/// Python/TypeScript so the three runtimes score the same text.
+pub fn render_state_text(state: &str) -> String {
+    let trimmed = state.trim_start();
+    if !trimmed.starts_with('{') {
+        return state.to_string();
+    }
+    let parsed: serde_json::Value = match serde_json::from_str(trimmed) {
+        Ok(value) => value,
+        Err(_) => return state.to_string(),
+    };
+    let object = match parsed.as_object() {
+        Some(map) => map,
+        None => return state.to_string(),
+    };
+    let mut parts: Vec<String> = Vec::new();
+    for (key, value) in object {
+        // Perception fields are provider-facing metadata (E3.5): the offline engine keeps scoring
+        // the full log, so its verdicts stay comparable across runtimes.
+        if matches!(
+            key.as_str(),
+            "focused_slice" | "causal_context" | "raw_log_ref"
+        ) {
+            continue;
+        }
+        let rendered = match value {
+            serde_json::Value::String(text) => text.clone(),
+            other => other.to_string(),
+        };
+        parts.push(format!("{key}:\n{rendered}"));
+    }
+    parts.join("\n\n")
+}
+
+/// Builds the structured state for one gate, dropping empty fields (parity with Python/TS).
+pub fn build_state(fields: serde_json::Map<String, serde_json::Value>) -> String {
+    let mut state = serde_json::Map::new();
+    for (key, value) in fields {
+        let empty = match &value {
+            serde_json::Value::Null => true,
+            serde_json::Value::String(text) => text.is_empty(),
+            serde_json::Value::Array(items) => items.is_empty(),
+            serde_json::Value::Object(map) => map.is_empty(),
+            _ => false,
+        };
+        if !empty {
+            state.insert(key, value);
+        }
+    }
+    serde_json::Value::Object(state).to_string()
+}
+
+/// Mock distribution contract (E3.9). Mirrored in `src/jev_harness/client.py` and
+/// `packages/ts/src/client.ts`, and asserted against `tests/fixtures/mock_golden.json`.
+/// A signal *conflict* (explicit assertion next to an environment/transient signal) lowers the
+/// peak on purpose so a caller can exercise `escalate_to_system2` deterministically.
+pub const MOCK_CHOICE_BEST_PEAKED: f64 = 0.85;
+pub const MOCK_CHOICE_BEST_CONFLICT: f64 = 0.55;
+pub const MOCK_SCORE_BEST_PEAKED: f64 = 0.80;
+
+/// Abort action derived from the dead-end signals (parity with Python/TypeScript).
+pub fn mock_abort_action_choice(criteria: &HashMap<String, String>, state_lower: &str) -> String {
+    let mut step = state_lower.to_string();
+    for marker in ["proposed next step:", "proposed_next_step:"] {
+        if let Some((_, tail)) = step.split_once(marker) {
+            step = tail.to_string();
+        }
+    }
+    let forward = [
+        "implement",
+        "fix",
+        "resolve",
+        "correct",
+        "update",
+        "create",
+        "write",
+        "add",
+        "install",
+        "apply",
+        "corrigir",
+        "implementar",
+        "executar",
+        "validar",
+        "corregir",
+    ]
+    .iter()
+    .any(|w| step.contains(w));
+    let repetitive = [
+        "same",
+        "repetir",
+        "tentar novamente",
+        "intentar de nuevo",
+        "4a vez",
+        "again",
+        "identical",
+    ]
+    .iter()
+    .any(|w| step.contains(w));
+    let fatal = [
+        "impossible",
+        "impossivel",
+        "imposible",
+        "circular",
+        "deadlock",
+        "dead end",
+        "inviavel",
+        "inviable",
+        "hopeless",
+        "fatal",
+    ]
+    .iter()
+    .any(|w| state_lower.contains(w));
+    if repetitive || fatal {
+        return if criteria.contains_key("abort_and_ask") {
+            "abort_and_ask".to_string()
+        } else {
+            criteria.keys().next().cloned().unwrap_or_default()
+        };
+    }
+    if forward && criteria.contains_key("proceed") {
+        return "proceed".to_string();
+    }
+    String::new()
+}
+
+/// Peaked distribution over `options` summing to 1.0 (1.0 when there is a single option).
+pub fn mock_distribution(options: &[String], best: &str, peak: f64) -> HashMap<String, f64> {
+    let mut out = HashMap::new();
+    if options.len() <= 1 {
+        for option in options {
+            out.insert(option.clone(), 1.0);
+        }
+        return out;
+    }
+    let rest = (1.0 - peak) / (options.len() - 1) as f64;
+    for option in options {
+        out.insert(option.clone(), if option == best { peak } else { rest });
+    }
+    out
+}
+
 static ASSERTION_REGEX: LazyLock<regex::Regex> = LazyLock::new(|| {
     regex::Regex::new(r"(?i)(?:assertionerror|assertionfailed|assertionfailederror|assert\b|assert_eq!|assertthat|expect\(.*?\)\.to|expected:.*received:|failures?:|fail(?:ed)?\s+test|falha de asserção|fallo de aserción|opentest4j)").expect("Invalid assertion regex")
 });
@@ -44,9 +235,10 @@ static SUCCESS_PATTERNS: LazyLock<Vec<regex::Regex>> = LazyLock::new(|| {
     .collect()
 });
 
-static FAILURE_COUNT_REGEX: LazyLock<regex::Regex> =
-    LazyLock::new(|| regex::Regex::new(r"[1-9\x{FF11}-\x{FF19}\x{0661}-\x{0669}\x{06F1}-\x{06F9}][\d,._\x{00A0} \x{FF10}-\x{FF19}\x{0660}-\x{0669}\x{06F0}-\x{06F9}]*\s*(?:failures|failure|failed|failing|errors?)\b")
-        .expect("count"));
+static FAILURE_COUNT_REGEX: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"[1-9\x{FF11}-\x{FF19}\x{0661}-\x{0669}\x{06F1}-\x{06F9}][\d,._\x{00A0} \x{FF10}-\x{FF19}\x{0660}-\x{0669}\x{06F0}-\x{06F9}]*\s*(?:failures|failure|failed|failing|errors?)\b")
+        .expect("count")
+});
 static FAILURE_NOUN_REGEX: LazyLock<regex::Regex> = LazyLock::new(|| {
     regex::Regex::new(
         r"\b[1-9\x{FF11}-\x{FF19}\x{0661}-\x{0669}\x{06F1}-\x{06F9}][\d,._\x{00A0} \x{FF10}-\x{FF19}\x{0660}-\x{0669}\x{06F0}-\x{06F9}]*\s+tests?\s+failed\b",
@@ -59,8 +251,10 @@ static FAILURE_ASSIGN_REGEX: LazyLock<regex::Regex> = LazyLock::new(|| {
 });
 static FAILURE_MARKER_REGEX: LazyLock<regex::Regex> = LazyLock::new(|| {
     // NOTE: `error:` must not be followed by \b — a colon before a space has no word boundary.
-    regex::Regex::new(r"\b(?:traceback|panic|panicked|assertionerror|assertion failed|not ok)\b|error\s*:")
-        .expect("marker")
+    regex::Regex::new(
+        r"\b(?:traceback|panic|panicked|assertionerror|assertion failed|not ok)\b|error\s*:",
+    )
+    .expect("marker")
 });
 static UPPER_FAILED_REGEX: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"\bFAILED\b").expect("FAILED"));
@@ -70,6 +264,37 @@ static RAN_TESTS_REGEX: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"ran\s+[1-9]\d*\s+tests?").expect("ran tests"));
 static BARE_OK_LINE_REGEX: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"(?m)^\s*ok\s*$").expect("ok line"));
+
+/// A failure log is *untrusted input*: the model-jaggedness docs show that adversarial content
+/// in the state can steer a decision. These markers mean "this text is addressing the judge",
+/// so the log is escalated instead of classified. Kept identical to the Python and TS lists.
+static INJECTION_PATTERNS: LazyLock<Vec<regex::Regex>> = LazyLock::new(|| {
+    [
+        r"(?i)ignore\s+(?:all\s+|any\s+|the\s+)?(?:previous|prior|above|earlier|foregoing)\s+(?:instruction|prompt|rule|direction|message)s?",
+        r"(?i)disregard\s+(?:all\s+|any\s+|the\s+)?(?:above|previous|prior|earlier|system)",
+        r"(?i)\b(?:ignore|bypass|override)\s+(?:the\s+)?(?:gate|harness|instructions?|safety|polic(?:y|ies))\b",
+        r"(?i)<\|(?:im_start|im_end|system|assistant|user)\|>",
+        r"\[/?(?:INST|SYS)\]",
+        r"(?im)###\s*(?:system|instruction|assistant)\b",
+        r#"(?i)"role"\s*:\s*"(?:system|assistant)"\s*,\s*"content""#,
+        r"(?i)\bskip_llm\s*[:=]\s*(?:true|false)\b",
+        r"(?i)\b(?:classif|labell?|mark|report|record|return|output|respond|answer)\w*\b[^.\n]{0,60}\b(?:as\s+)?(?:env_missing|flaky_transient|syntax_trivial|no_failure)\b",
+        r"(?i)\b(?:do\s+not|don't|never)\s+(?:call|invoke|use|escalate\s+to)\s+(?:the\s+)?(?:llm|model|api|system\s*2|frontier)\b",
+    ]
+    .iter()
+    .map(|p| regex::Regex::new(p).expect("injection pattern"))
+    .collect()
+});
+
+/// True when the log is trying to address the judge instead of describing a failure.
+pub fn looks_like_prompt_injection(log: &str) -> bool {
+    if log.is_empty() {
+        return false;
+    }
+    INJECTION_PATTERNS
+        .iter()
+        .any(|pattern| pattern.is_match(log))
+}
 
 /// Returns true only when a log is unequivocally a *successful* run summary.
 ///
@@ -91,7 +316,10 @@ pub fn looks_like_test_success(log: &str) -> bool {
     {
         return false;
     }
-    if ["✗", "❌", "✘", "✕", "×", "‼"].iter().any(|m| log.contains(m)) {
+    if ["✗", "❌", "✘", "✕", "×", "‼"]
+        .iter()
+        .any(|m| log.contains(m))
+    {
         return false;
     }
     let unclean = [
@@ -120,13 +348,11 @@ pub fn looks_like_test_success(log: &str) -> bool {
     RAN_TESTS_REGEX.is_match(&text) && BARE_OK_LINE_REGEX.is_match(&text)
 }
 
-static FAIL_LINE_REGEX: LazyLock<regex::Regex> = LazyLock::new(|| {
-    regex::Regex::new(r"(?i)^fail(?:ed)?\b").expect("Invalid fail line regex")
-});
+static FAIL_LINE_REGEX: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"(?i)^fail(?:ed)?\b").expect("Invalid fail line regex"));
 
-static FAIL_TO_REGEX: LazyLock<regex::Regex> = LazyLock::new(|| {
-    regex::Regex::new(r"(?i)^fail(?:ed)?\s+to\b").expect("Invalid fail-to regex")
-});
+static FAIL_TO_REGEX: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"(?i)^fail(?:ed)?\s+to\b").expect("Invalid fail-to regex"));
 
 static EXPECTED_RECEIVED_REGEX: LazyLock<regex::Regex> = LazyLock::new(|| {
     regex::Regex::new(r"(?is)expected:.{0,300}?received:").expect("Invalid expected/received regex")
@@ -144,14 +370,27 @@ static NEGATION_REGEX: LazyLock<regex::Regex> = LazyLock::new(|| {
     regex::Regex::new(r"(?i)\b(not|do\s+not|don't|não|nao|no|never|sem|evitar|avoid)\s+(\w+\s+){0,3}(abort|abortar|stop|parar|detener|falhar|fail|deadlock|circular|dead\s*end)").expect("Invalid negation regex")
 });
 
+// Provider payload limits (jev-1.13: 64k tokens total; 32k for state + longest question).
+// Characters are a conservative proxy (~4 chars/token) with no external tokenizer.
+pub const MAX_STATE_CHARS: usize = 128_000;
+pub const MAX_TOTAL_CHARS: usize = 256_000;
+
 #[derive(Debug, Clone)]
 pub struct JevClient {
     pub api_key: Option<String>,
     pub base_url: String,
     pub model: String,
+    /// Where the effective model came from: "argument" | "env" | ".jev.json" | "provider_default".
+    pub model_source: String,
     pub provider: String,
     pub timeout_ms: u64,
     pub force_mock: bool,
+    /// Fail-open (default): degrade to the offline engine and mark the response.
+    pub fail_open: bool,
+    /// Maximum provider attempts for retryable failures (429/5xx/timeout/network).
+    pub max_retries: u32,
+    /// Base delay for exponential backoff in ms.
+    pub retry_base_delay_ms: u64,
     http_client: reqwest::Client,
 }
 
@@ -171,26 +410,7 @@ impl JevClient {
     ) -> Self {
         let (resolved_key, resolved_provider, resolved_url) = Self::resolve_credentials(api_key);
         let final_url = base_url.unwrap_or(resolved_url);
-        let repo_config = load_repo_config();
-        let final_model = model.unwrap_or_else(|| {
-            if let Some(repo_model) = repo_config
-                .model
-                .as_ref()
-                .filter(|m| m.as_str() != DEFAULT_MODEL)
-            {
-                repo_model.clone()
-            } else if resolved_provider == "commandcode" {
-                "typesafe/jev".to_string()
-            } else if resolved_provider == "opencode" {
-                "jev-1.13-free".to_string()
-            } else if resolved_provider == "openrouter" {
-                "typesafe/jev-1.13".to_string()
-            } else if resolved_provider == "vercel" {
-                "typesafe-ai/jev".to_string()
-            } else {
-                DEFAULT_MODEL.to_string()
-            }
-        });
+        let (final_model, model_source) = Self::resolve_model(model, &resolved_provider);
         let final_timeout = timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS);
 
         let http_client = reqwest::Client::builder()
@@ -203,11 +423,46 @@ impl JevClient {
             api_key: resolved_key,
             base_url: final_url,
             model: final_model,
+            model_source: model_source.to_string(),
             provider: resolved_provider,
             timeout_ms: final_timeout,
             force_mock,
+            fail_open: true,
+            max_retries: 3,
+            retry_base_delay_ms: 500,
             http_client,
         }
+    }
+
+    /// Resolution order: explicit argument > `JEV_MODEL` env var > repository `.jev.json`
+    /// override > provider default. The generic placeholder (`jev-latest`, what
+    /// `jev-harness init` scaffolds) is treated as "no override" so scaffolded configs never
+    /// clobber provider model IDs.
+    pub fn resolve_model(model: Option<String>, provider: &str) -> (String, &'static str) {
+        if let Some(explicit) = model {
+            return (explicit, "argument");
+        }
+        if let Ok(from_env) = std::env::var("JEV_MODEL") {
+            let trimmed = from_env.trim();
+            if !trimmed.is_empty() {
+                return (trimmed.to_string(), "env");
+            }
+        }
+        if let Some(repo_model) = load_repo_config()
+            .model
+            .as_ref()
+            .filter(|m| m.as_str() != DEFAULT_MODEL)
+        {
+            return (repo_model.clone(), ".jev.json");
+        }
+        let provider_default = match provider {
+            "commandcode" => "typesafe/jev",
+            "opencode" => "jev-1.13-free",
+            "openrouter" => "typesafe/jev-1.13",
+            "vercel" => "typesafe-ai/jev",
+            _ => DEFAULT_MODEL,
+        };
+        (provider_default.to_string(), "provider_default")
     }
 
     pub fn with_mock() -> Self {
@@ -215,9 +470,13 @@ impl JevClient {
             api_key: None,
             base_url: TYPESAFE_API_URL.to_string(),
             model: DEFAULT_MODEL.to_string(),
+            model_source: "provider_default".to_string(),
             provider: "mock".to_string(),
             timeout_ms: DEFAULT_TIMEOUT_MS,
             force_mock: true,
+            fail_open: true,
+            max_retries: 3,
+            retry_base_delay_ms: 500,
             http_client: reqwest::Client::new(),
         }
     }
@@ -240,20 +499,25 @@ impl JevClient {
             repo_model.clone()
         } else {
             match prov.as_str() {
-            "commandcode" => "typesafe/jev".to_string(),
-            "opencode" => "jev-1.13-free".to_string(),
-            "openrouter" => "typesafe/jev-1.13".to_string(),
-            "vercel" => "typesafe-ai/jev".to_string(),
-            _ => DEFAULT_MODEL.to_string(),
+                "commandcode" => "typesafe/jev".to_string(),
+                "opencode" => "jev-1.13-free".to_string(),
+                "openrouter" => "typesafe/jev-1.13".to_string(),
+                "vercel" => "typesafe-ai/jev".to_string(),
+                _ => DEFAULT_MODEL.to_string(),
             }
         };
+        let model_source = Self::resolve_model(None, &prov).1;
         Self {
             api_key,
             base_url,
             model,
+            model_source: model_source.to_string(),
             provider: prov,
             timeout_ms: DEFAULT_TIMEOUT_MS,
             force_mock: false,
+            fail_open: true,
+            max_retries: 3,
+            retry_base_delay_ms: 500,
             http_client: reqwest::Client::new(),
         }
     }
@@ -341,31 +605,19 @@ impl JevClient {
 
         if let Ok(key) = env::var("VERCEL_AI_GATEWAY_API_KEY") {
             if !key.trim().is_empty() {
-                return (
-                    Some(key),
-                    "vercel".to_string(),
-                    VERCEL_API_URL.to_string(),
-                );
+                return (Some(key), "vercel".to_string(), VERCEL_API_URL.to_string());
             }
         }
 
         if let Ok(key) = env::var("VERCEL_API_KEY") {
             if !key.trim().is_empty() {
-                return (
-                    Some(key),
-                    "vercel".to_string(),
-                    VERCEL_API_URL.to_string(),
-                );
+                return (Some(key), "vercel".to_string(), VERCEL_API_URL.to_string());
             }
         }
 
         if let Ok(key) = env::var("AI_GATEWAY_API_KEY") {
             if !key.trim().is_empty() {
-                return (
-                    Some(key),
-                    "vercel".to_string(),
-                    VERCEL_API_URL.to_string(),
-                );
+                return (Some(key), "vercel".to_string(), VERCEL_API_URL.to_string());
             }
         }
 
@@ -411,11 +663,7 @@ impl JevClient {
                             "vercel" => VERCEL_API_URL,
                             _ => TYPESAFE_API_URL,
                         };
-                        return (
-                            Some(k.to_string()),
-                            prov.to_string(),
-                            url.to_string(),
-                        );
+                        return (Some(k.to_string()), prov.to_string(), url.to_string());
                     }
                 }
             }
@@ -430,7 +678,9 @@ impl JevClient {
                     if trimmed.starts_with("JEV_PROVIDER=") && trimmed.contains("opencode") {
                         return (None, "opencode".to_string(), OPENCODE_API_URL.to_string());
                     }
-                    if trimmed.starts_with("CMD_API_KEY=") || trimmed.starts_with("COMMAND_CODE_API_KEY=") {
+                    if trimmed.starts_with("CMD_API_KEY=")
+                        || trimmed.starts_with("COMMAND_CODE_API_KEY=")
+                    {
                         let k = trimmed
                             .split('=')
                             .nth(1)
@@ -469,7 +719,10 @@ impl JevClient {
                             );
                         }
                     }
-                    if trimmed.starts_with("VERCEL_AI_GATEWAY_API_KEY=") || trimmed.starts_with("VERCEL_API_KEY=") || trimmed.starts_with("AI_GATEWAY_API_KEY=") {
+                    if trimmed.starts_with("VERCEL_AI_GATEWAY_API_KEY=")
+                        || trimmed.starts_with("VERCEL_API_KEY=")
+                        || trimmed.starts_with("AI_GATEWAY_API_KEY=")
+                    {
                         let k = trimmed
                             .split('=')
                             .nth(1)
@@ -490,7 +743,10 @@ impl JevClient {
             let cmd_auth = PathBuf::from(&home).join(".commandcode/auth.json");
             if let Ok(content) = fs::read_to_string(cmd_auth) {
                 if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
-                    let key_opt = val.get("apiKey").or_else(|| val.get("api_key")).and_then(|v| v.as_str());
+                    let key_opt = val
+                        .get("apiKey")
+                        .or_else(|| val.get("api_key"))
+                        .and_then(|v| v.as_str());
                     if let Some(k) = key_opt {
                         let kt = k.trim();
                         if !kt.is_empty() {
@@ -508,14 +764,71 @@ impl JevClient {
         (None, "mock".to_string(), TYPESAFE_API_URL.to_string())
     }
 
+    /// Builder for the failure policy used by every command:
+    /// fail-open is the default for gates; fail-closed surfaces errors instead.
+    pub fn with_failure_policy(
+        mut self,
+        fail_open: bool,
+        max_retries: u32,
+        retry_base_delay_ms: u64,
+    ) -> Self {
+        self.fail_open = fail_open;
+        self.max_retries = max_retries.max(1);
+        self.retry_base_delay_ms = retry_base_delay_ms;
+        self
+    }
+
+    /// Exponential backoff honoring a provider `Retry-After`. Fractional seconds are accepted so
+    /// the three runtimes agree on the delay; the value is capped for fast CI.
+    pub fn retry_delay_ms(&self, attempt: u32, retry_after: Option<f64>) -> u64 {
+        if let Some(seconds) = retry_after {
+            if seconds.is_finite() && seconds >= 0.0 {
+                return ((seconds * 1000.0) as u64).min(30_000);
+            }
+        }
+        let factor = 1u64 << attempt.saturating_sub(1).min(6);
+        self.retry_base_delay_ms.saturating_mul(factor).min(5_000)
+    }
+
     pub async fn system_one(
         &self,
         state: &str,
         questions: HashMap<String, Question>,
     ) -> Result<JevResponse, JevError> {
+        // E3.1: a question with a single option has no distribution to measure.
+        for question in questions.values() {
+            match question {
+                Question::Choice(choice) => {
+                    crate::uncertainty::validate_question_options(choice.criteria.len())
+                        .map_err(JevError::Config)?
+                }
+                Question::Score(score) => {
+                    crate::uncertainty::validate_question_options(score.criteria.len())
+                        .map_err(JevError::Config)?
+                }
+                Question::Noul(_) => {}
+            }
+        }
+        let redacted_state = redact_secrets(state);
+        let state = redacted_state.as_str();
         let is_live = !self.force_mock && (self.provider == "opencode" || self.api_key.is_some());
         if !is_live {
             return Ok(self.simulate_system_one(state, &questions, &self.model));
+        }
+
+        // Count code points (not UTF-8 bytes) so the three runtimes agree on the limit.
+        let state_chars = state.chars().count();
+        let questions_chars = serde_json::to_string(&questions)
+            .map(|s| s.chars().count())
+            .unwrap_or(0);
+        if state_chars > MAX_STATE_CHARS || state_chars + questions_chars > MAX_TOTAL_CHARS {
+            return Err(JevError::Config(format!(
+                "Payload exceeds the provider limit: {} state chars + {} question chars (limit: {} state / {} total, ~32k/64k tokens). Trim the state or split the questions.",
+                state_chars,
+                questions_chars,
+                MAX_STATE_CHARS,
+                MAX_TOTAL_CHARS
+            )));
         }
 
         let mut payload = serde_json::json!({
@@ -524,53 +837,163 @@ impl JevClient {
             "questions": questions
         });
         if self.provider == "openrouter" {
-            payload["provider"] = serde_json::json!({ "only": ["typesafe"], "allow_fallbacks": false });
+            payload["provider"] =
+                serde_json::json!({ "only": ["typesafe"], "allow_fallbacks": false });
         } else if self.provider == "vercel" {
-            payload["providerOptions"] = serde_json::json!({ "gateway": { "only": ["typesafe-ai"] } });
+            payload["providerOptions"] =
+                serde_json::json!({ "gateway": { "only": ["typesafe-ai"] } });
         }
 
-        let mut req = self
-            .http_client
-            .post(&self.base_url)
-            .header("Content-Type", "application/json");
+        let mut attempt: u32 = 0;
+        loop {
+            attempt += 1;
+            let attempt_started = std::time::Instant::now();
+            let mut req = self
+                .http_client
+                .post(&self.base_url)
+                .header("Content-Type", "application/json");
 
-        if let Some(ref key) = self.api_key {
-            if key != "zen" {
-                req = req.header("Authorization", format!("Bearer {}", key));
-            }
-        }
-        if self.provider == "openrouter" {
-            req = req
-                .header("HTTP-Referer", "https://github.com/ismaelsoilet/jev-harness")
-                .header("X-Title", "Jev Harness");
-        }
-
-        let resp_result = req.json(&payload).send().await;
-
-        match resp_result {
-            Ok(resp) => {
-                if !resp.status().is_success() {
-                    let status = resp.status().as_u16();
-                    let raw_text = resp.text().await.unwrap_or_default();
-                    let text = Self::redact_secrets(&raw_text, self.api_key.as_deref());
-                    if status == 401 || status == 403 {
-                        eprintln!("[JEV WARNING] {} auth failed (HTTP {}); falling back to offline simulation.", self.provider, status);
-                        return Ok(self.simulate_system_one(state, &questions, &self.model));
-                    }
-                    return Err(JevError::Api {
-                        status,
-                        message: text,
-                    });
+            if let Some(ref key) = self.api_key {
+                if key != "zen" {
+                    req = req.header("Authorization", format!("Bearer {}", key));
                 }
-
-                let parsed: serde_json::Value = resp.json().await?;
-                self.parse_api_response(&parsed)
             }
-            Err(e) => Err(JevError::Http(e)),
+            if self.provider == "openrouter" {
+                req = req
+                    .header(
+                        "HTTP-Referer",
+                        "https://github.com/ismaelsoilet/jev-harness",
+                    )
+                    .header("X-Title", "Jev Harness");
+            }
+
+            let resp_result = req.json(&payload).send().await;
+
+            match resp_result {
+                Ok(resp) => {
+                    let status = resp.status().as_u16();
+                    if !resp.status().is_success() {
+                        let retry_after = resp
+                            .headers()
+                            .get("retry-after")
+                            .and_then(|v| v.to_str().ok())
+                            .and_then(|s| s.trim().parse::<f64>().ok());
+                        let raw_text = resp.text().await.unwrap_or_default();
+                        let text = Self::redact_secrets(&raw_text, self.api_key.as_deref());
+                        if status == 401 || status == 403 {
+                            if !self.fail_open {
+                                return Err(JevError::Api {
+                                    status,
+                                    message: text,
+                                });
+                            }
+                            eprintln!("[JEV WARNING] {} auth failed (HTTP {}); falling back to offline simulation.", self.provider, status);
+                            let mut sim = self.simulate_system_one(state, &questions, &self.model);
+                            sim.degraded_reason = format!("auth_{}", status);
+                            return Ok(sim);
+                        }
+                        let retryable = status == 429 || status >= 500;
+                        if retryable && attempt < self.max_retries {
+                            let delay = self.retry_delay_ms(attempt, retry_after);
+                            if delay > 0 {
+                                tokio::time::sleep(Duration::from_millis(delay)).await;
+                            }
+                            continue;
+                        }
+                        if self.fail_open {
+                            eprintln!(
+                                "[JEV WARNING] {} API HTTP {}; falling back to offline simulation.",
+                                self.provider, status
+                            );
+                            let mut sim = self.simulate_system_one(state, &questions, &self.model);
+                            sim.degraded_reason = format!("http_{}", status);
+                            return Ok(sim);
+                        }
+                        return Err(JevError::Api {
+                            status,
+                            message: text,
+                        });
+                    }
+
+                    match resp.json::<serde_json::Value>().await {
+                        Ok(parsed) => match self.parse_api_response(&parsed) {
+                            Ok(response) => return Ok(response),
+                            Err(e) => {
+                                if attempt < self.max_retries {
+                                    let delay = self.retry_delay_ms(attempt, None);
+                                    if delay > 0 {
+                                        tokio::time::sleep(Duration::from_millis(delay)).await;
+                                    }
+                                    continue;
+                                }
+                                if self.fail_open {
+                                    eprintln!(
+                                        "[JEV WARNING] {} returned a malformed response: {}; falling back to offline simulation.",
+                                        self.provider, e
+                                    );
+                                    let mut sim =
+                                        self.simulate_system_one(state, &questions, &self.model);
+                                    sim.degraded_reason = "invalid_response".to_string();
+                                    return Ok(sim);
+                                }
+                                return Err(e);
+                            }
+                        },
+                        Err(_) => {
+                            if attempt < self.max_retries {
+                                let delay = self.retry_delay_ms(attempt, None);
+                                if delay > 0 {
+                                    tokio::time::sleep(Duration::from_millis(delay)).await;
+                                }
+                                continue;
+                            }
+                            if self.fail_open {
+                                eprintln!("[JEV WARNING] {} returned a non-JSON response; falling back to offline simulation.", self.provider);
+                                let mut sim =
+                                    self.simulate_system_one(state, &questions, &self.model);
+                                sim.degraded_reason = "invalid_response".to_string();
+                                return Ok(sim);
+                            }
+                            return Err(JevError::Config(
+                                "Provider returned a non-JSON response".to_string(),
+                            ));
+                        }
+                    }
+                }
+                Err(e) => {
+                    let retryable = e.is_timeout() || e.is_connect() || e.is_request();
+                    if retryable && attempt < self.max_retries {
+                        let delay = self.retry_delay_ms(attempt, None);
+                        if delay > 0 {
+                            tokio::time::sleep(Duration::from_millis(delay)).await;
+                        }
+                        continue;
+                    }
+                    if self.fail_open {
+                        // A read timeout surfaces as a generic request error: classify by
+                        // elapsed time so the marker matches Python and TypeScript.
+                        let elapsed_ratio = attempt_started.elapsed().as_millis() as u64;
+                        let timed_out = e.is_timeout()
+                            || (!e.is_connect()
+                                && elapsed_ratio >= self.timeout_ms.saturating_mul(9) / 10);
+                        eprintln!("[JEV WARNING] {} transport error ({}); falling back to offline simulation.", self.provider, e);
+                        let mut sim = self.simulate_system_one(state, &questions, &self.model);
+                        sim.degraded_reason = if timed_out {
+                            "timeout".to_string()
+                        } else {
+                            "connection".to_string()
+                        };
+                        return Ok(sim);
+                    }
+                    return Err(JevError::Http(e));
+                }
+            }
         }
     }
 
-    fn parse_api_response(&self, val: &serde_json::Value) -> Result<JevResponse, JevError> {
+    /// Strictly parses a provider payload. A 200 whose fields have the wrong types is an error
+    /// (handled by the failure policy), never a silently dropped answer or a defaulted score.
+    pub fn parse_api_response(&self, val: &serde_json::Value) -> Result<JevResponse, JevError> {
         let model = val
             .get("model")
             .and_then(|v| v.as_str())
@@ -579,12 +1002,28 @@ impl JevClient {
 
         let mut answers = HashMap::new();
 
-        if let Some(ans_obj) = val.get("answers").and_then(|v| v.as_object()) {
+        let raw_answers = val.get("answers").filter(|v| !v.is_null());
+        if let Some(raw) = raw_answers {
+            let ans_obj = raw.as_object().ok_or_else(|| {
+                JevError::Config("malformed response: 'answers' must be a JSON object".to_string())
+            })?;
             for (k, v) in ans_obj {
-                if let Ok(a) = serde_json::from_value::<Answer>(v.clone()) {
-                    answers.insert(k.clone(), a);
-                }
+                let parsed = serde_json::from_value::<Answer>(v.clone()).map_err(|e| {
+                    JevError::Config(format!(
+                        "malformed response: answer '{}' could not be parsed: {}",
+                        k, e
+                    ))
+                })?;
+                answers.insert(k.clone(), parsed);
             }
+        }
+
+        if answers.is_empty() {
+            // A live response with nothing usable would silently make every gate fall back to
+            // its defaults; that must be a visible degradation instead.
+            return Err(JevError::Config(
+                "malformed response: no answers could be parsed".to_string(),
+            ));
         }
 
         let usage = val
@@ -597,6 +1036,7 @@ impl JevClient {
             answers,
             usage,
             is_mock: false,
+            degraded_reason: String::new(),
         })
     }
 
@@ -607,6 +1047,8 @@ impl JevClient {
         questions: &HashMap<String, Question>,
         model_name: &str,
     ) -> JevResponse {
+        let rendered_state = render_state_text(state);
+        let state = rendered_state.as_str();
         let state_lower = state.to_lowercase();
         let state_tokens: HashSet<String> = state_lower
             .split(|c: char| !c.is_alphanumeric() && c != '_')
@@ -661,14 +1103,12 @@ impl JevClient {
         let env_missing_triggers = [
             "modulenotfounderror",
             "no module named",
-            "not found",
             "importerror",
             "cannot find module",
             "err_module_not_found",
             "ts2307",
             "cannot find crate",
             "can't find crate",
-            "find crate",
             "e0463",
             "cannot find package",
             "no required module provides package",
@@ -770,13 +1210,25 @@ impl JevClient {
             "expect(",
         ];
         let single_word_mech = [
-            "git", "diff", "typo", "flake8", "eslint", "prettier", "linter",
-            "echo", "pwd", "format", "black", "lint", "cat", "ls",
+            "git", "diff", "typo", "flake8", "eslint", "prettier", "linter", "echo", "pwd",
+            "format", "black", "lint", "cat", "ls",
         ];
         let multi_word_mech = [
-            "git status", "git diff", "git log", "view file", "read file", "cat file",
-            "check status", "run linter", "fix typo", "ler arquivo", "verificar arquivo",
-            "formatar código", "leer archivo", "corregir errata", "listar arquivos",
+            "git status",
+            "git diff",
+            "git log",
+            "view file",
+            "read file",
+            "cat file",
+            "check status",
+            "run linter",
+            "fix typo",
+            "ler arquivo",
+            "verificar arquivo",
+            "formatar código",
+            "leer archivo",
+            "corregir errata",
+            "listar arquivos",
             "listar diretório",
         ];
         let has_mech_trigger = single_word_mech.iter().any(|w| state_tokens.contains(*w))
@@ -798,9 +1250,26 @@ impl JevClient {
                     } else {
                         cq.criteria.keys().next().cloned().unwrap_or_default()
                     };
+                    // The abort gate's action is derived from the same signals as its dead-end
+                    // question: letting token overlap pick "abort_and_ask" beside a low dead-end
+                    // probability made the gate contradict its own evidence (parity with Python/TS).
+                    let derived_abort_action = if cq.criteria.contains_key("abort_and_ask")
+                        && cq.criteria.contains_key("proceed")
+                    {
+                        mock_abort_action_choice(&cq.criteria, &state_lower)
+                    } else {
+                        String::new()
+                    };
+                    if !derived_abort_action.is_empty() {
+                        best_choice = derived_abort_action.clone();
+                    }
                     let mut best_score: i32 = 0;
 
-                    for (opt, desc) in &cq.criteria {
+                    // Canonical (sorted) order so ties break identically in every runtime.
+                    let mut ordered_keys: Vec<&String> = cq.criteria.keys().collect();
+                    ordered_keys.sort();
+                    for opt in ordered_keys {
+                        let desc = &cq.criteria[opt];
                         let opt_text = format!("{} {}", opt, desc).to_lowercase();
                         let opt_tokens: Vec<&str> = opt_text
                             .split(|c: char| !c.is_alphanumeric() && c != '_')
@@ -898,6 +1367,9 @@ impl JevClient {
                             }
                         }
 
+                        if !derived_abort_action.is_empty() {
+                            continue; // derived from the dead-end signal, not overlap
+                        }
                         if score > best_score {
                             best_score = score;
                             best_choice = opt.clone();
@@ -905,9 +1377,11 @@ impl JevClient {
                     }
 
                     let is_effort_q = qid == "effort"
-                        || ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]
-                            .iter()
-                            .any(|eff| cq.criteria.contains_key(*eff));
+                        || [
+                            "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra",
+                        ]
+                        .iter()
+                        .any(|eff| cq.criteria.contains_key(*eff));
 
                     if is_effort_q {
                         if has_heavy_keywords
@@ -1033,19 +1507,29 @@ impl JevClient {
                         }
                     } else if qid == "workflow_phase"
                         || (cq.criteria.contains_key("execute")
-                            && cq.criteria.contains_key("verify"))
+                            && cq.criteria.contains_key("complete"))
                     {
+                        // Canonical phase contract (parity with Python/TypeScript).
                         let is_waiting_q = state_lower.contains('?')
                             || [
+                                "waiting for your",
                                 "waiting on user",
-                                "need permission",
-                                "please clarify",
+                                "wait for my go-ahead",
+                                "please confirm",
                                 "which option",
+                                "do you approve",
                                 "would you like me to",
                                 "do you want me to",
+                                "need your api key",
+                                "aguardando sua aprovação",
                                 "aguardando usuário",
-                                "preciso de permissão",
+                                "qual opção você prefere",
                                 "qual opção",
+                                "preciso que você confirme",
+                                "preciso de permissão",
+                                "need clarification",
+                                "please clarify",
+                                "need permission",
                             ]
                             .iter()
                             .any(|w| state_lower.contains(w));
@@ -1076,26 +1560,63 @@ impl JevClient {
                         .iter()
                         .any(|w| state_lower.contains(w));
                         let is_unfinished = [
-                            "todo",
-                            "remaining",
-                            "next step",
+                            "next i'll",
+                            "next i will",
+                            "now i will",
+                            "continuarei",
+                            "a seguir vou",
+                            "próximo passo farei",
+                            "1 of 5",
+                            "2 of 5",
+                            "3 of 5",
+                            "4 of 5",
+                            "step 1 of",
+                            "step 1 done",
                             "unfinished",
+                            "remaining",
+                            "todo:",
+                            "pendente",
                             "partial",
+                            "parcial",
                             "in progress",
                             "falta implementar",
-                            "pendente",
-                            "continuarei",
-                            "step 1 of",
+                            "falta rodar os testes",
+                            "sem testar",
+                            "without running tests",
+                            "tests not run",
+                            "haven't run pytest",
+                            "need to run",
+                            "need to verify",
+                            "to verify",
+                            "unverified",
+                            "run pytest",
+                            "run cargo test",
+                            "run npm test",
+                            "updated file",
+                            "edited file",
+                            "finished editing",
+                            "modified file",
+                            "wrote code",
+                            "atualizei o arquivo",
+                            "alterei o arquivo",
+                            "terminei de editar",
+                            "arquivo alterado",
+                            "next step",
                         ]
                         .iter()
                         .any(|w| state_lower.contains(w));
                         let is_complete = [
+                            "all done",
+                            "100% passing",
+                            "all criteria satisfied",
+                            "tudo concluído",
+                            "todas as etapas concluídas",
+                            "task complete",
+                            "konnichiwa! all done",
                             "all tests passed",
                             "tests passed (0 failed)",
                             "completed and verified",
-                            "100% passing",
                             "completed all",
-                            "task complete",
                             "concluído com sucesso",
                             "todos os testes passaram",
                         ]
@@ -1104,39 +1625,47 @@ impl JevClient {
 
                         if is_waiting_q && cq.criteria.contains_key("ask") {
                             best_choice = "ask".to_string();
+                        } else if is_complete && cq.criteria.contains_key("complete") {
+                            best_choice = "complete".to_string();
                         } else if is_unverified && cq.criteria.contains_key("verify") {
                             best_choice = "verify".to_string();
                         } else if is_unfinished && cq.criteria.contains_key("execute") {
                             best_choice = "execute".to_string();
-                        } else if is_complete && cq.criteria.contains_key("complete") {
-                            best_choice = "complete".to_string();
-                        } else if ["plan", "architecture", "design", "planejamento"]
-                            .iter()
-                            .any(|w| state_lower.contains(w))
-                            && cq.criteria.contains_key("plan")
-                        {
-                            best_choice = "plan".to_string();
-                        } else if ["research", "investigat", "search", "pesquisando"]
-                            .iter()
-                            .any(|w| state_lower.contains(w))
-                            && cq.criteria.contains_key("research")
-                        {
-                            best_choice = "research".to_string();
-                        } else {
-                            best_choice = if cq.criteria.contains_key("execute") {
-                                "execute".to_string()
-                            } else {
-                                cq.criteria.keys().next().cloned().unwrap_or_default()
-                            };
                         }
+                        // No explicit fallback: an undecided phase keeps the generic scoring
+                        // result, matching Python and TypeScript.
                     }
 
+                    let has_deadlock_or_loop = [
+                        "infinite loop",
+                        "loop infinito",
+                        "bucle infinito",
+                        "deadlock",
+                        "deadlock!",
+                        "bloqueo mutuo",
+                        "goroutines are asleep",
+                        "mutex",
+                    ]
+                    .iter()
+                    .any(|k| state_lower.contains(k));
+                    let has_signal_conflict = (is_explicit_assertion || has_deadlock_or_loop)
+                        && (has_env_signal || has_flaky_signal);
+                    let options: Vec<String> = cq.criteria.keys().cloned().collect();
+                    let probs = mock_distribution(
+                        &options,
+                        &best_choice,
+                        if has_signal_conflict {
+                            MOCK_CHOICE_BEST_CONFLICT
+                        } else {
+                            MOCK_CHOICE_BEST_PEAKED
+                        },
+                    );
                     answers.insert(
                         qid.clone(),
                         Answer::Choice(ChoiceAnswer {
                             choice: best_choice,
                             confidence: 0.88,
-                            probabilities: None,
+                            probabilities: Some(probs),
                         }),
                     );
                 }
@@ -1152,9 +1681,9 @@ impl JevClient {
                         "passed",
                         "passou",
                         "pasó",
+                        "pass",
                         "sucesso",
                         "éxito",
-                        "pass",
                         "success",
                         "excellent",
                         "exhaustively",
@@ -1241,12 +1770,19 @@ impl JevClient {
                         }
                     }
 
+                    let levels: Vec<String> = (1..=n_levels).map(|i| i.to_string()).collect();
+                    let probs = mock_distribution(
+                        &levels,
+                        &matched_idx.to_string(),
+                        MOCK_SCORE_BEST_PEAKED,
+                    );
                     answers.insert(
                         qid.clone(),
                         Answer::Score(ScoreAnswer {
-                            score: matched_idx,
+                            score: matched_idx as f64,
                             confidence: 0.85,
-                            legend: Some(sq.criteria.clone()),
+                            legend: Some(serde_json::json!(sq.criteria)),
+                            probabilities: Some(probs),
                         }),
                     );
                 }
@@ -1306,14 +1842,13 @@ impl JevClient {
                         "proceed",
                         "linear",
                     ];
-                    let proposed_part = if state_lower.contains("proposed next step:") {
-                        state_lower
-                            .split("proposed next step:")
-                            .nth(1)
-                            .unwrap_or(&state_lower)
-                    } else {
-                        &state_lower
-                    };
+                    // Structured state (E0.4) or legacy concatenated text — accept both markers.
+                    let mut proposed_part: &str = &state_lower;
+                    for marker in ["proposed next step:", "proposed_next_step:"] {
+                        if let Some((_, tail)) = proposed_part.split_once(marker) {
+                            proposed_part = tail;
+                        }
+                    }
                     let is_forward_progress = [
                         "implement",
                         "fix",
@@ -1483,27 +2018,38 @@ impl JevClient {
                     .iter()
                     .any(|w| state_lower.contains(w));
                     let has_unfinished_work = [
-                        "todo",
-                        "remaining",
-                        "next step",
+                        "next i'll",
+                        "next i will",
+                        "now i will",
+                        "continuarei",
+                        "a seguir vou",
+                        "próximo passo farei",
+                        "1 of 5",
+                        "2 of 5",
+                        "3 of 5",
+                        "4 of 5",
+                        "step 1 of",
+                        "step 1 done",
                         "unfinished",
-                        "partial",
-                        "in progress",
-                        "without running tests",
-                        "tests not run",
-                        "unverified",
-                        "haven't run pytest",
-                        "falta implementar",
+                        "remaining",
+                        "todo:",
                         "pendente",
+                        "partial",
+                        "parcial",
+                        "in progress",
+                        "falta implementar",
                         "falta rodar os testes",
                         "sem testar",
+                        "without running tests",
+                        "tests not run",
+                        "haven't run pytest",
+                        "need to run",
                         "need to verify",
-                        "step 1 of",
                         "to verify",
+                        "unverified",
                         "run pytest",
                         "run cargo test",
                         "run npm test",
-                        "need to run",
                         "updated file",
                         "edited file",
                         "finished editing",
@@ -1513,6 +2059,7 @@ impl JevClient {
                         "alterei o arquivo",
                         "terminei de editar",
                         "arquivo alterado",
+                        "next step",
                     ]
                     .iter()
                     .any(|w| state_lower.contains(w));
@@ -1532,14 +2079,14 @@ impl JevClient {
                         prob = if is_waiting_on_user { 0.88 } else { 0.08 };
                     } else if qid == "progress" || inst.contains("last nudge produce real progress")
                     {
-                        prob = if has_no_progress { 0.12 } else { 0.86 };
+                        prob = if has_no_progress { 0.12 } else { 0.85 };
                     } else if qid == "nudge" || inst.contains("gentle nudge") {
                         if is_waiting_on_user || has_no_progress || is_done {
-                            prob = 0.10;
+                            prob = 0.06;
                         } else if has_unfinished_work {
-                            prob = 0.89;
+                            prob = 0.82;
                         } else {
-                            prob = 0.14;
+                            prob = 0.20;
                         }
                     }
 
@@ -1556,6 +2103,7 @@ impl JevClient {
                 output_tokens: 0,
             },
             is_mock: true,
+            degraded_reason: String::new(),
         }
     }
 }

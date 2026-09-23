@@ -15,6 +15,7 @@ from typing import Optional
 try:
     from . import __version__
     from .client import JevClient
+    from .config import load_repo_config
     from .session import (
         ASSUMED_COST_PER_ABORT_USD,
         ASSUMED_COST_PER_TRIAGE_SKIP_USD,
@@ -33,6 +34,7 @@ except (ImportError, ValueError):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from jev_harness import __version__
     from jev_harness.client import JevClient
+    from jev_harness.config import load_repo_config
     from jev_harness.session import (
         ASSUMED_COST_PER_ABORT_USD,
         ASSUMED_COST_PER_TRIAGE_SKIP_USD,
@@ -49,23 +51,106 @@ except (ImportError, ValueError):
     )
 
 
+def _path_is_file(value: str) -> bool:
+    """True when `value` names an existing file. An unusable path (longer than the OS limit)
+    is not a file: the caller must treat it as literal text, never as a crash."""
+    try:
+        return Path(value).is_file()
+    except OSError:
+        return False
+
+
 def _read_input(val_or_path: Optional[str], allow_stdin: bool = True) -> str:
     """Reads input from direct string, file path, or optionally stdin."""
     if val_or_path:
-        p = Path(val_or_path)
-        if p.is_file():
-            return p.read_text(encoding="utf-8")
+        if _path_is_file(val_or_path):
+            return Path(val_or_path).read_text(encoding="utf-8")
         return val_or_path
     if allow_stdin and not sys.stdin.isatty():
         return sys.stdin.read()
     return ""
 
 
-def cmd_status(args: argparse.Namespace) -> int:
-    client = JevClient(
-        provider=getattr(args, "provider", None),
-        force_mock=getattr(args, "mock", False),
+def _extra_state(args: argparse.Namespace) -> Dict[str, Any]:
+    """Parses `--state-json` (inline object or file) so every gate can merge structured context."""
+    from .state import parse_state_json
+
+    raw = getattr(args, "state_json", None)
+    if not raw:
+        return {}
+    try:
+        return parse_state_json(raw)
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        raise SystemExit(2)
+
+
+def _build_client(args: argparse.Namespace) -> JevClient:
+    """Builds the client honoring the shared mock/provider/retry/failure flags of every command."""
+    kwargs: Dict[str, Any] = {
+        "force_mock": getattr(args, "mock", False),
+        "provider": getattr(args, "provider", None),
+        "fail_open": not getattr(args, "fail_closed", False),
+        # The CLI is the cost-conscious surface, but a shadow measurement must always see real
+        # decisions (and --no-cache always wins).
+        "cache": not getattr(args, "no_cache", False) and not _shadow_enabled(args),
+    }
+    retries = getattr(args, "retries", None)
+    if retries is not None:
+        kwargs["max_retries"] = max(1, int(retries))
+    return JevClient(**kwargs)
+
+
+def _shadow_enabled(args: argparse.Namespace) -> bool:
+    """Shadow mode: decide and report, but never change the caller's exit code."""
+    return bool(getattr(args, "shadow", False)) or bool(load_repo_config().get("shadow", False))
+
+
+def _shadow_wrap(args: argparse.Namespace, exit_code: int) -> int:
+    if _shadow_enabled(args):
+        print(f"[SHADOW] would exit {exit_code} - no action taken.", file=sys.stderr)
+        return 0
+    return exit_code
+
+
+def _receipt(args: argparse.Namespace, gate: str, input_text: str, res: Any, client: JevClient, decision: str) -> None:
+    """E1.3: appends one audit receipt (never raw log content, only a stable input hash)."""
+    if getattr(args, "no_receipts", False):
+        return
+    from .receipts import record_receipt
+
+    record_receipt(
+        gate=gate,
+        input_text=input_text,
+        decision=decision,
+        confidence=getattr(res, "confidence", None),
+        model=client.model,
+        is_mock=bool(getattr(res, "is_mock", False)),
+        degraded_reason=getattr(res, "degraded_reason", ""),
+        shadow=_shadow_enabled(args),
     )
+
+
+def _mock_mode_label(result: Any) -> str:
+    """`[SIMULATION/MOCK]`, naming the degradation when a provider failure caused it (E0.2)."""
+    reason = getattr(result, "degraded_reason", "")
+    return f"[SIMULATION/MOCK - degraded: {reason}]" if reason else "[SIMULATION/MOCK]"
+
+
+def _model_origin_label(client: JevClient) -> str:
+    """Human label for where the effective model came from (E0.3)."""
+    labels = {
+        "argument": "explicit argument",
+        "env": "JEV_MODEL environment variable",
+        ".jev.json": "repository .jev.json",
+        "provider_default": "provider default",
+    }
+    source = getattr(client, "model_source", "provider_default")
+    return labels.get(source, source)
+
+
+def cmd_status(args: argparse.Namespace) -> int:
+    client = _build_client(args)
     key = client.api_key
     print("\n=== JEV HARNESS STATUS ===")
     if client.is_live:
@@ -97,7 +182,91 @@ def cmd_status(args: argparse.Namespace) -> int:
         print("  - Vercel AI Gateway:        export AI_GATEWAY_API_KEY=<key>")
         print("  (or save it in the repo .env / .jev.json, or ~/.config/jev/credentials.env)")
     print(f"Model:       {client.model}")
+    print(f"Model origin: {_model_origin_label(client)}")
+    if client.model == "jev-latest":
+        print("Note:        'jev-latest' is a moving alias - pin a version (e.g. \"model\": \"jev-1.13.0\") when your thresholds are calibrated.")
     print("==========================\n")
+    return 0
+
+
+def cmd_replay(args: argparse.Namespace) -> int:
+    """Runs the labelled corpus, reports calibration and enforces the regression gate (E1.2)."""
+    from pathlib import Path as _Path
+
+    from .replay import find_baseline_path, render_console, render_json, replay
+
+    corpus_dir = _Path(getattr(args, "corpus", "tests/corpus"))
+    engine = "mock" if getattr(args, "mock", False) or getattr(args, "engine", "mock") == "mock" else "live"
+    client = JevClient(force_mock=engine == "mock", provider=getattr(args, "provider", None))
+
+    baseline_arg = getattr(args, "baseline", None)
+    baseline_path = _Path(baseline_arg) if baseline_arg else find_baseline_path(corpus_dir)
+    try:
+        outcome, findings, _payload = replay(
+            corpus_dir,
+            client,
+            engine,
+            baseline_path=baseline_path,
+            update_baseline=bool(getattr(args, "update_baseline", False)),
+            allow_regression=bool(getattr(args, "allow_regression", False)),
+            write_report=not getattr(args, "no_report", False),
+        )
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
+
+    if getattr(args, "json", False):
+        print(render_json(outcome, findings, engine, client.model))
+    else:
+        print(render_console(outcome, findings, engine, client.model))
+        if getattr(args, "no_report", False):
+            print("(report not rewritten: --no-report)")
+        else:
+            print(f"Report written to: {corpus_dir.resolve().parent.parent / 'docs' / 'REPLAY_REPORT.md'}")
+    return 1 if findings and not getattr(args, "allow_regression", False) else 0
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    """E2.4: self-diagnosis with a fix command per problem (never prints secrets)."""
+    from .doctor import render_console, run_doctor
+
+    report = run_doctor(live=bool(getattr(args, "live", False)), check_git_hook=not getattr(args, "no_git", False))
+    if getattr(args, "json", False):
+        print(json.dumps(report.as_dict(), indent=2))
+    else:
+        print(render_console(report))
+    return 1 if report.failed else 0
+
+
+def cmd_receipts(args: argparse.Namespace) -> int:
+    """Shows the local decision receipts (E1.3): audit trail, hashes only, no raw logs."""
+    from .receipts import read_receipts, receipts_path, receipts_summary
+
+    tail = int(getattr(args, "tail", 20) or 20)
+    records = read_receipts(tail=tail)
+    if getattr(args, "json", False):
+        print(json.dumps({"path": str(receipts_path()), "summary": receipts_summary(), "receipts": records}, indent=2))
+        return 0
+    if not records:
+        print(f"No receipts recorded yet ({receipts_path()}).")
+        print("Receipts are Python-side, 0600, and disabled with --no-receipts or \"receipts\": false.")
+        return 0
+    print("\n=== JEV DECISION RECEIPTS (newest last) ===")
+    for record in records:
+        print(
+            f"{record.get('utc', '')}  {str(record.get('gate', '?')):<17} "
+            f"{str(record.get('decision', '')):<16} conf={record.get('confidence')} "
+            f"hash={record.get('input_hash')} mock={record.get('is_mock')}"
+            + (f" degraded={record.get('degraded_reason')}" if record.get("degraded_reason") else "")
+            + (" [SHADOW]" if record.get("shadow") else "")
+        )
+    summary = receipts_summary()
+    print("-------------------------------------------")
+    print(
+        f"{summary['total']} receipt(s); retention: ttl={summary['retention_ttl_days']}d, "
+        f"max={summary['retention_max_entries']}; file: {receipts_path()}"
+    )
+    print("===========================================\n")
     return 0
 
 
@@ -109,6 +278,8 @@ def cmd_metrics(args: argparse.Namespace) -> int:
         return 0
 
     s = load_session()
+    from .cache import stats as cache_stats
+    cache_stats = cache_stats(prune=True)
     if getattr(args, "json", False):
         print(
             json.dumps(
@@ -122,6 +293,14 @@ def cmd_metrics(args: argparse.Namespace) -> int:
                     "estimated_tokens_saved": s.estimated_tokens_saved,
                     "estimated_cost_saved_usd": round(s.estimated_cost_saved_usd, 2),
                     "estimates_are_heuristic": True,
+                    "measured_requests": s.measured_requests,
+                    "measured_input_tokens": s.measured_input_tokens,
+                    "measured_output_tokens": s.measured_output_tokens,
+                    "measured_cost_usd": round(s.measured_cost_usd, 9),
+                    "cache": cache_stats,
+                    "measured_avg_duration_ms": (
+                        round(s.measured_duration_ms / s.measured_requests, 1) if s.measured_requests else None
+                    ),
                 },
                 indent=2,
             )
@@ -136,6 +315,22 @@ def cmd_metrics(args: argparse.Namespace) -> int:
         print(f"Continuation Nudges:     {s.nudge_continuations} (Jev Nudge Gate)")
         print(f"Estimated Tokens Saved:  ⚡ {s.estimated_tokens_saved:,} tokens (heuristic estimate)")
         print(f"Estimated API Cost Saved: 💸 ${s.estimated_cost_saved_usd:.2f} USD (heuristic estimate)")
+        if s.measured_requests:
+            print(
+                f"Measured (live):         {s.measured_requests} request(s), "
+                f"{s.measured_input_tokens:,} in / {s.measured_output_tokens:,} out tokens, "
+                f"${s.measured_cost_usd:.4f} provider cost, "
+                f"{s.measured_duration_ms / s.measured_requests:.0f} ms avg"
+            )
+        else:
+            print("Measured (live):         none yet (offline decisions are not network measurements)")
+        hit_rate = cache_stats.get("hit_rate")
+        print(
+            f"Decision Cache:          {cache_stats['entries']} entr(ies), "
+            f"{cache_stats['hits']} hit(s) / {cache_stats['misses']} miss(es), "
+            f"hit-rate {'n/a' if hit_rate is None else f'{hit_rate * 100:.1f}%'}, "
+            f"{cache_stats['debounced']} coalesced (debounce), ttl={cache_stats['ttl_seconds']}s"
+        )
         print(
             "Assumption Model:        "
             f"{ASSUMED_TOKENS_PER_TRIAGE_SKIP:,} tokens/${ASSUMED_COST_PER_TRIAGE_SKIP_USD:.2f} per intercepted triage; "
@@ -285,6 +480,12 @@ This repository is connected to the global **Jev System One Harness**.
         )
         print(f"  [+] Created env template: {env_example.relative_to(cwd)}")
 
+    # 3b. Keep local decision state out of version control (E3.8)
+    from .receipts import ensure_state_ignored
+
+    if ensure_state_ignored(cwd):
+        print("  [+] Added '.jev/' to .gitignore (local sessions, receipts and cache)")
+
     # 4. Create Cursor MCP snippet if .cursor exists or requested
     cursor_dir = cwd / ".cursor"
     if cursor_dir.exists() or getattr(args, "cursor", False) or getattr(args, "all", False):
@@ -400,7 +601,7 @@ This repository is connected to the global **Jev System One Harness**.
 def cmd_test_gate(args: argparse.Namespace) -> int:
     log_path = getattr(args, "log", None)
     raw_input = log_path or getattr(args, "sample", None) or getattr(args, "log_pos", None)
-    if log_path and not Path(log_path).is_file():
+    if log_path and not _path_is_file(log_path):
         # `--log` is documented as a file: a typo must not be triaged as if it were the log text.
         print(f"Error: log file not found: {log_path}", file=sys.stderr)
         print(
@@ -417,14 +618,24 @@ def cmd_test_gate(args: argparse.Namespace) -> int:
     force_mock = getattr(args, "mock", False)
     provider = getattr(args, "provider", None)
     is_json = getattr(args, "json", False)
-    client = JevClient(force_mock=force_mock, provider=provider)
-    res = triage_test_failure(text, client=client, record_session=True)
+    client = _build_client(args)
+    res = triage_test_failure(
+        text,
+        client=client,
+        record_session=True,
+        extra_state=_extra_state(args),
+        allow_auto_recovery=bool(getattr(args, "allow_auto_recovery", False)),
+    )
+    _receipt(args, "test-gate", text, res, client, res.category)
 
+    exit_code = 0 if res.skip_llm else 1
+    shadow_payload = {"shadow": True, "would_exit": exit_code} if _shadow_enabled(args) else {}
     if is_json:
         print(
             json.dumps(
                 {
                     "category": res.category,
+                    "uncertainty": getattr(res, "uncertainty", None),
                     "confidence": res.confidence,
                     "skip_llm": res.skip_llm,
                     "skip_llm_prob": res.skip_llm_prob,
@@ -432,6 +643,9 @@ def cmd_test_gate(args: argparse.Namespace) -> int:
                     "action_recommendation": res.action_recommendation,
                     "recommendation": res.action_recommendation,
                     "is_mock": res.is_mock,
+                    "degraded_reason": getattr(res, "degraded_reason", ""),
+                    "recovery": getattr(res, "recovery", None),
+                    **shadow_payload,
                 },
                 indent=2,
             )
@@ -449,13 +663,19 @@ def cmd_test_gate(args: argparse.Namespace) -> int:
         print(f"Skip Prob:       {res.skip_llm_prob * 100:.1f}%")
         print(f"Severity Score:  {res.severity_score:.1f} / 4.0")
         print(f"Recommendation:  {res.action_recommendation}")
+        recovery = getattr(res, "recovery", None)
+        if recovery:
+            safe = "yes" if recovery["is_safe_auto_run"] else "no"
+            print(f"Recovery:        {recovery['package_manager']} install {recovery['package_name']} "
+                  f"(argv: {' '.join(recovery['argv'])}; safe to auto-run: {safe})")
+            print(f"                 {recovery['rationale']}")
         if res.is_mock:
-            print("Mode:            [SIMULATION/MOCK]")
+            print(f"Mode:            {_mock_mode_label(res)}")
         else:
             print(f"Mode:            [LIVE: {client.provider.upper()}]")
         print("--------------------------------\n")
 
-    return 0 if res.skip_llm else 1
+    return _shadow_wrap(args, exit_code)
 
 
 def cmd_abort_check(args: argparse.Namespace) -> int:
@@ -469,20 +689,27 @@ def cmd_abort_check(args: argparse.Namespace) -> int:
     force_mock = getattr(args, "mock", False)
     provider = getattr(args, "provider", None)
     is_json = getattr(args, "json", False)
-    client = JevClient(force_mock=force_mock, provider=provider)
-    res = should_abort_trajectory(plan, recent_attempts_summary=history, client=client, record_session=True)
+    client = _build_client(args)
+    res = should_abort_trajectory(
+        plan, recent_attempts_summary=history, client=client, record_session=True, extra_state=_extra_state(args)
+    )
+    _receipt(args, "abort-check", f"{plan}\n{history}", res, client, "abort" if res.should_abort else "proceed")
 
     if is_json:
         print(
             json.dumps(
                 {
                     "should_abort": res.should_abort,
+                    "uncertainty": getattr(res, "uncertainty", None),
+                    "cached": getattr(res, "cached", False),
+                    "debounced": getattr(res, "debounced", False),
                     "abort_probability": res.abort_probability,
                     "action": res.action,
                     "viability_score": res.viability_score,
                     "reasoning_summary": res.reasoning_summary,
                     "summary": res.reasoning_summary,
                     "is_mock": res.is_mock,
+                    "degraded_reason": getattr(res, "degraded_reason", ""),
                 },
                 indent=2,
             )
@@ -495,12 +722,12 @@ def cmd_abort_check(args: argparse.Namespace) -> int:
         print(f"Viability Score:  {res.viability_score:.1f} / 4.0")
         print(f"Summary:          {res.reasoning_summary}")
         if res.is_mock:
-            print("Mode:             [SIMULATION/MOCK]")
+            print(f"Mode:             {_mock_mode_label(res)}")
         else:
             print(f"Mode:             [LIVE: {client.provider.upper()}]")
         print("------------------------------\n")
 
-    return 1 if res.should_abort else 0
+    return _shadow_wrap(args, 1 if res.should_abort else 0)
 
 
 def cmd_route(args: argparse.Namespace) -> int:
@@ -513,19 +740,22 @@ def cmd_route(args: argparse.Namespace) -> int:
     force_mock = getattr(args, "mock", False)
     provider = getattr(args, "provider", None)
     is_json = getattr(args, "json", False)
-    client = JevClient(force_mock=force_mock, provider=provider)
-    res = route_model_tier(task, client=client, record_session=True)
+    client = _build_client(args)
+    res = route_model_tier(task, client=client, record_session=True, extra_state=_extra_state(args))
+    _receipt(args, "route", task, res, client, res.selected_tier)
 
     if is_json:
         print(
             json.dumps(
                 {
                     "selected_tier": res.selected_tier,
+                    "uncertainty": getattr(res, "uncertainty", None),
                     "confidence": res.confidence,
                     "complexity_score": res.complexity_score,
                     "recommended_model": res.recommended_model,
                     "rationale": res.rationale,
                     "is_mock": res.is_mock,
+                    "degraded_reason": getattr(res, "degraded_reason", ""),
                 },
                 indent=2,
             )
@@ -538,7 +768,7 @@ def cmd_route(args: argparse.Namespace) -> int:
         print(f"Recommended Model: {res.recommended_model}")
         print(f"Rationale:         {res.rationale}")
         if res.is_mock:
-            print("Mode:              [SIMULATION/MOCK]")
+            print(f"Mode:              {_mock_mode_label(res)}")
         else:
             print(f"Mode:              [LIVE: {client.provider.upper()}]")
         print("-------------------------------\n")
@@ -556,19 +786,22 @@ def cmd_verify(args: argparse.Namespace) -> int:
     force_mock = getattr(args, "mock", False)
     provider = getattr(args, "provider", None)
     is_json = getattr(args, "json", False)
-    client = JevClient(force_mock=force_mock, provider=provider)
-    res = verify_step_completion(criteria, output, client=client)
+    client = _build_client(args)
+    res = verify_step_completion(criteria, output, client=client, extra_state=_extra_state(args))
+    _receipt(args, "verify", f"{criteria}\n{output}", res, client, "verified" if res.is_verified else "not_verified")
 
     if is_json:
         print(
             json.dumps(
                 {
                     "is_verified": res.is_verified,
+                    "uncertainty": getattr(res, "uncertainty", None),
                     "satisfaction_probability": res.satisfaction_probability,
                     "rigor_score": res.rigor_score,
                     "confidence": res.confidence,
                     "needs_rework": res.needs_rework,
                     "is_mock": res.is_mock,
+                    "degraded_reason": getattr(res, "degraded_reason", ""),
                 },
                 indent=2,
             )
@@ -581,12 +814,12 @@ def cmd_verify(args: argparse.Namespace) -> int:
         print(f"Confidence:         {res.confidence * 100:.1f}%")
         print(f"Needs Rework:       {'YES' if res.needs_rework else 'NO'}")
         if res.is_mock:
-            print("Mode:               [SIMULATION/MOCK]")
+            print(f"Mode:               {_mock_mode_label(res)}")
         else:
             print(f"Mode:               [LIVE: {client.provider.upper()}]")
         print("--------------------------------\n")
 
-    return 0 if res.is_verified else 1
+    return _shadow_wrap(args, 0 if res.is_verified else 1)
 
 
 def cmd_reasoning_effort(args: argparse.Namespace) -> int:
@@ -605,9 +838,10 @@ def cmd_reasoning_effort(args: argparse.Namespace) -> int:
     supported_efforts = [s.strip() for s in supported_raw.split(",")] if supported_raw else None
     max_lease_steps = getattr(args, "max_lease_steps", 10) or 10
 
-    client = JevClient(force_mock=force_mock)
+    client = _build_client(args)
     res = modulate_reasoning_effort(
         context,
+        extra_state=_extra_state(args),
         provider=provider,
         model=model,
         session_context_tokens=session_context_tokens,
@@ -615,13 +849,16 @@ def cmd_reasoning_effort(args: argparse.Namespace) -> int:
         max_lease_steps=max_lease_steps,
         client=client,
         record_session=True,
+        use_lease=bool(getattr(args, "use_lease", False)),
     )
+    _receipt(args, "reasoning-effort", context, res, client, res.effort)
 
     if is_json:
         print(
             json.dumps(
                 {
                     "effort": res.effort,
+                    "uncertainty": getattr(res, "uncertainty", None),
                     "confidence": res.confidence,
                     "complexity_score": res.complexity_score,
                     "rationale": res.rationale,
@@ -631,6 +868,7 @@ def cmd_reasoning_effort(args: argparse.Namespace) -> int:
                     "cache_safe_recommendation": res.cache_safe_recommendation,
                     "lease_steps": res.lease_steps,
                     "is_mock": res.is_mock,
+                    "degraded_reason": getattr(res, "degraded_reason", ""),
                 },
                 indent=2,
             )
@@ -648,7 +886,7 @@ def cmd_reasoning_effort(args: argparse.Namespace) -> int:
         if not res.is_reasoning_supported:
             print("WARNING: Target model is direct single-pass; do NOT inject reasoning params!")
         if res.is_mock:
-            print("Engine Mode:       [SIMULATION / MOCK]")
+            print(f"Engine Mode:       {_mock_mode_label(res)}")
         else:
             print(f"Engine Mode:       [LIVE: {client.provider.upper()}]")
         print("=================================\n")
@@ -672,13 +910,22 @@ def cmd_nudge_gate(args: argparse.Namespace) -> int:
     provider = getattr(args, "provider", None)
     is_json = getattr(args, "json", False)
 
-    client = JevClient(force_mock=force_mock, provider=provider)
+    client = _build_client(args)
     res = should_nudge_continuation(
+        extra_state=_extra_state(args),
         transcript_tail=transcript,
         previous_nudge_summary=prev_nudge,
         threshold=threshold,
         client=client,
         record_session=True,
+    )
+    _receipt(
+        args,
+        "nudge-gate",
+        transcript,
+        res,
+        client,
+        "nudge" if res.should_nudge else f"hold:{res.workflow_phase}",
     )
 
     if is_json:
@@ -686,6 +933,9 @@ def cmd_nudge_gate(args: argparse.Namespace) -> int:
             json.dumps(
                 {
                     "should_nudge": res.should_nudge,
+                    "uncertainty": getattr(res, "uncertainty", None),
+                    "cached": getattr(res, "cached", False),
+                    "debounced": getattr(res, "debounced", False),
                     "nudge_probability": res.nudge_probability,
                     "waiting_probability": res.waiting_probability,
                     "progress_probability": res.progress_probability,
@@ -693,6 +943,7 @@ def cmd_nudge_gate(args: argparse.Namespace) -> int:
                     "suggested_nudge_prompt": res.suggested_nudge_prompt,
                     "rationale": res.rationale,
                     "is_mock": res.is_mock,
+                    "degraded_reason": getattr(res, "degraded_reason", ""),
                 },
                 indent=2,
             )
@@ -708,19 +959,19 @@ def cmd_nudge_gate(args: argparse.Namespace) -> int:
         if res.suggested_nudge_prompt:
             print(f"Suggested Prompt:  {res.suggested_nudge_prompt}")
         if res.is_mock:
-            print("Engine Mode:       [SIMULATION / MOCK]")
+            print(f"Engine Mode:       {_mock_mode_label(res)}")
         else:
             print(f"Engine Mode:       [LIVE: {client.provider.upper()}]")
         print("===============================================\n")
 
-    return 0 if res.should_nudge else 1
+    return _shadow_wrap(args, 0 if res.should_nudge else 1)
 
 
 def cmd_mcp(args: argparse.Namespace) -> int:
     from .mcp_server import run_mcp_server
     force_mock = getattr(args, "mock", False)
     provider = getattr(args, "provider", None)
-    client = JevClient(force_mock=force_mock, provider=provider)
+    client = _build_client(args)
     run_mcp_server(client=client)
     return 0
 
@@ -730,6 +981,58 @@ def main() -> None:
     common_parser = argparse.ArgumentParser(add_help=False)
     common_parser.add_argument("--mock", action="store_true", default=argparse.SUPPRESS, help="Force local simulation mode even if key is present")
     common_parser.add_argument("--json", action="store_true", default=argparse.SUPPRESS, help="Output machine-readable JSON")
+    common_parser.add_argument(
+        "--shadow",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="Decide and report, but never change the exit code (also via .jev.json)",
+    )
+    common_parser.add_argument(
+        "--fail-closed",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="Surface provider errors instead of falling back to the offline engine (default: fail-open)",
+    )
+    common_parser.add_argument(
+        "--state-json",
+        default=None,
+        help="Extra structured context for the gate state: inline JSON object or a path to a JSON file (E0.4)",
+    )
+    common_parser.add_argument(
+        "--use-lease",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="Effort gate: reuse an active lease (opened by a previous decision) instead of calling",
+    )
+    common_parser.add_argument(
+        "--tool-error",
+        default=argparse.SUPPRESS,
+        help="Report a tool failure: invalidates the effort lease (E3.7 break-glass) before deciding",
+    )
+    common_parser.add_argument(
+        "--allow-auto-recovery",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="Allow is_safe_auto_run=true when the package is also declared in repo manifests (E3.6)",
+    )
+    common_parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="Bypass the local decision cache (.jev/cache.json) for this run",
+    )
+    common_parser.add_argument(
+        "--no-receipts",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="Do not append this decision to .jev/receipts.jsonl",
+    )
+    common_parser.add_argument(
+        "--retries",
+        type=int,
+        default=argparse.SUPPRESS,
+        help="Maximum provider attempts for retryable failures (default: 3)",
+    )
     common_parser.add_argument(
         "--provider",
         choices=["typesafe", "commandcode", "opencode", "openrouter", "vercel"],
@@ -764,10 +1067,43 @@ def main() -> None:
     p_init.add_argument("--all", action="store_true", help="Configure all integrations (Cursor, Antigravity, Git)")
     p_init.set_defaults(func=cmd_init)
 
+    # doctor
+    p_doctor = subparsers.add_parser(
+        "doctor",
+        parents=[common_parser],
+        help="Diagnose configuration, credentials, model, state and git hook (never prints secrets)",
+    )
+    p_doctor.add_argument("--live", action="store_true", help="Also spend ONE request to check the provider")
+    p_doctor.add_argument("--no-git", action="store_true", help="Skip the git hook check")
+    p_doctor.set_defaults(func=cmd_doctor)
+
+    # receipts
+    p_receipts = subparsers.add_parser(
+        "receipts",
+        parents=[common_parser],
+        help="Show the local append-only decision receipts (audit trail)",
+    )
+    p_receipts.add_argument("--tail", type=int, default=20, help="Show only the newest N receipts (default: 20)")
+    p_receipts.set_defaults(func=cmd_receipts)
+
     # metrics
     p_metrics = subparsers.add_parser("metrics", parents=[common_parser], help="Display token ROI, intercepted LLM calls, and cost savings")
     p_metrics.add_argument("--reset", action="store_true", help="Reset saved telemetry counters")
     p_metrics.set_defaults(func=cmd_metrics)
+
+    # replay
+    p_replay = subparsers.add_parser(
+        "replay",
+        parents=[common_parser],
+        help="Replay the labelled corpus, print calibration metrics and enforce the regression gate",
+    )
+    p_replay.add_argument("--corpus", default="tests/corpus", help="Corpus directory of *.jsonl cases (default: tests/corpus)")
+    p_replay.add_argument("--engine", choices=["mock", "live"], default="mock", help="Decision engine for the replay (default: mock)")
+    p_replay.add_argument("--baseline", default=None, help="Baseline JSON to compare against (default: docs/REPLAY_REPORT.json)")
+    p_replay.add_argument("--update-baseline", action="store_true", help="Record the current run as the new baseline (review before committing)")
+    p_replay.add_argument("--allow-regression", action="store_true", help="Report findings but always exit 0")
+    p_replay.add_argument("--no-report", action="store_true", help="Do not rewrite docs/REPLAY_REPORT.md")
+    p_replay.set_defaults(func=cmd_replay)
 
     # test-gate (alias: triage)
     p_test = subparsers.add_parser("test-gate", aliases=["triage"], parents=[common_parser], help="Triage test failures and avoid unnecessary LLM calls")
@@ -852,8 +1188,24 @@ def main() -> None:
     p_mcp.set_defaults(func=cmd_mcp)
 
     args = parser.parse_args()
+    tool_error = getattr(args, "tool_error", None)
+    if tool_error:
+        try:
+            from .session import record_tool_error
+
+            record_tool_error(str(tool_error))
+            print(f"[JEV] Tool error recorded; the effort lease was invalidated: {tool_error}", file=sys.stderr)
+        except Exception:
+            pass
     try:
         sys.exit(args.func(args))
+    except RuntimeError as e:
+        # Shadow mode never breaks the caller's pipeline: report what would have happened.
+        print(f"Error: {e}", file=sys.stderr)
+        if _shadow_enabled(args):
+            print("[SHADOW] would exit 2 - no action taken.", file=sys.stderr)
+            sys.exit(0)
+        sys.exit(2)
     except BrokenPipeError:
         try:
             devnull = os.open(os.devnull, os.O_WRONLY)

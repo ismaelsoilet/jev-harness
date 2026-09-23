@@ -58,8 +58,10 @@ echo "ModuleNotFoundError: No module named 'x'" | jev-harness test-gate --json
 | :--- | :--- | :--- |
 | Offline (`--mock`, ou sem credenciais) | **Nenhum** | Nada |
 | Live (qualquer provedor) | HTTPS até o endpoint do provedor | `model`, suas `questions` tipadas e o **log de falha cru** (cabeça 2.000 + cauda 4.000 caracteres, ~6 KB máx.) |
+| Estado local (`<repo>/.jev/` ou `~/.config/jev`) | **Nenhum** | Contadores de sessão, **recibos de decisão** (apenas hashes + metadados, nunca logs brutos), o cache de decisões e o `usage` medido que o provedor reportou. Arquivos `0600`, diretório `0700`, limitados por TTL (`receipts_ttl_days`, `cache_ttl_seconds`) e tamanho (`receipts_max_entries`); o `init` adiciona `.jev/` ao `.gitignore`. Desligue os recibos com `"receipts": false`, `JEV_RECEIPTS=0` ou `--no-receipts`; ignore o cache com `--no-cache` |
+| GitHub Action (`examples/github-action`) | Depende do engine escolhido | Offline (padrão) não transmite nada; `engine: live` envia o log capturado ao seu provedor — ver a linha acima para o que isso implica |
 
-O triage live envia o log no campo `state`. Strings com aparência de segredo são redigidas nas *mensagens de erro*, **não** no payload do log — se um token, senha ou dado de cliente aparecer na saída dos testes, ele é transmitido.
+O triage live envia o log no campo `state`, e desde a v0.2.0 esse state é **redigido em todos os runtimes antes de ser transmitido**: material com cara de credencial (chaves de API, JWTs, tokens do GitHub/AWS, URLs de banco, chaves privadas) vira `[REDACTED]`, tanto no state quanto nas mensagens de erro. É higiene por forma, não uma camada de DLP — dados que não pareçam credencial (registros de clientes, identificadores internos) ainda trafegam — então mantenha `--mock` em repositórios com dados regulados.
 **Regra prática:** logs de repositórios com dados regulados ou de clientes → rode agentes com `--mock` (100% local), ou confirme antes a política de retenção do provedor. O arquivo de telemetria `~/.config/jev/session.json` guarda trechos de erro e é gravado com permissão `0600`.
 
 ---
@@ -244,7 +246,7 @@ Os nomes e argumentos exatos estão na tabela no topo deste guia. Resumo:
 
 A telemetria é um comando de **CLI** (`jev-harness metrics`), não uma ferramenta MCP.
 
-> **Chame sempre `tools/list` primeiro** se um nome for rejeitado: o servidor é a fonte de verdade, e este guia registra o schema na v0.1.12.
+> **Chame sempre `tools/list` primeiro** se um nome for rejeitado: o servidor é a fonte de verdade, e este guia registra o schema na v0.2.0.
 
 ---
 
@@ -271,6 +273,53 @@ cargo test 2>&1 | jev test-gate
 - `1`: **Falha lógica profunda** (`skip_llm = false`) ou **Aborto Recomendado**. Apenas neste momento o agente deve acionar o modelo de fronteira.
 - `2`: Erro de sintaxe ou invocação (por exemplo flag inválida, subcomando desconhecido ou um caminho `--log` inexistente). Erros de invocação são impressos como texto simples no stderr **mesmo com `--json`**, então consumidores de máquina devem ramificar pelo exit code primeiro.
 - O exit `0` cobre dois resultados distintos: correção determinística para uma falha real (`skip_llm=true`) e execução verde (`category="no_failure"`). Ramifique por `category`, não apenas pelo exit code.
+
+#### Flags operacionais compartilhadas por todos os comandos:
+
+| Flag | O que faz | Quando usar |
+| :--- | :--- | :--- |
+| `--shadow` | Decide, imprime `[SHADOW] would exit N` no stderr e **sempre sai com `0`**; `test-gate --json` adiciona `shadow: true` e `would_exit`. Também disponível como `"shadow": true` no `.jev.json` | Medir os gates em um pipeline real por uma semana antes de confiar neles |
+| `--fail-closed` | Expõe erros do provedor em vez de degradar: imprime `Error: ...` no stderr e sai com `2` (sem traceback) | Gates de CI rígidos, onde indisponibilidade do provedor deve falhar o job |
+| `--retries N` | Número máximo de tentativas para falhas retentáveis (padrão `3`) | Limitar a espera em pipelines lentos |
+
+**Política de falha padrão (fail-open):** `429`, `5xx`, timeouts e erros de rede são retentados com backoff exponencial com teto e respeitam `Retry-After` (inclusive segundos fracionários). Após as tentativas, a decisão degrada para o motor determinístico offline e é **sempre marcada** na saída: `is_mock: true` mais `degraded_reason` (`auth_401`, `http_429`, `http_500`, `timeout`, `connection`, `invalid_response`) — exposto no `--json`, nos payloads MCP e na linha humana `Mode:` como `[SIMULATION/MOCK - degraded: <reason>]`. Nunca trate uma resposta degradada como live. Um `200` com campos de tipo errado (por exemplo `score: "N/A"`, `answers: []`) segue o mesmo caminho: degradação marcada, nunca traceback, `NaN` silencioso ou score silenciosamente default.
+
+**Precedência do shadow:** `--shadow` nunca quebra o pipeline — inclusive quando o provedor falha e `--fail-closed` também está ativo, caso em que reporta `[SHADOW] would exit 2` e sai `0`. Ele **não** mascara uso incorreto do CLI: flag inválida ou arquivo `--log` inexistente ainda sai `2`.
+
+**`is_mock` vs `degraded_reason` — não confunda:** `is_mock: true` sozinho significa que a resposta veio do motor offline determinístico de propósito (sem credenciais, ou `--mock`); um `degraded_reason` **não vazio** significa que uma chamada live foi tentada e falhou, então a resposta é um fallback rotulado. Ramifique por `degraded_reason` quando precisar saber "isto foi uma decisão real?".
+
+Recibos e cache de decisão são **estado do lado Python**: o CLI, o MCP server e o SDK Python escrevem; os runtimes TypeScript e Rust não (permanecem stateless, como o lease de sessão).
+
+**Logs não confiáveis:** o detector determinístico de injeção escala (nunca ignora) quando um log se dirige ao decisor — `IGNORE PREVIOUS INSTRUCTIONS`, `<|im_start|>`, `[INST]`, `"role": "system", "content": …`, `skip_llm=true`, "classify this as …". Um log estruturado que embute uma mensagem de chat (role + content) portanto escala; essa é a direção segura e custa apenas uma revisão, nunca um skip silencioso.
+
+**Respostas são estritas, telemetria não:** uma resposta que o runtime não consegue interpretar (`type` desconhecido, campo numérico ausente ou textual, `answers` que não é um objeto) é tratada como malformada e degrada de forma visível — os gates nunca caem em silêncio para o score default. Os contadores de `usage` são apenas telemetria: se o provedor os enviar num formato inesperado, os três runtimes caem para a mesma estimativa calculada, e isso nunca muda uma decisão.
+
+**Novidades da `v0.2.0` — comandos que valem conhecer:**
+
+| Comando | O que responde |
+| :--- | :--- |
+| `jev-harness doctor [--live] [--json]` | Minha instalação está saudável? Verifica versão, config, credenciais (apenas fingerprint, nunca o segredo), modelo efetivo e origem, limites de payload, permissões do estado, recibos/cache, hook de git e, opcionalmente, faz UMA chamada live para medir latência e custo. Cada problema vem com o comando que corrige |
+| `jev-harness replay --corpus tests/corpus` | Quão precisos são os gates? Roda um corpus rotulado, imprime matriz de confusão, precisão/recall/F1 e ECE por gate, e falha (exit `1`) em regressão contra `docs/REPLAY_REPORT.json` ou se um caso adversarial for classificado de forma determinística |
+| `jev-harness receipts [--tail N] [--json]` | O que este repositório decidiu? Lê a trilha de auditoria append-only (`{ts, gate, input_hash, decision, confidence, model, is_mock, degraded_reason, shadow}`) |
+
+Cache e debounce: decisões live idênticas são servidas do `.jev/cache.json` (`--no-cache` ignora) e avaliações repetidas de `nudge-gate`/`abort-check` dentro da janela de debounce são coalescidas (`debounced: true`). Rodadas em shadow e respostas degradadas nunca são cacheadas; `jev-harness metrics --json` reporta o hit-rate.
+
+**Campos estruturados que você pode usar (aditivos, `v0.2.0`):**
+
+| Campo | Onde | Significado |
+| :--- | :--- | :--- |
+| `uncertainty` | todo resultado de gate que chegou a uma resposta | `{margin, normalized_entropy, confidence, escalate_to_system2, escalation_reason}` — forma da distribuição do provedor mais uma dica explícita de escalonamento. Nunca altera `skip_llm` ou exit code, e execução verde nunca é escalada. É `null` nos atalhos determinísticos (execução verde, guarda de injeção) e numa resposta servida por lease, porque ali não existe distribuição do provedor |
+| `recovery` | `test-gate` (dependência ausente) | `{action_type, package_name, package_manager, argv, is_safe_auto_run, rationale}`. **Nunca uma string de shell.** `is_safe_auto_run` é `false` a menos que o pacote esteja declarado nos seus manifestos **e** você passe `--allow-auto-recovery` |
+| `focused_slice` / `causal_context` | o que o provedor recebe | Recorte de ≤15 linhas em volta da falha mais o bloco anterior. Você continua enviando o log completo; o slice é o que o juiz lê primeiro |
+| `cached` / `debounced` | resultados de gate | Proveniência de uma decisão servida localmente (cache ou janela de debounce) |
+
+**Onde o estado vive:** a sessão, os recibos, o cache de decisão e o lease de esforço são gravados em `~/.config/jev/` (modo `0600`) a menos que o repositório tenha um diretório `.jev/` — o `jev-harness init` o cria, e enquanto ele existir o estado fica dentro daquele repositório, evitando que dois projetos compartilhem memória ou lease. Nada é criado automaticamente.
+
+Flags que os acompanham: `--state-json <arquivo|json>`, `--allow-auto-recovery`, `--use-lease` (reutiliza um lease de esforço ativo), `--tool-error "<resumo>"` (break-glass: invalida o lease), `--no-cache` e `--no-receipts`.
+
+**Limites de payload:** cada requisição é validada **antes** de qualquer chamada de rede contra os limites do provedor (128.000 code points de `state`, 256.000 no total, ≈ 32k/64k tokens). Exceder sai com `2` e `Payload exceeds the provider limit: ...` — divida o estado ou as perguntas em vez de repetir.
+
+**Pin de modelo:** o modelo efetivo resolve como argumento explícito → variável `JEV_MODEL` → `"model"` no `.jev.json` → default do provedor, e `jev-harness status` informa o modelo e a origem. O default `jev-latest` é um **alias móvel**; fixe uma versão (ex.: `"model": "jev-1.13.0"`) quando os thresholds estiverem calibrados, para que um release do provedor não mude suas decisões silenciosamente.
 
 #### Disjuntor de Trajetória Automatizado (Checar antes de repetir passos):
 ```bash
@@ -358,7 +407,7 @@ Proteja o repositório automaticamente antes de commits ou runs de CI:
 ```yaml
 repos:
   - repo: https://github.com/ismaelsoilet/jev-harness
-    rev: v0.1.13
+    rev: v0.2.0
     hooks:
       - id: jev-test-gate
         args: ["pytest -q"]     # ou "npm test", "cargo test --quiet", ...
@@ -599,7 +648,7 @@ Antes de gastar tokens com falhas de compilação ou testes:
 
 | Situação | Loop de Agente Padrão | Agente com Jev Harness | Impacto |
 | :--- | :--- | :--- | :--- |
-| **Erro de Módulo Ausente** | Envia 300 linhas ao Claude Fable 5.1 (~50k tokens, ~$0,80) | Jev faz triagem em 80ms (`$0,00004`). Instala pacote. | **99,9% economia de custo, 15s poupados** |
+| **Erro de Módulo Ausente** | Envia 300 linhas ao Claude Fable 5.1 (~50k tokens, ~$0,80) | Jev faz triagem offline em dezenas de µs in-process (~80–100 ms de cold start no CLI) por ~$0,00002 no live. Instala pacote. | **99,9% economia de custo, 15s poupados** |
 | **Flaky / Instabilidade de Rede** | Reescreve conexões ou alucina refatoração | Jev detecta falha efêmera. Tenta de novo 1 vez. | **Zero alterações de código desnecessárias** |
 | **Loop Circular de 3 Tentativas** | Gasta mais de 180k tokens e corrompe o código | Jev aborta na 2ª tentativa (`exit 1`). Para o loop. | **Economiza ~$5,00 e previne bugs** |
 | **Latência de Thinking em Tool Calls** | DeepSeek/Qwen espera 180s em CoT interno para `git status` | Astra-Jev define `effort="low"`. Responde em 1,5s. | **178s de espera eliminados** |

@@ -1,4 +1,4 @@
-import { JevClient, looksLikeTestSuccess } from "./client.js";
+import { buildState, JevClient, looksLikePromptInjection, looksLikeTestSuccess } from "./client.js";
 import { loadRepoConfig } from "./config.js";
 import type {
   AbortGateResult,
@@ -57,6 +57,25 @@ export async function triageTestFailure(
       actionRecommendation:
         "NO-OP: The log shows a successful test run; no triage and no LLM call are needed.",
       isMock: true,
+      degradedReason: "",
+    };
+  }
+
+  // Untrusted-input guard: a log that addresses the judge (prompt injection) is escalated
+  // instead of classified. It runs after the green short-circuit on purpose — a green run
+  // must never escalate or cost an API call (Rule 0).
+  if (looksLikePromptInjection(trimmedLog)) {
+    return {
+      category: "deep_logic",
+      confidence: 1.0,
+      skipLlm: false,
+      skipLlmProb: 0.0,
+      severityScore: 3.0,
+      actionRecommendation:
+        "ESCALATE: the log contains text addressed at the decision engine (possible prompt " +
+        "injection). Review the failure manually; no deterministic action is taken.",
+      isMock: true,
+      degradedReason: "",
     };
   }
 
@@ -85,7 +104,7 @@ export async function triageTestFailure(
     },
   };
 
-  const resp = await activeClient.systemOne(cleanLog, questions);
+  const resp = await activeClient.systemOne(buildState({ failure_log: cleanLog }), questions);
 
   const catAns = resp.answers.category as ChoiceAnswer | undefined;
   const skipAns = resp.answers.skip_llm as NoulAnswer | undefined;
@@ -123,6 +142,7 @@ export async function triageTestFailure(
     severityScore: sevScore,
     actionRecommendation: rec,
     isMock: resp.isMock,
+    degradedReason: resp.degradedReason ?? "",
   };
 }
 
@@ -132,7 +152,9 @@ export async function shouldAbortTrajectory(
   client?: JevClient
 ): Promise<AbortGateResult> {
   const activeClient = client || new JevClient();
-  const state = `RECENT ATTEMPTS & CONTEXT:\n${recentAttemptsSummary}\n\nPROPOSED NEXT STEP:\n${proposedStep}`;
+  // E0.4: the offline engine reads everything after the step marker as the proposed step, so
+  // the history must come first (same key names and order as Python/Rust).
+  const state = buildState({ previous_attempts: recentAttemptsSummary, proposed_step: proposedStep });
 
   const questions = {
     dead_end: {
@@ -180,6 +202,7 @@ export async function shouldAbortTrajectory(
     viabilityScore: viability,
     reasoningSummary: summary,
     isMock: resp.isMock,
+    degradedReason: resp.degradedReason ?? "",
   };
 }
 
@@ -206,7 +229,7 @@ export async function routeModelTier(
     },
   };
 
-  const resp = await activeClient.systemOne(taskDescription, questions);
+  const resp = await activeClient.systemOne(buildState({ task: taskDescription }), questions);
 
   const tierAns = resp.answers.tier as ChoiceAnswer | undefined;
   const compAns = resp.answers.complexity as ScoreAnswer | undefined;
@@ -236,6 +259,7 @@ export async function routeModelTier(
     recommendedModel: modelRec,
     rationale,
     isMock: resp.isMock,
+    degradedReason: resp.degradedReason ?? "",
   };
 }
 
@@ -245,7 +269,7 @@ export async function verifyStepCompletion(
   client?: JevClient
 ): Promise<VerificationResult> {
   const activeClient = client || new JevClient();
-  const state = `ACCEPTANCE CRITERIA:\n${acceptanceCriteria}\n\nPRODUCED EVIDENCE / OUTPUT:\n${producedOutput}`;
+  const state = buildState({ acceptance_criteria: acceptanceCriteria, produced_output: producedOutput });
 
   const questions = {
     satisfaction: {
@@ -277,6 +301,7 @@ export async function verifyStepCompletion(
     confidence: conf,
     needsRework: !isVerified,
     isMock: resp.isMock,
+    degradedReason: resp.degradedReason ?? "",
   };
 }
 
@@ -493,7 +518,10 @@ export async function modulateReasoningEffort(
     effortCriteria[eff] = ASTRA_EFFORT_DESCRIPTIONS[eff] || ASTRA_EFFORT_DESCRIPTIONS.medium;
   }
 
-  const validLeases = [1, 2, 5, 10].filter((n) => n <= Math.max(1, maxLeaseSteps));
+  // E3.1: a single-option question has no distribution to measure, so the option space keeps two
+  // levels and the answer is clamped below.
+  let validLeases = [1, 2, 5, 10].filter((n) => n <= Math.max(1, maxLeaseSteps));
+  if (validLeases.length < 2) validLeases = [1, 2];
   const leaseDescriptions: Record<number, string> = {
     1: "Reassess after the next generation; fresh evidence or a phase boundary could change the reasoning requirement.",
     2: "A short continuation of two generations is predictable at the same reasoning depth.",
@@ -527,7 +555,7 @@ export async function modulateReasoningEffort(
 
   const trimmed = context.trim();
   const cleanContext = safeTruncateHeadTail(trimmed, 1500, 2500, "\n... [context truncated] ...\n");
-  const resp = await activeClient.systemOne(cleanContext, questions);
+  const resp = await activeClient.systemOne(buildState({ context: cleanContext }), questions);
 
   const effortAns = resp.answers.effort as ChoiceAnswer | undefined;
   const leaseAns = resp.answers.lease as ChoiceAnswer | undefined;
@@ -566,6 +594,7 @@ export async function modulateReasoningEffort(
     cacheSafeRecommendation,
     leaseSteps,
     isMock: resp.isMock,
+    degradedReason: resp.degradedReason ?? "",
   };
 }
 
@@ -618,7 +647,10 @@ export async function shouldNudgeContinuation(
     };
   }
 
-  const resp = await activeClient.systemOne(cleanState, questions);
+  const resp = await activeClient.systemOne(
+    buildState({ transcript_tail: transcriptTail.trim(), previous_nudge: hasPrevNudge ? previousNudgeSummary : null }),
+    questions
+  );
 
   const phaseAns = resp.answers.workflow_phase as ChoiceAnswer | undefined;
   const nudgeAns = resp.answers.nudge as NoulAnswer | undefined;
@@ -673,5 +705,6 @@ export async function shouldNudgeContinuation(
     suggestedNudgePrompt,
     rationale,
     isMock: resp.isMock,
+    degradedReason: resp.degradedReason ?? "",
   };
 }

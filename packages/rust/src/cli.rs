@@ -1,9 +1,8 @@
 use crate::{
     client::{JevClient, COMMANDCODE_API_URL},
     gates::{
-        modulate_reasoning_effort_full, route_model_tier,
-        should_abort_trajectory, should_nudge_continuation, triage_test_failure,
-        verify_step_completion,
+        modulate_reasoning_effort_full, route_model_tier, should_abort_trajectory,
+        should_nudge_continuation, triage_test_failure, verify_step_completion,
     },
 };
 use clap::{Parser, Subcommand};
@@ -11,6 +10,79 @@ use std::fs;
 use std::io::{self, IsTerminal, Read};
 use std::path::{Path, PathBuf};
 use std::process;
+
+/// Shadow mode never changes the caller's pipeline: it reports the would-be exit code.
+pub fn shadow_exit(shadow: bool, code: i32) -> i32 {
+    if shadow {
+        eprintln!("[SHADOW] would exit {} - no action taken.", code);
+        0
+    } else {
+        code
+    }
+}
+
+/// Shadow mode never breaks the caller's pipeline: report the would-be code and exit 0.
+/// CLI misuse (missing input, bad flag) keeps exiting 2 — it is not a gate outcome.
+pub fn exit_gate_error(shadow: bool, message: &str) -> ! {
+    eprintln!("{}", message);
+    process::exit(shadow_exit(shadow, 2));
+}
+
+/// `[SIMULATION/MOCK]`, naming the degradation when a provider failure caused it (E0.2).
+pub fn mock_mode_label(degraded_reason: &str) -> String {
+    if degraded_reason.is_empty() {
+        "[SIMULATION/MOCK]".to_string()
+    } else {
+        format!("[SIMULATION/MOCK - degraded: {}]", degraded_reason)
+    }
+}
+
+/// Ensures `.jev/` is git-ignored in the project (E3.8): local state must never be committed.
+/// Returns the entry when it was added.
+pub fn ensure_state_ignored(cwd: &std::path::Path) -> Option<&'static str> {
+    let gitignore = cwd.join(".gitignore");
+    let entry = ".jev/";
+    let existing = fs::read_to_string(&gitignore).unwrap_or_default();
+    let ignored = [".jev/", ".jev", "/.jev/", "/.jev"];
+    if existing.lines().any(|line| ignored.contains(&line.trim())) {
+        return None;
+    }
+    let separator = if existing.is_empty() || existing.ends_with('\n') {
+        ""
+    } else {
+        "\n"
+    };
+    let header = if existing.is_empty() {
+        "# Added by jev-harness: local decision state (sessions, receipts, cache)\n"
+    } else {
+        ""
+    };
+    if fs::write(
+        &gitignore,
+        format!("{}{}{}{}", existing, separator, header, entry),
+    )
+    .is_err()
+    {
+        return None;
+    }
+    Some(entry)
+}
+
+/// Human label for where the effective model came from (E0.3).
+pub fn model_origin_label(source: &str) -> String {
+    match source {
+        "argument" => "explicit argument".to_string(),
+        "env" => "JEV_MODEL environment variable".to_string(),
+        ".jev.json" => "repository .jev.json".to_string(),
+        other => {
+            if other == "provider_default" {
+                "provider default".to_string()
+            } else {
+                other.to_string()
+            }
+        }
+    }
+}
 
 #[derive(Parser)]
 #[command(
@@ -34,6 +106,27 @@ pub struct Cli {
     )]
     pub provider: Option<String>,
 
+    #[arg(
+        long,
+        global = true,
+        help = "Surface provider errors instead of falling back to the offline engine (default: fail-open)"
+    )]
+    pub fail_closed: bool,
+
+    #[arg(
+        long,
+        global = true,
+        help = "Maximum provider attempts for retryable failures (default: 3)"
+    )]
+    pub retries: Option<u32>,
+
+    #[arg(
+        long,
+        global = true,
+        help = "Decide and report, but never change the exit code (also via .jev.json)"
+    )]
+    pub shadow: bool,
+
     #[command(subcommand)]
     pub command: Commands,
 }
@@ -50,7 +143,10 @@ pub enum Commands {
     Init {
         #[arg(long, help = "Configure Cursor MCP server")]
         cursor: bool,
-        #[arg(long, help = "Override the detected test command for the generated git hook")]
+        #[arg(
+            long,
+            help = "Override the detected test command for the generated git hook"
+        )]
         test_cmd: Option<String>,
         #[arg(long, help = "Configure Antigravity IDE hooks")]
         antigravity: bool,
@@ -212,7 +308,6 @@ fn read_input(arg_pos: Option<String>, arg_flag: Option<String>) -> io::Result<S
     Ok(String::new())
 }
 
-
 /// Best-effort detection of the repository test command for the generated git hook.
 /// Mirrors the Python and TypeScript runtimes.
 const ENV_EXAMPLE: &str = "# Jev Harness provider credentials. Offline mode needs NO key (zero network calls).\n# Docs: https://github.com/ismaelsoilet/jev-harness/blob/main/docs/AGENT_INTEGRATION_GUIDE.md\n#\n# OpenCode Zen (free tier) - https://opencode.ai/auth\n# JEV_PROVIDER=opencode\n# OPENCODE_API_KEY=\"your_key_here\"\n#\n# TypeSafe AI (direct) - https://console.typesafe.ai\n# TYPESAFE_API_KEY=\"your_key_here\"\n#\n# Command Code - https://commandcode.ai/signup  (or run: cmd login)\n# CMD_API_KEY=\"your_key_here\"\n#\n# OpenRouter (alpha access only)\n# OPENROUTER_API_KEY=\"your_key_here\"\n#\n# Vercel AI Gateway\n# AI_GATEWAY_API_KEY=\"your_key_here\"\n";
@@ -223,8 +318,12 @@ fn project_bin(cwd: &Path, name: &str, fallback: &str) -> String {
     let candidates = [
         PathBuf::from(".venv").join("bin").join(name),
         PathBuf::from("venv").join("bin").join(name),
-        PathBuf::from(".venv").join("Scripts").join(format!("{}.exe", name)),
-        PathBuf::from("venv").join("Scripts").join(format!("{}.exe", name)),
+        PathBuf::from(".venv")
+            .join("Scripts")
+            .join(format!("{}.exe", name)),
+        PathBuf::from("venv")
+            .join("Scripts")
+            .join(format!("{}.exe", name)),
     ];
     for rel in candidates {
         if cwd.join(&rel).exists() {
@@ -298,7 +397,12 @@ exit 0
 
 pub async fn run_cli() {
     let cli = Cli::parse();
-    let mut client = JevClient::new(None, None, None, None, cli.mock);
+    let shadow = cli.shadow || crate::config::load_repo_config().shadow;
+    let mut client = JevClient::new(None, None, None, None, cli.mock).with_failure_policy(
+        !cli.fail_closed,
+        cli.retries.unwrap_or(3),
+        500,
+    );
     if let Some(ref p) = cli.provider {
         client.provider = p.clone();
         if p == "commandcode" {
@@ -354,6 +458,12 @@ pub async fn run_cli() {
                 println!("Engine Mode: SIMULATION / MOCK (Heuristic offline mode active)");
             }
             println!("Model:       {}", client.model);
+            println!("Model origin: {}", model_origin_label(&client.model_source));
+            if client.model == "jev-latest" {
+                println!(
+                    "Note:        'jev-latest' is a moving alias - pin a version (e.g. \"model\": \"jev-1.13.0\") when your thresholds are calibrated."
+                );
+            }
             println!("=================================\n");
             process::exit(0);
         }
@@ -382,7 +492,10 @@ pub async fn run_cli() {
             let skill_file = skills_dir.join("SKILL.md");
             let skill_content = "---\nname: jev-harness\ndescription: Repository adapter for Jev System One.\nlicense: MIT\n---\n\n# Local Jev Harness Adapter\n\nThis repository is connected to the global **Jev System One Harness**.\n";
             if skill_file.exists() {
-                println!("  [=] Existing agent skill preserved: {}", skill_file.display());
+                println!(
+                    "  [=] Existing agent skill preserved: {}",
+                    skill_file.display()
+                );
             } else {
                 let _ = fs::write(&skill_file, skill_content);
                 println!("  [+] Created agent skill: {}", skill_file.display());
@@ -392,6 +505,10 @@ pub async fn run_cli() {
             if !jev_json.exists() {
                 let _ = fs::write(&jev_json, "{\n  \"api_key\": \"\",\n  \"model\": \"jev-latest\",\n  \"skip_llm_threshold\": 0.65,\n  \"abort_threshold\": 0.70\n}\n");
                 println!("  [+] Created repo config: {}", jev_json.display());
+            }
+
+            if ensure_state_ignored(&cwd).is_some() {
+                println!("  [+] Added '.jev/' to .gitignore (local sessions, receipts and cache)");
             }
 
             let env_example = cwd.join(".env.jev.example");
@@ -436,7 +553,8 @@ pub async fn run_cli() {
                         #[cfg(unix)]
                         {
                             use std::os::unix::fs::PermissionsExt;
-                            let _ = fs::set_permissions(&pre_commit, fs::Permissions::from_mode(0o755));
+                            let _ =
+                                fs::set_permissions(&pre_commit, fs::Permissions::from_mode(0o755));
                         }
                         let detected = detect_test_command(&cwd, &test_cmd_override);
                         let detail = if detected.is_empty() {
@@ -444,7 +562,11 @@ pub async fn run_cli() {
                         } else {
                             format!(" (test command: {})", detected)
                         };
-                        println!("  [+] Installed Git pre-commit guardrail: {}{}", pre_commit.display(), detail);
+                        println!(
+                            "  [+] Installed Git pre-commit guardrail: {}{}",
+                            pre_commit.display(),
+                            detail
+                        );
                     }
                 }
             }
@@ -482,14 +604,38 @@ pub async fn run_cli() {
 
             if let Ok(content) = fs::read_to_string(&session_path) {
                 if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
-                    triage_calls = val.get("total_triage_calls").and_then(|v| v.as_u64()).unwrap_or(0);
-                    skipped_llm = val.get("skipped_llm_calls").and_then(|v| v.as_u64()).unwrap_or(0);
-                    abort_guards = val.get("abort_guards_triggered").and_then(|v| v.as_u64()).unwrap_or(0);
-                    deterministic_routes = val.get("deterministic_routes").and_then(|v| v.as_u64()).unwrap_or(0);
-                    effort_modulations = val.get("effort_modulations").and_then(|v| v.as_u64()).unwrap_or(0);
-                    nudge_continuations = val.get("nudge_continuations").and_then(|v| v.as_u64()).unwrap_or(0);
-                    tokens_saved = val.get("estimated_tokens_saved").and_then(|v| v.as_u64()).unwrap_or(0);
-                    cost_saved = val.get("estimated_cost_saved_usd").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    triage_calls = val
+                        .get("total_triage_calls")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
+                    skipped_llm = val
+                        .get("skipped_llm_calls")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
+                    abort_guards = val
+                        .get("abort_guards_triggered")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
+                    deterministic_routes = val
+                        .get("deterministic_routes")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
+                    effort_modulations = val
+                        .get("effort_modulations")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
+                    nudge_continuations = val
+                        .get("nudge_continuations")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
+                    tokens_saved = val
+                        .get("estimated_tokens_saved")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
+                    cost_saved = val
+                        .get("estimated_cost_saved_usd")
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(0.0);
                 }
             }
 
@@ -509,13 +655,28 @@ pub async fn run_cli() {
             } else {
                 println!("\n=== JEV HARNESS ROI & TOKEN METRICS (RUST) ===");
                 println!("Total Test Triages:      {}", triage_calls);
-                println!("LLM Calls Intercepted:   {} (Fixed deterministically)", skipped_llm);
+                println!(
+                    "LLM Calls Intercepted:   {} (Fixed deterministically)",
+                    skipped_llm
+                );
                 println!("Doom Loops Aborted:      {}", abort_guards);
                 println!("Deterministic Routes:    {}", deterministic_routes);
-                println!("Effort Modulations:      {} (Astra-Jev per-generation)", effort_modulations);
-                println!("Continuation Nudges:     {} (Jev Nudge Gate)", nudge_continuations);
-                println!("Estimated Tokens Saved:  ⚡ {} tokens (heuristic estimate)", tokens_saved);
-                println!("Estimated API Cost Saved: 💸 ${:.2} USD (heuristic estimate)", cost_saved);
+                println!(
+                    "Effort Modulations:      {} (Astra-Jev per-generation)",
+                    effort_modulations
+                );
+                println!(
+                    "Continuation Nudges:     {} (Jev Nudge Gate)",
+                    nudge_continuations
+                );
+                println!(
+                    "Estimated Tokens Saved:  ⚡ {} tokens (heuristic estimate)",
+                    tokens_saved
+                );
+                println!(
+                    "Estimated API Cost Saved: 💸 ${:.2} USD (heuristic estimate)",
+                    cost_saved
+                );
                 println!(
                     "Assumption Model:        {} tokens/${:.2} per intercepted triage; {} tokens/${:.2} per aborted doom loop",
                     26200, 0.31, 80000, 1.20
@@ -549,7 +710,17 @@ pub async fn run_cli() {
             match triage_test_failure(&text, Some(&client)).await {
                 Ok(res) => {
                     if cli.json {
-                        println!("{}", serde_json::to_string_pretty(&res).unwrap());
+                        let mut value = serde_json::to_value(&res).unwrap_or(serde_json::json!({}));
+                        if shadow {
+                            if let Some(obj) = value.as_object_mut() {
+                                obj.insert("shadow".to_string(), serde_json::json!(true));
+                                obj.insert(
+                                    "would_exit".to_string(),
+                                    serde_json::json!(if res.skip_llm { 0 } else { 1 }),
+                                );
+                            }
+                        }
+                        println!("{}", serde_json::to_string_pretty(&value).unwrap());
                     } else {
                         println!("\n--- JEV TEST TRIAGE VERDICT (RUST) ---");
                         println!("Category:        {}", res.category.to_uppercase());
@@ -571,15 +742,14 @@ pub async fn run_cli() {
                         println!("Severity Score:  {:.1} / 4.0", res.severity_score);
                         println!("Recommendation:  {}", res.action_recommendation);
                         if res.is_mock {
-                            println!("Mode:            [SIMULATION/MOCK]");
+                            println!("Mode:            {}", mock_mode_label(&res.degraded_reason));
                         }
                         println!("--------------------------------------\n");
                     }
-                    process::exit(if res.skip_llm { 0 } else { 1 });
+                    process::exit(shadow_exit(shadow, if res.skip_llm { 0 } else { 1 }));
                 }
                 Err(e) => {
-                    eprintln!("Error triaging test failure: {}", e);
-                    process::exit(2);
+                    exit_gate_error(shadow, &format!("Error: triaging test failure: {}", e));
                 }
             }
         }
@@ -617,15 +787,17 @@ pub async fn run_cli() {
                         println!("Viability Score:   {:.1} / 4.0", res.viability_score);
                         println!("Summary:           {}", res.reasoning_summary);
                         if res.is_mock {
-                            println!("Mode:              [SIMULATION/MOCK]");
+                            println!(
+                                "Mode:              {}",
+                                mock_mode_label(&res.degraded_reason)
+                            );
                         }
                         println!("-------------------------------------\n");
                     }
-                    process::exit(if res.should_abort { 1 } else { 0 });
+                    process::exit(shadow_exit(shadow, if res.should_abort { 1 } else { 0 }));
                 }
                 Err(e) => {
-                    eprintln!("Error evaluating abort gate: {}", e);
-                    process::exit(2);
+                    exit_gate_error(shadow, &format!("Error: evaluating abort gate: {}", e));
                 }
             }
         }
@@ -650,15 +822,17 @@ pub async fn run_cli() {
                         println!("Recommended Model: {}", res.recommended_model);
                         println!("Rationale:         {}", res.rationale);
                         if res.is_mock {
-                            println!("Mode:              [SIMULATION/MOCK]");
+                            println!(
+                                "Mode:              {}",
+                                mock_mode_label(&res.degraded_reason)
+                            );
                         }
                         println!("--------------------------------------\n");
                     }
                     process::exit(0);
                 }
                 Err(e) => {
-                    eprintln!("Error routing model tier: {}", e);
-                    process::exit(2);
+                    exit_gate_error(shadow, &format!("Error: routing model tier: {}", e));
                 }
             }
         }
@@ -684,15 +858,17 @@ pub async fn run_cli() {
                         );
                         println!("Rigor Score:       {:.1} / 4.0", res.rigor_score);
                         if res.is_mock {
-                            println!("Mode:              [SIMULATION/MOCK]");
+                            println!(
+                                "Mode:              {}",
+                                mock_mode_label(&res.degraded_reason)
+                            );
                         }
                         println!("---------------------------------------\n");
                     }
-                    process::exit(if res.is_verified { 0 } else { 1 });
+                    process::exit(shadow_exit(shadow, if res.is_verified { 0 } else { 1 }));
                 }
                 Err(e) => {
-                    eprintln!("Error verifying step completion: {}", e);
-                    process::exit(2);
+                    exit_gate_error(shadow, &format!("Error: verifying step completion: {}", e));
                 }
             }
         }
@@ -722,9 +898,9 @@ pub async fn run_cli() {
                     .filter(|item| !item.is_empty())
                     .collect::<Vec<String>>()
             });
-            let supported_refs = supported_vec.as_ref().map(|v| {
-                v.iter().map(|s| s.as_str()).collect::<Vec<&str>>()
-            });
+            let supported_refs = supported_vec
+                .as_ref()
+                .map(|v| v.iter().map(|s| s.as_str()).collect::<Vec<&str>>());
 
             match modulate_reasoning_effort_full(
                 &ctx,
@@ -761,15 +937,20 @@ pub async fn run_cli() {
                             println!("Cache Advisory:    {}", res.cache_safe_recommendation);
                         }
                         if res.is_mock {
-                            println!("Mode:              [SIMULATION/MOCK]");
+                            println!(
+                                "Mode:              {}",
+                                mock_mode_label(&res.degraded_reason)
+                            );
                         }
                         println!("------------------------------------------\n");
                     }
                     process::exit(0);
                 }
                 Err(e) => {
-                    eprintln!("Error modulating reasoning effort: {}", e);
-                    process::exit(2);
+                    exit_gate_error(
+                        shadow,
+                        &format!("Error: modulating reasoning effort: {}", e),
+                    );
                 }
             }
         }
@@ -806,21 +987,26 @@ pub async fn run_cli() {
                         println!("Workflow Phase:    {}", res.workflow_phase.to_uppercase());
                         println!("Nudge Prob:        {:.1}%", res.nudge_probability * 100.0);
                         println!("Waiting Prob:      {:.1}%", res.waiting_probability * 100.0);
-                        println!("Progress Prob:     {:.1}%", res.progress_probability * 100.0);
+                        println!(
+                            "Progress Prob:     {:.1}%",
+                            res.progress_probability * 100.0
+                        );
                         println!("Rationale:         {}", res.rationale);
                         if !res.suggested_nudge_prompt.is_empty() {
                             println!("Suggested Prompt:  {}", res.suggested_nudge_prompt);
                         }
                         if res.is_mock {
-                            println!("Engine Mode:       [SIMULATION / MOCK]");
+                            println!(
+                                "Engine Mode:       {}",
+                                mock_mode_label(&res.degraded_reason)
+                            );
                         }
                         println!("==========================================\n");
                     }
-                    process::exit(if res.should_nudge { 0 } else { 1 });
+                    process::exit(shadow_exit(shadow, if res.should_nudge { 0 } else { 1 }));
                 }
                 Err(e) => {
-                    eprintln!("Error evaluating nudge gate: {}", e);
-                    process::exit(2);
+                    exit_gate_error(shadow, &format!("Error: evaluating nudge gate: {}", e));
                 }
             }
         }

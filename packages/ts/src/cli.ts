@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { COMMANDCODE_API_URL, JevClient, OPENCODE_API_URL } from "./client.js";
+import { loadRepoConfig } from "./config.js";
 import {
   modulateReasoningEffort,
   routeModelTier,
@@ -142,13 +143,79 @@ function getPackageVersion(): string {
   } catch {
     // fallback
   }
-  return "0.1.14";
+  return "0.2.0";
+}
+
+function modelOriginLabel(source: string): string {
+  const labels: Record<string, string> = {
+    argument: "explicit argument",
+    env: "JEV_MODEL environment variable",
+    ".jev.json": "repository .jev.json",
+    provider_default: "provider default",
+  };
+  return labels[source] ?? source;
+}
+
+/** `[SIMULATION/MOCK]`, naming the degradation when a provider failure caused it (E0.2). */
+function mockModeLabel(res: { degradedReason?: string }): string {
+  const reason = res.degradedReason ?? "";
+  return reason ? `[SIMULATION/MOCK - degraded: ${reason}]` : "[SIMULATION/MOCK]";
+}
+
+/**
+ * Shadow mode must never break the caller's pipeline: a gate/provider failure reports the
+ * would-be exit code and exits 0. CLI misuse returns 2 explicitly and is not masked.
+ */
+/** Ensures `.jev/` is git-ignored in the project (E3.8): local state must never be committed. */
+function ensureStateIgnored(cwd: string): string | null {
+  const gitignore = path.join(cwd, ".gitignore");
+  const entry = ".jev/";
+  let existing = "";
+  try {
+    if (fs.existsSync(gitignore)) existing = fs.readFileSync(gitignore, "utf-8");
+  } catch {
+    return null;
+  }
+  const ignored = new Set([".jev/", ".jev", "/.jev/", "/.jev"]);
+  if (existing.split(/\r?\n/).some((line) => ignored.has(line.trim()))) return null;
+  const separator = !existing || existing.endsWith("\n") ? "" : "\n";
+  const header = existing ? "" : "# Added by jev-harness: local decision state (sessions, receipts, cache)\n";
+  try {
+    fs.writeFileSync(gitignore, `${existing}${separator}${header}${entry}\n`, "utf-8");
+  } catch {
+    return null;
+  }
+  return entry;
 }
 
 export async function runCli(argv: string[] = process.argv.slice(2)): Promise<number> {
+  try {
+    return await runCliInner(argv);
+  } catch (err: any) {
+    const shadow = argv.includes("--shadow") || loadRepoConfig().shadow;
+    process.stderr.write(`Error: ${err?.message ?? err}\n`);
+    if (shadow) {
+      process.stderr.write("[SHADOW] would exit 2 - no action taken.\n");
+      return 0;
+    }
+    return 2;
+  }
+}
+
+async function runCliInner(argv: string[] = process.argv.slice(2)): Promise<number> {
   const args = argv;
   const isMock = args.includes("--mock");
   const isJson = args.includes("--json");
+  const failClosed = args.includes("--fail-closed");
+  const shadow = args.includes("--shadow") || loadRepoConfig().shadow;
+  let retriesVal: number | undefined;
+  const retriesEq = args.find((a) => a.startsWith("--retries="));
+  if (retriesEq) {
+    retriesVal = Number(retriesEq.split("=")[1]);
+  } else {
+    const rIdx = args.findIndex((a) => a === "--retries");
+    if (rIdx !== -1 && args[rIdx + 1]) retriesVal = Number(args[rIdx + 1]);
+  }
 
   let providerVal: string | undefined;
   const providerEq = args.find((a) => a.startsWith("--provider="));
@@ -168,6 +235,7 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
       nonCommandIndices.add(i);
       if (
         (args[i] === "--provider" ||
+          args[i] === "--retries" ||
           args[i] === "--log" ||
           args[i] === "-l" ||
           args[i] === "--sample" ||
@@ -204,7 +272,19 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
   }
   const command = args.find((_, idx) => !nonCommandIndices.has(idx));
 
-  const client = new JevClient({ forceMock: isMock });
+  const shadowExit = (code: number): number => {
+    if (shadow) {
+      process.stderr.write(`[SHADOW] would exit ${code} - no action taken.\n`);
+      return 0;
+    }
+    return code;
+  };
+
+  const client = new JevClient({
+    forceMock: isMock,
+    failOpen: !failClosed,
+    maxRetries: retriesVal !== undefined && Number.isFinite(retriesVal) ? retriesVal : undefined,
+  });
   if (providerVal) {
     client.provider = providerVal;
     if (providerVal === "commandcode") {
@@ -241,6 +321,9 @@ Options:
   --mock                                 Force offline heuristic simulation
   --json                                 Output machine-readable JSON
   --provider <typesafe|commandcode|...>  Override backend provider
+  --shadow              Decide and report, but never change the exit code
+  --fail-closed         Surface provider errors instead of falling back (default: fail-open)
+  --retries <n>         Maximum provider attempts for retryable failures (default: 3)
   --target-provider <openai|deepseek|..> Target provider for reasoning effort
   --model <name>                         Target model name
   --session-context-tokens <num>         Active prompt tokens in session
@@ -307,6 +390,10 @@ This repository is connected to the global **Jev System One Harness**.
         "utf-8"
       );
       console.log(`  [+] Created repo config: ${path.relative(cwd, jevJson)}`);
+    }
+
+    if (ensureStateIgnored(cwd)) {
+      console.log("  [+] Added '.jev/' to .gitignore (local sessions, receipts and cache)");
     }
 
     const envExample = path.join(cwd, ".env.jev.example");
@@ -479,6 +566,12 @@ This repository is connected to the global **Jev System One Harness**.
       console.log("Engine Mode: SIMULATION / MOCK (Heuristic offline mode active)");
     }
     console.log(`Model:       ${client.model}`);
+    console.log(`Model origin: ${modelOriginLabel(client.modelSource)}`);
+    if (client.model === "jev-latest") {
+      console.log(
+        "Note:        'jev-latest' is a moving alias - pin a version (e.g. \"model\": \"jev-1.13.0\") when your thresholds are calibrated."
+      );
+    }
     console.log("===============================\n");
     return 0;
   }
@@ -524,6 +617,8 @@ This repository is connected to the global **Jev System One Harness**.
             actionRecommendation: res.actionRecommendation,
             is_mock: res.isMock,
             isMock: res.isMock,
+            degraded_reason: res.degradedReason ?? "",
+            ...(shadow ? { shadow: true, would_exit: res.skipLlm ? 0 : 1 } : {}),
           },
           null,
           2
@@ -542,10 +637,10 @@ This repository is connected to the global **Jev System One Harness**.
       console.log(`Skip LLM Call:   ${res.skipLlm ? "YES (Save Tokens!)" : "NO (Dispatch to System 2)"}`);
       console.log(`Severity Score:  ${res.severityScore.toFixed(1)} / 4.0`);
       console.log(`Recommendation:  ${res.actionRecommendation}`);
-      if (res.isMock) console.log("Mode:            [SIMULATION/MOCK]");
+      if (res.isMock) console.log(`Mode:            ${mockModeLabel(res)}`);
       console.log("------------------------------------\n");
     }
-    return res.skipLlm ? 0 : 1;
+    return shadowExit(res.skipLlm ? 0 : 1);
   }
 
   if (command === "abort-check" || command === "abort") {
@@ -584,6 +679,7 @@ This repository is connected to the global **Jev System One Harness**.
             summary: res.reasoningSummary,
             is_mock: res.isMock,
             isMock: res.isMock,
+            degraded_reason: res.degradedReason ?? "",
           },
           null,
           2
@@ -595,10 +691,10 @@ This repository is connected to the global **Jev System One Harness**.
       console.log(`Abort Probability: ${(res.abortProbability * 100).toFixed(1)}%`);
       console.log(`Viability Score:   ${res.viabilityScore.toFixed(1)} / 4.0`);
       console.log(`Summary:           ${res.reasoningSummary}`);
-      if (res.isMock) console.log("Mode:              [SIMULATION/MOCK]");
+      if (res.isMock) console.log(`Mode:              ${mockModeLabel(res)}`);
       console.log("-----------------------------------\n");
     }
-    return res.shouldAbort ? 1 : 0;
+    return shadowExit(res.shouldAbort ? 1 : 0);
   }
 
   if (command === "route") {
@@ -633,6 +729,7 @@ This repository is connected to the global **Jev System One Harness**.
             rationale: res.rationale,
             is_mock: res.isMock,
             isMock: res.isMock,
+            degraded_reason: res.degradedReason ?? "",
           },
           null,
           2
@@ -644,7 +741,7 @@ This repository is connected to the global **Jev System One Harness**.
       console.log(`Confidence:        ${(res.confidence * 100).toFixed(1)}%`);
       console.log(`Recommended Model: ${res.recommendedModel}`);
       console.log(`Rationale:         ${res.rationale}`);
-      if (res.isMock) console.log("Mode:              [SIMULATION/MOCK]");
+      if (res.isMock) console.log(`Mode:              ${mockModeLabel(res)}`);
       console.log("------------------------------------\n");
     }
     return 0;
@@ -680,6 +777,7 @@ This repository is connected to the global **Jev System One Harness**.
             needsRework: res.needsRework,
             is_mock: res.isMock,
             isMock: res.isMock,
+            degraded_reason: res.degradedReason ?? "",
           },
           null,
           2
@@ -690,10 +788,10 @@ This repository is connected to the global **Jev System One Harness**.
       console.log(`Verified:          ${res.isVerified ? "PASS" : "REWORK NEEDED"}`);
       console.log(`Satisfaction Prob: ${(res.satisfactionProbability * 100).toFixed(1)}%`);
       console.log(`Rigor Score:       ${res.rigorScore.toFixed(1)} / 4.0`);
-      if (res.isMock) console.log("Mode:              [SIMULATION/MOCK]");
+      if (res.isMock) console.log(`Mode:              ${mockModeLabel(res)}`);
       console.log("-------------------------------------\n");
     }
-    return res.isVerified ? 0 : 1;
+    return shadowExit(res.isVerified ? 0 : 1);
   }
 
   if (command === "reasoning-effort" || command === "astra-jev" || command === "effort") {
@@ -757,6 +855,7 @@ This repository is connected to the global **Jev System One Harness**.
             leaseSteps: res.leaseSteps,
             is_mock: res.isMock,
             isMock: res.isMock,
+            degraded_reason: res.degradedReason ?? "",
           },
           null,
           2
@@ -775,7 +874,7 @@ This repository is connected to the global **Jev System One Harness**.
       if (res.cacheSafeRecommendation) {
         console.log(`Cache Advisory:    ${res.cacheSafeRecommendation}`);
       }
-      if (res.isMock) console.log("Mode:              [SIMULATION/MOCK]");
+      if (res.isMock) console.log(`Mode:              ${mockModeLabel(res)}`);
       console.log("-----------------------------------------\n");
     }
     return 0;
@@ -827,6 +926,7 @@ This repository is connected to the global **Jev System One Harness**.
             rationale: res.rationale,
             is_mock: res.isMock,
             isMock: res.isMock,
+            degraded_reason: res.degradedReason ?? "",
           },
           null,
           2
@@ -843,10 +943,10 @@ This repository is connected to the global **Jev System One Harness**.
       if (res.suggestedNudgePrompt) {
         console.log(`Suggested Prompt:  ${res.suggestedNudgePrompt}`);
       }
-      if (res.isMock) console.log("Engine Mode:       [SIMULATION / MOCK]");
+      if (res.isMock) console.log(`Engine Mode:       ${mockModeLabel(res)}`);
       console.log("========================================\n");
     }
-    return res.shouldNudge ? 0 : 1;
+    return shadowExit(res.shouldNudge ? 0 : 1);
   }
 
   console.error(`Unknown command: ${command}`);
@@ -854,5 +954,10 @@ This repository is connected to the global **Jev System One Harness**.
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
-  runCli().then((code) => process.exit(code));
+  runCli()
+  .then((code) => process.exit(code))
+  .catch((err: any) => {
+    console.error(`Error: ${err?.message ?? err}`);
+    process.exit(2);
+  });
 }

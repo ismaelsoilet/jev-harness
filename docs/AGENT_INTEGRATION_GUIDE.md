@@ -58,8 +58,10 @@ echo "ModuleNotFoundError: No module named 'x'" | jev-harness test-gate --json
 | :--- | :--- | :--- |
 | Offline (`--mock`, or no credentials) | **None** | Nothing |
 | Live (any provider) | HTTPS to the provider endpoint | `model`, your typed `questions`, and the **raw failure log** (head 2,000 + tail 4,000 characters, ~6 KB max) |
+| Local state (`<repo>/.jev/` or `~/.config/jev`) | **None** | Session counters, **decision receipts** (hashes + metadata only, never raw logs), the decision cache, and the measured `usage` the provider reported. `0600` files, `0700` directory, bounded by TTL (`receipts_ttl_days`, `cache_ttl_seconds`) and size (`receipts_max_entries`); `.jev/` is added to `.gitignore` by `init`. Disable receipts with `"receipts": false`, `JEV_RECEIPTS=0` or `--no-receipts`; bypass the cache with `--no-cache` |
+| GitHub Action (`examples/github-action`) | Depends on the engine you choose | Offline (default) transmits nothing; `engine: live` sends the captured CI log to your provider — see the row above for what that implies |
 
-Live triage sends the log as the `state` field. Secret-looking strings are redacted from *error messages*, **not** from the log payload — if a token, password or customer record appears in your test output, it is transmitted.
+Live triage sends the log as the `state` field, and since v0.2.0 that state is **redacted in every runtime before it is transmitted**: credential-shaped material (API keys, JWTs, GitHub/AWS tokens, database URLs, private keys) is replaced with `[REDACTED]`, both in the state and in error messages. This is shape-based hygiene rather than a data-loss-prevention layer — structured data that does not look like a credential (customer records, internal identifiers) still travels — so keep `--mock` for repositories with regulated data.
 **Rule of thumb:** repository logs with regulated or customer data → run agents with `--mock` (fully local), or confirm the provider's data-retention policy first. The local telemetry file `~/.config/jev/session.json` stores short error snippets and is written with `0600` permissions.
 
 ---
@@ -243,7 +245,7 @@ The exact tool names and arguments are listed in the table at the top of this gu
 
 Telemetry is a **CLI** command (`jev-harness metrics`), not an MCP tool.
 
-> **Always call `tools/list` first** if a name is rejected: the server is the source of truth, and this guide records the schema as of v0.1.12.
+> **Always call `tools/list` first** if a name is rejected: the server is the source of truth, and this guide records the schema as of v0.2.0.
 
 ---
 
@@ -270,6 +272,53 @@ cargo test 2>&1 | jev test-gate
 - `1`: **Deep logic failure** (`skip_llm = false`) or **Trajectory Abort Recommended**. Only now should the agent invoke a frontier reasoning model.
 - `2`: Syntax or invocation error (for example an invalid flag, an unknown subcommand, or a `--log` path that does not exist). Invocation errors are printed as plain text to stderr **even with `--json`**, so machine consumers must branch on the exit code first.
 - Note that exit `0` covers two distinct outcomes: a deterministic fix for a real failure (`skip_llm=true`) and a green run (`category="no_failure"`). Branch on `category`, not only on the exit code.
+
+#### Operational flags shared by every command:
+
+| Flag | What it does | When to use it |
+| :--- | :--- | :--- |
+| `--shadow` | Decides, prints `[SHADOW] would exit N` to stderr and **always exits `0`**; `test-gate --json` adds `shadow: true` and `would_exit`. Also available as `"shadow": true` in `.jev.json` | Measure the gates on a real pipeline for a week before trusting them |
+| `--fail-closed` | Surfaces provider errors instead of degrading: prints `Error: ...` to stderr and exits `2` (no traceback) | Hard CI gates where a provider outage must fail the job |
+| `--retries N` | Maximum provider attempts for retryable failures (default `3`) | Bound the wait in slow pipelines |
+
+**Default failure policy (fail-open):** `429`, `5xx`, timeouts and network errors retry with capped exponential backoff and honor `Retry-After` (fractional seconds included). After the attempts, the decision degrades to the deterministic offline engine and is **always marked** in the output: `is_mock: true` plus `degraded_reason` (`auth_401`, `http_429`, `http_500`, `timeout`, `connection`, `invalid_response`) — exposed in `--json`, in the MCP payloads and in the human `Mode:` line as `[SIMULATION/MOCK - degraded: <reason>]`. Never treat a degraded answer as a live one. A `200` whose fields have the wrong type (for example `score: "N/A"`, `answers: []`) takes the same path: a marked degradation, never a traceback, a silent `NaN` or a silently defaulted score.
+
+**Shadow precedence:** `--shadow` never breaks the pipeline — including when the provider fails and `--fail-closed` is also set, in which case it reports `[SHADOW] would exit 2` and exits `0`. It does **not** mask CLI misuse: an invalid flag or a missing `--log` file still exits `2`.
+
+**`is_mock` vs `degraded_reason` — do not confuse them:** `is_mock: true` alone means the answer came from the deterministic offline engine on purpose (no credentials, or `--mock`); a **non-empty** `degraded_reason` means a live call was attempted and failed, so the answer is a labelled fallback. Branch on `degraded_reason` when you need "was this a real decision?"
+
+Receipts and the decision cache are **Python-side state**: the CLI, the MCP server and the Python SDK write them; the TypeScript and Rust runtimes do not (they stay stateless, like the session lease).
+
+**Untrusted logs:** the deterministic injection guard escalates (never skips) when a log addresses the judge — `IGNORE PREVIOUS INSTRUCTIONS`, `<|im_start|>`, `[INST]`, `"role": "system", "content": …`, `skip_llm=true`, "classify this as …". A structured log that embeds a chat message (role + content) is therefore escalated; that is the safe direction and it only costs a review, never a silent skip.
+
+**Answers are strict, telemetry is not:** an answer the runtime cannot interpret (unknown `type`, missing or textual numeric field, `answers` that is not an object) is treated as malformed and degrades visibly — the gates never quietly fall back to their default score. The `usage` counters are telemetry only: if the provider sends them in an unexpected shape, all three runtimes fall back to the same computed estimate, and that never changes a decision.
+
+**New in `v0.2.0` — commands worth knowing:**
+
+| Command | What it answers |
+| :--- | :--- |
+| `jev-harness doctor [--live] [--json]` | Is my installation healthy? Checks version, config, credentials (fingerprint only, never the secret), effective model and origin, payload limits, state permissions, receipts/cache, the git hook, and optionally makes ONE live request to measure latency and cost. Every problem comes with the command that fixes it |
+| `jev-harness replay --corpus tests/corpus` | How accurate are the gates? Runs a labelled corpus, prints a confusion matrix, precision/recall/F1 and ECE per gate, and fails (exit `1`) on a regression against `docs/REPLAY_REPORT.json` or if an adversarial case is classified deterministically |
+| `jev-harness receipts [--tail N] [--json]` | What did this repository decide? Reads the append-only audit trail (`{ts, gate, input_hash, decision, confidence, model, is_mock, degraded_reason, shadow}`) |
+
+Cache and debounce: identical live decisions are served from `.jev/cache.json` (`--no-cache` bypasses it) and repeated `nudge-gate`/`abort-check` evaluations inside the debounce window are coalesced (`debounced: true`). Shadow runs and degraded answers are never cached; `jev-harness metrics --json` reports the hit-rate.
+
+**Structured fields you can rely on (additive, `v0.2.0`):**
+
+| Field | Where | Meaning |
+| :--- | :--- | :--- |
+| `uncertainty` | every gate result that reached an answer | `{margin, normalized_entropy, confidence, escalate_to_system2, escalation_reason}` — shape of the provider's distribution plus an explicit escalation hint. It never changes `skip_llm` or an exit code, and a green run is never escalated. It is `null` on the deterministic short-circuits (green run, prompt-injection guard) and on a leased effort answer, because no provider distribution exists there |
+| `recovery` | `test-gate` (missing dependency) | `{action_type, package_name, package_manager, argv, is_safe_auto_run, rationale}`. **Never a shell string.** `is_safe_auto_run` is `false` unless the package is declared in your manifests **and** you pass `--allow-auto-recovery` |
+| `focused_slice` / `causal_context` | what the provider receives | A ≤15-line slice around the failure plus the preceding block. You still send the full log; the slice is what the judge reads first |
+| `cached` / `debounced` | gate results | Provenance of a locally served decision (cache or debounce window) |
+
+**Where the state lives:** the session, the receipts, the decision cache and the effort lease are written to `~/.config/jev/` (mode `0600`) unless the repository contains a `.jev/` directory — `jev-harness init` creates it, and while it exists the state stays inside that repository, keeping two projects from sharing memory or a lease. Nothing is created automatically.
+
+Flags that pair with them: `--state-json <file|json>` (extra structured context), `--allow-auto-recovery`, `--use-lease` (reuse an active effort lease), `--tool-error "<summary>"` (break-glass: invalidates the lease), `--use-lease`/`--no-cache`/`--no-receipts`.
+
+**Payload limits:** each request is validated **before** any network call against the provider limits (128,000 code points of `state`, 256,000 total, ≈ 32k/64k tokens). Exceeding them exits `2` with `Payload exceeds the provider limit: ...` — split the state or the questions instead of retrying.
+
+**Model pinning:** the effective model resolves as explicit argument → `JEV_MODEL` env var → `"model"` in `.jev.json` → provider default, and `jev-harness status` reports both the model and its origin. The default `jev-latest` is a **moving alias**; pin a version (e.g. `"model": "jev-1.13.0"`) when your thresholds are calibrated, so a provider release cannot silently change your decisions.
 
 #### Automated Trajectory Guard (Check before repeating steps):
 ```bash
@@ -357,7 +406,7 @@ Protect your repository automatically before commits or CI runs:
 ```yaml
 repos:
   - repo: https://github.com/ismaelsoilet/jev-harness
-    rev: v0.1.13
+    rev: v0.2.0
     hooks:
       - id: jev-test-gate
         args: ["pytest -q"]     # or "npm test", "cargo test --quiet", ...
@@ -598,7 +647,7 @@ Before spending tokens on test or compilation failures:
 
 | Action | Standard Agent Loop | Agent Loop with Jev Harness | Impact |
 | :--- | :--- | :--- | :--- |
-| **Missing Module Error** | Sends 300 lines to Claude Fable 5.1 (~50k tokens, ~$0.80) | Jev triages in 80ms (`$0.00004`). Installs package. | **99.9% cost reduction, 15s saved** |
+| **Missing Module Error** | Sends 300 lines to Claude Fable 5.1 (~50k tokens, ~$0.80) | Jev triages offline in tens of µs in-process (~80–100 ms CLI cold start) for ~$0.00002 live. Installs package. | **99.9% cost reduction, 15s saved** |
 | **Transient Network Flake** | Rewrites network config or hallucinating changes | Jev detects flake. Retries command once. | **Zero unnecessary code changes** |
 | **3-Turn Circular Doom Loop**| Consumes 180k+ tokens, leaves repo in corrupted state | Jev aborts on turn 2 (`exit 1`). Trajectory halted. | **Saves ~$5.00, prevents repo damage** |
 | **Tool Calling Reasoning Latency** | DeepSeek/Qwen waits 180s in internal CoT for `git status` | Astra-Jev sets `effort="low"`. Finishes in 1.5s. | **178s latency eliminated** |

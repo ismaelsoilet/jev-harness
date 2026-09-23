@@ -33,7 +33,7 @@ export interface ScoreAnswer {
   score: number;
   confidence: number;
   probabilities?: Record<string, number>;
-  legend?: string[];
+  legend?: string[] | Record<string, string>;
 }
 
 export interface NoulAnswer {
@@ -51,6 +51,8 @@ export interface JevResponse {
     output_tokens: number;
   };
   isMock: boolean;
+  /** Set when the answer came from a fallback (auth_401, http_500, timeout, connection). */
+  degradedReason?: string;
   rawResponse?: any;
 }
 
@@ -62,6 +64,8 @@ export interface TestTriageResult {
   severityScore: number;
   actionRecommendation: string;
   isMock: boolean;
+  /** Set when a provider failure caused the offline fallback (E0.2). */
+  degradedReason: string;
 }
 
 export interface AbortGateResult {
@@ -71,6 +75,8 @@ export interface AbortGateResult {
   viabilityScore: number;
   reasoningSummary: string;
   isMock: boolean;
+  /** Set when a provider failure caused the offline fallback (E0.2). */
+  degradedReason: string;
 }
 
 export interface ModelRouteResult {
@@ -80,6 +86,8 @@ export interface ModelRouteResult {
   recommendedModel: string;
   rationale: string;
   isMock: boolean;
+  /** Set when a provider failure caused the offline fallback (E0.2). */
+  degradedReason: string;
 }
 
 export interface VerificationResult {
@@ -89,6 +97,8 @@ export interface VerificationResult {
   confidence: number;
   needsRework: boolean;
   isMock: boolean;
+  /** Set when a provider failure caused the offline fallback (E0.2). */
+  degradedReason: string;
 }
 
 export type EffortLevel = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra" | string;
@@ -104,6 +114,8 @@ export interface ReasoningEffortResult {
   cacheSafeRecommendation: string;
   leaseSteps: number;
   isMock: boolean;
+  /** Set when a provider failure caused the offline fallback (E0.2). */
+  degradedReason: string;
 }
 
 export type WorkflowPhase = "research" | "ask" | "plan" | "execute" | "verify" | "complete" | string;
@@ -117,6 +129,8 @@ export interface NudgeGateResult {
   suggestedNudgePrompt: string;
   rationale: string;
   isMock: boolean;
+  /** Set when a provider failure caused the offline fallback (E0.2). */
+  degradedReason: string;
 }
 
 export type AbortCheckResult = AbortGateResult;
@@ -129,4 +143,10 @@ export interface JevClientOptions {
   model?: string;
   timeoutMs?: number;
   forceMock?: boolean;
+  /** Maximum provider attempts for retryable failures (429/5xx/timeout/network). Default 3. */
+  maxRetries?: number;
+  /** Base delay for exponential backoff in ms. Default 500. */
+  retryBaseDelayMs?: number;
+  /** Fail-open (default): degrade to the offline engine and mark the response. */
+  failOpen?: boolean;
 }

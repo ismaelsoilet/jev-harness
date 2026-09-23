@@ -11,7 +11,7 @@ import {
 
 const PROTOCOL_VERSION = "2024-11-05";
 const SERVER_NAME = "jev-harness";
-const SERVER_VERSION = "0.1.14";
+const SERVER_VERSION = "0.2.0";
 
 export const TOOLS_MANIFEST = [
   {
@@ -212,6 +212,7 @@ export async function processMessage(line: string, client: JevClient): Promise<R
           recommendation: res.actionRecommendation,
           actionRecommendation: res.actionRecommendation,
           is_mock: res.isMock,
+          degraded_reason: res.degradedReason ?? "",
           isMock: res.isMock,
         };
       } else if (toolName === "jev_abort_check") {
@@ -234,6 +235,7 @@ export async function processMessage(line: string, client: JevClient): Promise<R
           reasoning_summary: res.reasoningSummary,
           reasoningSummary: res.reasoningSummary,
           is_mock: res.isMock,
+          degraded_reason: res.degradedReason ?? "",
           isMock: res.isMock,
         };
       } else if (toolName === "jev_route_task") {
@@ -255,6 +257,7 @@ export async function processMessage(line: string, client: JevClient): Promise<R
           recommendedModel: res.recommendedModel,
           rationale: res.rationale,
           is_mock: res.isMock,
+          degraded_reason: res.degradedReason ?? "",
           isMock: res.isMock,
         };
       } else if (toolName === "jev_verify_completion") {
@@ -277,6 +280,7 @@ export async function processMessage(line: string, client: JevClient): Promise<R
           needs_rework: res.needsRework,
           needsRework: res.needsRework,
           is_mock: res.isMock,
+          degraded_reason: res.degradedReason ?? "",
           isMock: res.isMock,
         };
       } else if (toolName === "jev_modulate_reasoning_effort") {
@@ -311,6 +315,7 @@ export async function processMessage(line: string, client: JevClient): Promise<R
           lease_steps: res.leaseSteps,
           leaseSteps: res.leaseSteps,
           is_mock: res.isMock,
+          degraded_reason: res.degradedReason ?? "",
           isMock: res.isMock,
         };
       } else if (toolName === "jev_should_nudge_continuation") {
@@ -341,6 +346,7 @@ export async function processMessage(line: string, client: JevClient): Promise<R
           suggestedNudgePrompt: res.suggestedNudgePrompt,
           rationale: res.rationale,
           is_mock: res.isMock,
+          degraded_reason: res.degradedReason ?? "",
           isMock: res.isMock,
         };
       } else {

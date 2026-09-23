@@ -1,6 +1,6 @@
 # 🏛️ Planta Arquitetural Completa: Jev Harness
 
-> **Documento Oficial de Engenharia — Versão do Projeto: v0.1.14**  
+> **Documento Oficial de Engenharia — Versão do Projeto: v0.2.0**  
 > *Obrigatório para todos os agentes autônomos e desenvolvedores que operam no repositório.*
 
 ---
@@ -85,7 +85,13 @@ jev-harness/
 │   │   │   ├── mcp.rs                # Servidor MCP stdio nativo em Rust
 │   │   │   └── types.rs              # Tipos estruturados e respostas tipadas
 │   │   └── tests/
-│   │       └── gates_test.rs         # 49 testes automatizados (100% pass)
+│   │       ├── gates_test.rs         # Gates semânticos, dialetos e safeguards (49 testes, 100% pass)
+│   │       ├── live_payload_parity_test.rs  # Fixture live compartilhado (parser Score; 2 testes)
+│   │       ├── mock_golden_test.rs          # Vetores golden da mock (paridade 1e-9 com Python/TS)
+│   │       ├── triage_parity_test.rs        # Trava de paridade de veredito sobre o corpus (112 casos)
+│   │       ├── model_resolution_test.rs     # Pin/origem de modelo e precedência do shadow (6 testes)
+│   │       ├── provider_resilience_test.rs  # Retry/Retry-After e payload malformado, TCP real (12 testes)
+│   │       └── shadow_and_limits_test.rs    # Shadow mode e limites de payload (4 testes)
 │   └── ts/                           # Pacote oficial npm (`@ismaelsoilet/jev-harness`)
 │       ├── package.json              # Manifesto do pacote npm
 │       ├── package-lock.json
@@ -102,31 +108,52 @@ jev-harness/
 │       │   ├── mcp.ts                # Servidor MCP stdio nativo em TypeScript
 │       │   └── types.ts              # Interfaces TypeScript tipadas
 │       └── tests/
-│           └── gates.test.ts         # 45 testes automatizados (100% pass)
+│           ├── gates.test.ts         # Gates semânticos, provedores e safeguards (45 testes, 100% pass)
+│           ├── live_payload.test.ts  # Fixture live compartilhado (parser Score; 1 teste)
+│           ├── mock_golden.test.ts   # Vetores golden da mock (paridade 1e-9 com Python/Rust)
+│           ├── triage_parity.test.ts # Trava de paridade de veredito sobre o corpus (112 casos)
+│           ├── resilience.test.ts    # Retry/Retry-After, fail-open/fail-closed, payload malformado (16 testes)
+│           └── shadow_and_limits.test.ts  # Shadow mode, limites, pin de modelo (10 testes)
 ├── src/
 │   └── jev_harness/                  # Pacote oficial Python (`pip install jev-harness`)
 │       ├── __init__.py               # Metadados e exports públicos
 │       ├── cli.py                    # CLI em Python com argparse
 │       ├── client.py                 # Cliente urllib (zero dependências) e simulação
 │       ├── config.py                 # Carregador do .jev.json (modelo, thresholds e cache)
+│       ├── cache.py                  # Cache de decisão por hash + debounce (E3.2/E3.3)
+│       ├── doctor.py                 # Autodiagnóstico OK/AVISO/FALHA com correção (E2.4)
 │       ├── gates.py                  # Gates semânticos (triage, abort, route, verify, reasoning-effort, nudge)
 │       ├── mcp_server.py             # Servidor MCP stdio universal (`jev-mcp`)
+│       ├── receipts.py               # Trilha de auditoria append-only + higiene do `.jev/` (E1.3/E3.8)
+│       ├── replay.py                 # Corpus, matriz de confusão, ECE e gate de regressão (E1.2)
 │       └── session.py                # Telemetria, persistência de sessão e lock de concorrência
-├── tests/                            # Bateria de testes Python (117 testes, 100% pass)
+├── tests/                            # Bateria de testes Python (393 testes, 100% pass)
+│   ├── corpus/                       # Corpus rotulado de calibração (160 casos; ver README do diretório)
 │   ├── test_adversarial.py           # Testes adversariais, concorrência, negação, emojis UTF-8
 │   ├── test_config.py                # Testes do .jev.json (modelo, thresholds, clamp, corrompido)
 │   ├── test_cli.py                   # Testes de argumentos CLI e códigos de saída
 │   ├── test_client.py                # Testes de cliente e perguntas tipadas
 │   ├── test_gates.py                 # Testes unitários dos gates semânticos
+│   ├── test_live_payload_parity.py   # Fixture live compartilhado com TS/Rust (parser Score)
 │   ├── test_mcp.py                   # Testes do protocolo MCP Server
+│   ├── test_provider_resilience.py   # Retry/Retry-After, fail-open/fail-closed, payload malformado
 │   ├── test_real_tracebacks.py       # Testes com tracebacks reais (Python, Go, Node, Rust)
+│   ├── test_cache.py                 # Cache por hash, debounce, hit-rate e shadow nunca cacheia
+│   ├── test_doctor.py                # Diagnóstico: config, credenciais, estado, hook, --live
+│   ├── test_github_action.py         # Action de CI: verde nunca bloqueia, fail-on opt-in
+│   ├── test_measured_usage.py        # Custo/tokens medidos vs estimativa heurística
+│   ├── test_mock_golden.py           # Vetores golden da mock (paridade 1e-9 com TS/Rust)
+│   ├── test_receipts.py              # Recibos, retenção e higiene de .gitignore
+│   ├── test_replay.py                # Corpus, métricas e o gate de regressão
+│   ├── test_shadow_and_limits.py     # Shadow mode, limites de payload e pin de modelo
+│   └── fixtures/                     # Payloads live gravados (contrato tri-runtime)
 ├── pyproject.toml                    # Configuração de build Python Hatchling
 ├── README.md                         # Documentação global oficial do repositório
 ├── AGENTS.md                         # Ponto de entrada obrigatório para agentes de IA
 ├── LICENSE                           # Licença MIT
 └── scripts/
     ├── jev_test_gate_hook.sh         # Wrapper do hook pre-commit (runner decide, Jev aconselha)
-    └── release.sh                    # Script mestre de release, check (211 testes) e sync
+    └── release.sh                    # Script mestre de release, check (569 testes) e sync
 ```
 
 ---

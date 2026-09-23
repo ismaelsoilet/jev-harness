@@ -3,7 +3,7 @@ Jev System One Decision Harness & Token Optimizer.
 Fast, non-autoregressive semantic decisions for AI coding agents.
 """
 
-__version__ = "0.1.14"
+__version__ = "0.2.0"
 __author__ = "Ismael Hosni Soilet de Lima"
 __license__ = "MIT"
 

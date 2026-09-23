@@ -3,7 +3,7 @@
 > **Documento companheiro de [`SYSTEM_1_5_PLAN.md`](SYSTEM_1_5_PLAN.md).**
 > Responde a três perguntas: (1) que oportunidades temos para melhorar o `jev-harness` conforme a pesquisa? (2) trata-se de outra ferramenta? (3) podemos ser System 1.5 — sim ou não?
 > **Data da pesquisa: 2026-09-23** (válida por 30 dias — re-verificar após 2026-10-23).
-> **Base do produto: v0.1.14** (211 testes verdes, 4 canais publicados).
+> **Base do produto: v0.1.14** (211 testes verdes, 4 canais publicados). **H1 entregue na v0.2.0** (H1 completo + E1.2–E1.4, E2.1, E2.4, E3.2/E3.3, E3.8, E3.9, E0.4, E3.1, E3.4–E3.7, E2.2, E2.3; 569 testes).
 
 ---
 
@@ -54,6 +54,43 @@
 > **Conclusão:** o certo é **focar no nicho de qualidade** e **interoperar**, não expandir para o escopo dos outros. A categoria tem espaço para o "gate de qualidade" de referência — e ninguém o ocupou ainda.
 
 ---
+
+## 3.1 Interop: quando usar cada peça (verificado em 2026-09-23)
+
+Cinco papéis, cinco ferramentas MIT — nenhuma delas cobre o espaço da outra, e o certo é
+compor em vez de competir. A regra de frescor de 30 dias do `AGENTS.md` vale para esta tabela:
+re-verifique endpoints, estrelas e escopo após **2026-10-23**.
+
+| Papel no ciclo | Ferramenta | Quando é ela que você quer | Fonte (datada) |
+| :--- | :--- | :--- | :--- |
+| **Qualidade, teste, commit** (nós) | **jev-harness** | Triagem de falha, veto de conclusão prematura, quebra de doom loop, esforço e roteamento dentro do **ciclo de trabalho de código**; offline determinístico; tri-runtime | este repositório (`v0.2.0`, 2026-09-23) |
+| **Ações de ferramenta** | [jev-guard](https://github.com/leepokai/jev-guard) (26★, criado 2026-09-17) | Antes de executar um tool call perigoso: `deny`/`ask`/`allow` com policy por risco. Nós julgamos *trabalho*, eles julgam *ações* | repositório/README do projeto (inspeção 2026-09-23) |
+| **Supervisão de runtime** | [Foreman](https://github.com/thruwire/foreman) (517★, criado 2026-09-17) | Orquestrar workers de código de ponta a ponta (Codex/OpenCode), decidir `continue`/`steer`/`stop` em tempo real | repositório/README do projeto (inspeção 2026-09-23) |
+| **Peneira de contexto** | [Winnow](https://github.com/GhalebDweikat/winnow) (68★, criado 2026-09-16) | Reduzir o que entra na janela do Claude Code, com shadow mode/replay/ECE para calibrar | repositório/README do projeto (inspeção 2026-09-23) |
+| **Roteamento de capacidades** | [JevRouter](https://github.com/BillionsBobby/JevRouter) (173★, criado 2026-09-18) | Escolher *qual modelo/ferramenta* resolve uma tarefa, com política e `no_decision` por confiança | repositório/README do projeto (inspeção 2026-09-23) |
+
+**Como conviver na prática**
+
+1. **Hook de commit nosso + guarda deles.** `.git/hooks/pre-commit` chama `jev-harness test-gate`
+   (bloqueia apenas vermelho real); o mesmo agente registra `jev-guard` como gate de tool call.
+   Os dois rodam sem se ver: um julga o resultado do trabalho, o outro a intenção da ação.
+2. **Foreman dirigindo, nós aconselhando.** O Foreman decide o fluxo do worker; ele pode chamar
+   `jev-harness abort-check` no ponto de decisão "insisto ou paro?" e usar a categoria como
+   evidência — sem entregar o controle do loop para nós.
+3. **Winnow filtra, nós triamos.** O Winnow escolhe que trechos do contexto entram; quando um
+   teste falha, `jev-harness test-gate` decide se aquela falha é resolvível sem um modelo caro.
+4. **JevRouter roteia o modelo, nós roteamos o *tier* de qualidade.** `route` responde "quanto de
+   raciocínio este trabalho merece"; o JevRouter responde "qual capacidade executa isso".
+5. **Nunca empilhe dois juízes no mesmo ponto.** Cada gancho tem um dono: se o Foreman já decidiu
+   abortar, não passe a mesma decisão por nós — escolha o dono do veredito e registre o outro
+   como evidência.
+
+**O que não fazemos (e não devemos passar a fazer sem um novo gate):** interceptar tool calls
+(jev-guard), supervisionar workers em tempo real (Foreman), selecionar contexto de agente
+(Winnow) ou catalogar capacidades de modelo (JevRouter). Ver §6 (WS5) para os gatilhos de revisão.
+
+**Verificação desta seção:** `python scripts/check_links.py --root .` valida os links internos e
+inventaria os externos; cada afirmação comparativa acima cita a fonte e a data de inspeção.
 
 ## 4. Catálogo de oportunidades (priorizado)
 

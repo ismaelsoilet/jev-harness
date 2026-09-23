@@ -43,12 +43,18 @@ venv.bak/
 .jev.json
 credentials.env
 
+# Local Jev decision state (sessions, receipts, cache) — may contain failure snippets
+.jev/
+
 # IDEs
 .vscode/
 .idea/
 .cursor/
 *.swp
 *.swo
+
+# Local agent/session state (Command Code)
+.commandcode/
 
 # Testing & coverage
 .coverage

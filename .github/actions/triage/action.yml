@@ -1,0 +1,66 @@
+name: Jev Harness triage
+description: >-
+  Triage a failed CI step with jev-harness and annotate the job with the failure category and
+  the deterministic action to take. Offline by default (no key, no network calls) and it never
+  blocks a green run.
+
+branding:
+  icon: activity
+  color: purple
+
+inputs:
+  log:
+    description: Path to the captured failure log (write your failing step's output to this file).
+    required: false
+    default: jevtriage.log
+  engine:
+    description: '"mock" (offline, default) or "live" (requires a provider key in the environment).'
+    required: false
+    default: mock
+  provider:
+    description: Provider for the live engine (typesafe, opencode, commandcode, openrouter, vercel).
+    required: false
+    default: ""
+  fail-on:
+    description: >-
+      Comma-separated categories that should fail the job (empty = never block, the default).
+      Example: "deep_logic". A passing log is never blocked regardless of this input.
+    required: false
+    default: ""
+  python-version:
+    description: Python version used to install jev-harness.
+    required: false
+    default: "3.12"
+
+outputs:
+  category:
+    description: Triage category (env_missing, flaky_transient, syntax_trivial, deep_logic, no_failure).
+    value: ${{ steps.triage.outputs.category }}
+  action:
+    description: The deterministic action the agent should take next.
+    value: ${{ steps.triage.outputs.action }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install jev-harness
+      shell: bash
+      run: python -m pip install --quiet --disable-pip-version-check "jev-harness"
+
+    - name: Triage the failure log
+      id: triage
+      shell: bash
+      env:
+        JEV_ENGINE: ${{ inputs.engine }}
+        JEV_PROVIDER: ${{ inputs.provider }}
+        JEV_FAIL_ON: ${{ inputs.fail-on }}
+      run: |
+        python "${{ github.action_path }}/triage.py" \
+          --log "${{ inputs.log }}" \
+          --summary "${GITHUB_STEP_SUMMARY:-/dev/null}" \
+          --json

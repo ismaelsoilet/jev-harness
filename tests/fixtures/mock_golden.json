@@ -1,0 +1,61 @@
+{
+  "_comment": "E3.9 golden vectors: the offline mock must produce identical probabilities in Python, TypeScript and Rust. Read by tests/test_mock_golden.py, packages/ts/tests/mock_golden.test.ts and packages/rust/tests/mock_golden_test.rs.",
+  "choice_criteria": {
+    "env_missing": "Missing module, package not installed, environment variable missing, or runtime command not found",
+    "flaky_transient": "Network timeout, port already in use, race condition, or transient socket hangup",
+    "syntax_trivial": "Small typo, missing bracket, indentation error, or simple import name mismatch",
+    "test_redundant": "Deprecated test, duplicate assertion, or obsolete fixture",
+    "deep_logic": "Complex algorithmic bug, business logic defect, or architectural regression"
+  },
+  "peaked": {
+    "state": "ModuleNotFoundError: No module named 'requests'",
+    "expected": {
+      "choice": "env_missing",
+      "probabilities": {
+        "env_missing": 0.85,
+        "flaky_transient": 0.0375,
+        "syntax_trivial": 0.0375,
+        "test_redundant": 0.0375,
+        "deep_logic": 0.0375
+      }
+    }
+  },
+  "conflict": {
+    "state": "AssertionError: assert 4 == 5\nConnectionResetError: [Errno 104] Connection reset by peer",
+    "expected": {
+      "choice": "deep_logic",
+      "probabilities": {
+        "env_missing": 0.1125,
+        "flaky_transient": 0.1125,
+        "syntax_trivial": 0.1125,
+        "test_redundant": 0.1125,
+        "deep_logic": 0.55
+      }
+    }
+  },
+  "score": {
+    "state": "AssertionError: assert 4 == 5",
+    "levels": [
+      "trivial_env",
+      "minor_syntax",
+      "moderate_bug",
+      "critical_systemic"
+    ],
+    "expected": {
+      "score": 2.0,
+      "probabilities": {
+        "1": 0.066666666667,
+        "2": 0.8,
+        "3": 0.066666666667,
+        "4": 0.066666666667
+      }
+    }
+  },
+  "noul": {
+    "state": "ModuleNotFoundError: No module named x",
+    "instruction": "Can this error be handled deterministically (e.g. running pip/npm install, retrying, or fixing a simple typo) without calling an expensive System 2 generative LLM?",
+    "expected": {
+      "noul": 0.95
+    }
+  }
+}

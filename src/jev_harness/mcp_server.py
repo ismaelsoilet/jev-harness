@@ -238,6 +238,8 @@ def handle_tools_call(req_id: Any, params: Dict[str, Any], client: JevClient) ->
             text_content = json.dumps(
                 {
                     "category": res.category,
+                    "uncertainty": getattr(res, "uncertainty", None),
+                    "recovery": getattr(res, "recovery", None),
                     "confidence": res.confidence,
                     "skip_llm": res.skip_llm,
                     "skip_llm_prob": res.skip_llm_prob,
@@ -245,6 +247,7 @@ def handle_tools_call(req_id: Any, params: Dict[str, Any], client: JevClient) ->
                     "action_recommendation": res.action_recommendation,
                     "recommendation": res.action_recommendation,
                     "is_mock": res.is_mock,
+                    "degraded_reason": getattr(res, "degraded_reason", ""),
                 },
                 indent=2,
             )
@@ -265,12 +268,14 @@ def handle_tools_call(req_id: Any, params: Dict[str, Any], client: JevClient) ->
             text_content = json.dumps(
                 {
                     "should_abort": res.should_abort,
+                    "uncertainty": getattr(res, "uncertainty", None),
                     "abort_probability": res.abort_probability,
                     "action": res.action,
                     "viability_score": res.viability_score,
                     "reasoning_summary": res.reasoning_summary,
                     "summary": res.reasoning_summary,
                     "is_mock": res.is_mock,
+                    "degraded_reason": getattr(res, "degraded_reason", ""),
                 },
                 indent=2,
             )
@@ -290,11 +295,13 @@ def handle_tools_call(req_id: Any, params: Dict[str, Any], client: JevClient) ->
             text_content = json.dumps(
                 {
                     "selected_tier": res.selected_tier,
+                    "uncertainty": getattr(res, "uncertainty", None),
                     "confidence": res.confidence,
                     "complexity_score": res.complexity_score,
                     "recommended_model": res.recommended_model,
                     "rationale": res.rationale,
                     "is_mock": res.is_mock,
+                    "degraded_reason": getattr(res, "degraded_reason", ""),
                 },
                 indent=2,
             )
@@ -315,11 +322,13 @@ def handle_tools_call(req_id: Any, params: Dict[str, Any], client: JevClient) ->
             text_content = json.dumps(
                 {
                     "is_verified": res.is_verified,
+                    "uncertainty": getattr(res, "uncertainty", None),
                     "satisfaction_probability": res.satisfaction_probability,
                     "rigor_score": res.rigor_score,
                     "confidence": res.confidence,
                     "needs_rework": res.needs_rework,
                     "is_mock": res.is_mock,
+                    "degraded_reason": getattr(res, "degraded_reason", ""),
                 },
                 indent=2,
             )
@@ -352,6 +361,7 @@ def handle_tools_call(req_id: Any, params: Dict[str, Any], client: JevClient) ->
             text_content = json.dumps(
                 {
                     "effort": res.effort,
+                    "uncertainty": getattr(res, "uncertainty", None),
                     "confidence": res.confidence,
                     "complexity_score": res.complexity_score,
                     "rationale": res.rationale,
@@ -361,6 +371,7 @@ def handle_tools_call(req_id: Any, params: Dict[str, Any], client: JevClient) ->
                     "cache_safe_recommendation": res.cache_safe_recommendation,
                     "lease_steps": res.lease_steps,
                     "is_mock": res.is_mock,
+                    "degraded_reason": getattr(res, "degraded_reason", ""),
                 },
                 indent=2,
             )
@@ -387,6 +398,7 @@ def handle_tools_call(req_id: Any, params: Dict[str, Any], client: JevClient) ->
             text_content = json.dumps(
                 {
                     "should_nudge": res.should_nudge,
+                    "uncertainty": getattr(res, "uncertainty", None),
                     "nudge_probability": res.nudge_probability,
                     "waiting_probability": res.waiting_probability,
                     "progress_probability": res.progress_probability,
@@ -394,6 +406,7 @@ def handle_tools_call(req_id: Any, params: Dict[str, Any], client: JevClient) ->
                     "suggested_nudge_prompt": res.suggested_nudge_prompt,
                     "rationale": res.rationale,
                     "is_mock": res.is_mock,
+                    "degraded_reason": getattr(res, "degraded_reason", ""),
                 },
                 indent=2,
             )

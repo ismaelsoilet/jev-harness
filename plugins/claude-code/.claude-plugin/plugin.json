@@ -1,0 +1,12 @@
+{
+  "name": "jev-harness",
+  "version": "0.2.0",
+  "description": "System 1.5 quality gates for coding agents: triage a failing test log before spending frontier tokens, veto premature completion, break doom loops, and route reasoning effort. Offline by default (no key, no network).",
+  "author": {
+    "name": "Ismael Hosni Soilet de Lima",
+    "url": "https://github.com/ismaelsoilet/jev-harness"
+  },
+  "homepage": "https://github.com/ismaelsoilet/jev-harness",
+  "license": "MIT",
+  "keywords": ["quality-gate", "test-triage", "system-one", "jev", "mcp"]
+}

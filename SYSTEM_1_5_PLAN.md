@@ -9,7 +9,7 @@
 | :--- | :--- |
 | **Revisão do documento** | v2 — reescrito com fatos verificados e pesquisa externa |
 | **Data da verificação** | **2026-09-23** (regra de re-verificação em 30 dias do `AGENTS.md`) |
-| **Base auditada** | `v0.1.14` — HEAD `160e28f` (docs) / tag `v0.1.14`, árvore limpa |
+| **Base auditada** | `v0.1.14` — HEAD `160e28f` (docs) / tag `v0.1.14`, árvore limpa · **H1 entregue na `v0.2.0`** (E0.1–E0.3, E1.1) |
 | **Bateria de testes na base** | **211 verdes** (117 Python + 49 Rust + 45 TypeScript), exit 0 |
 | **Método desta revisão** | Auditoria estática com file:line + experimentos executáveis contra a API live real + revisão adversarial independente de contexto fresco (SureForge Full) + pesquisa em fontes primárias |
 | **Fontes externas** | TypeSafe AI (docs oficiais), Josh Rosen (4 artigos, 18–22/09/2026), arXiv:2505.18962 — todas datadas na §2 |
@@ -97,7 +97,7 @@ A v1 do plano atribui a Josh Rosen uma citação literal com cinco pilares. **N�
 
 ---
 
-## 3. Fatos concretos da ferramenta (v0.1.14) — o que já é verdade
+## 3. Fatos concretos da ferramenta (auditoria v0.1.14; H1 entregue na v0.2.0) — o que já é verdade
 
 ### 3.1 Inventário verificado
 
@@ -205,7 +205,7 @@ Os itens abaixo foram confirmados por auditoria do dono + revisão adversarial i
 
 ## 6. Especificação corrigida (evolução pós-pré-requisitos)
 
-> Sem compromisso de versão. Cada item só entra em uma release quando passar a bateria de 211 testes + os novos testes exigidos e a paridade tri-runtime — pelo protocolo normal do repositório.
+> Sem compromisso de versão. Cada item só entra em uma release quando passar a bateria vigente (hoje 569 testes) + os novos testes exigidos e a paridade tri-runtime — pelo protocolo normal do repositório.
 
 ### Pré-requisito P0 — Corrigir o parser Score do Rust (hotfix)
 

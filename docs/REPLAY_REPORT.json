@@ -1,0 +1,169 @@
+{
+  "baseline_version": 1,
+  "generated_at": "2026-09-23T06:55:58Z",
+  "engine": "mock",
+  "model": "typesafe/jev",
+  "gates": {
+    "abort": {
+      "total": 10,
+      "accuracy": 0.9,
+      "macro_f1": 0.89899,
+      "ece": null,
+      "per_class": {
+        "False": {
+          "precision": 0.8,
+          "recall": 1.0,
+          "f1": 0.888889,
+          "support": 4.0
+        },
+        "True": {
+          "precision": 1.0,
+          "recall": 0.833333,
+          "f1": 0.909091,
+          "support": 6.0
+        }
+      }
+    },
+    "effort": {
+      "total": 8,
+      "accuracy": 0.625,
+      "macro_f1": 0.507937,
+      "ece": 0.255,
+      "per_class": {
+        "high": {
+          "precision": 1.0,
+          "recall": 0.5,
+          "f1": 0.666667,
+          "support": 4.0
+        },
+        "low": {
+          "precision": 1.0,
+          "recall": 0.75,
+          "f1": 0.857143,
+          "support": 4.0
+        },
+        "medium": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0.0
+        }
+      }
+    },
+    "nudge": {
+      "total": 8,
+      "accuracy": 0.625,
+      "macro_f1": 0.563636,
+      "ece": null,
+      "per_class": {
+        "False": {
+          "precision": 0.8,
+          "recall": 0.666667,
+          "f1": 0.727273,
+          "support": 6.0
+        },
+        "True": {
+          "precision": 0.333333,
+          "recall": 0.5,
+          "f1": 0.4,
+          "support": 2.0
+        }
+      }
+    },
+    "route": {
+      "total": 10,
+      "accuracy": 0.8,
+      "macro_f1": 0.75,
+      "ece": 0.08,
+      "per_class": {
+        "deterministic": {
+          "precision": 1.0,
+          "recall": 0.333333,
+          "f1": 0.5,
+          "support": 3.0
+        },
+        "heavy_system2": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 4.0
+        },
+        "lightweight_system2": {
+          "precision": 0.6,
+          "recall": 1.0,
+          "f1": 0.75,
+          "support": 3.0
+        }
+      }
+    },
+    "triage": {
+      "total": 112,
+      "accuracy": 0.910714,
+      "macro_f1": 0.932748,
+      "ece": 0.011429,
+      "per_class": {
+        "deep_logic": {
+          "precision": 0.829268,
+          "recall": 0.971429,
+          "f1": 0.894737,
+          "support": 35.0
+        },
+        "env_missing": {
+          "precision": 0.933333,
+          "recall": 0.903226,
+          "f1": 0.918033,
+          "support": 31.0
+        },
+        "flaky_transient": {
+          "precision": 0.95,
+          "recall": 0.826087,
+          "f1": 0.883721,
+          "support": 23.0
+        },
+        "no_failure": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 9.0
+        },
+        "syntax_trivial": {
+          "precision": 1.0,
+          "recall": 0.818182,
+          "f1": 0.9,
+          "support": 11.0
+        },
+        "test_redundant": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 3.0
+        }
+      }
+    },
+    "verify": {
+      "total": 12,
+      "accuracy": 0.833333,
+      "macro_f1": 0.828571,
+      "ece": 0.016667,
+      "per_class": {
+        "False": {
+          "precision": 0.857143,
+          "recall": 0.857143,
+          "f1": 0.857143,
+          "support": 7.0
+        },
+        "True": {
+          "precision": 0.8,
+          "recall": 0.8,
+          "f1": 0.8,
+          "support": 5.0
+        }
+      }
+    }
+  },
+  "totals": {
+    "cases": 160,
+    "hand_labeled": 84,
+    "adversarial_violations": 0
+  }
+}

@@ -8,6 +8,7 @@
 //!   - `model`              -> overrides the provider default model
 //!   - `skip_llm_threshold` -> triage gate confidence threshold
 //!   - `abort_threshold`    -> trajectory abort gate threshold
+//!   - `shadow`             -> decide and report, but never change the exit code
 //!
 //! Credential keys (`api_key`, `provider`) are resolved by `JevClient::resolve_credentials`.
 
@@ -25,6 +26,8 @@ pub struct RepoConfig {
     pub model: Option<String>,
     pub skip_llm_threshold: f64,
     pub abort_threshold: f64,
+    /// Decide and report, but never change the exit code.
+    pub shadow: bool,
 }
 
 impl Default for RepoConfig {
@@ -33,6 +36,7 @@ impl Default for RepoConfig {
             model: None,
             skip_llm_threshold: DEFAULT_SKIP_LLM_THRESHOLD,
             abort_threshold: DEFAULT_ABORT_THRESHOLD,
+            shadow: false,
         }
     }
 }
@@ -87,6 +91,9 @@ fn parse_config_file(path: &Path) -> RepoConfig {
             }
             if let Some(value) = data.get("abort_threshold").and_then(|v| v.as_f64()) {
                 config.abort_threshold = clamp_probability(value);
+            }
+            if let Some(value) = data.get("shadow").and_then(|v| v.as_bool()) {
+                config.shadow = value;
             }
         }
     }

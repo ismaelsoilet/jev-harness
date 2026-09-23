@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "jev-harness": {
+      "command": "npx",
+      "args": ["-y", "@ismaelsoilet/jev-harness", "mcp"],
+      "env": {}
+    }
+  }
+}

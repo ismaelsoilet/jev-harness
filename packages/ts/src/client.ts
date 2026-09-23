@@ -14,6 +14,7 @@ import type {
   ScoreQuestion,
 } from "./types.js";
 import { loadRepoConfig } from "./config.js";
+import { validateQuestionOptions } from "./uncertainty.js";
 
 export const TYPESAFE_API_URL = "https://api.typesafe.ai/v1/systemone";
 export const COMMANDCODE_API_URL = "https://api.commandcode.ai/provider/v1/systemone";
@@ -21,7 +22,187 @@ export const OPENCODE_API_URL = "https://opencode.ai/zen/v1/systemone";
 export const OPENROUTER_API_URL = "https://openrouter.ai/api/alpha/decisions";
 export const VERCEL_API_URL = "https://ai-gateway.vercel.sh/v1/evaluate";
 export const DEFAULT_MODEL = "jev-latest";
-export const DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.1.14; +https://github.com/ismaelsoilet/jev-harness)";
+// Provider payload limits (jev-1.13: 64k tokens total; 32k for state + longest question).
+// Characters are a conservative proxy (~4 chars/token) with no external tokenizer.
+export const MAX_STATE_CHARS = 128000;
+export const MAX_TOTAL_CHARS = 256000;
+
+export const DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.2.0; +https://github.com/ismaelsoilet/jev-harness)";
+
+/**
+ * Mock distribution contract (E3.9). Mirrored in `src/jev_harness/client.py` and
+ * `packages/rust/src/client.rs`, and asserted against `tests/fixtures/mock_golden.json`.
+ * A signal *conflict* (explicit assertion next to an environment/transient signal) lowers the
+ * peak on purpose so a caller can exercise `escalate_to_system2` deterministically.
+ */
+export const MOCK_CHOICE_BEST_PEAKED = 0.85;
+export const MOCK_CHOICE_BEST_CONFLICT = 0.55;
+export const MOCK_SCORE_BEST_PEAKED = 0.8;
+
+/** Peaked distribution over `options` summing to 1.0 (1.0 when there is a single option). */
+export function mockDistribution(options: string[], best: string, peak: number): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (options.length <= 1) {
+    for (const option of options) out[option] = 1.0;
+    return out;
+  }
+  const rest = (1.0 - peak) / (options.length - 1);
+  for (const option of options) out[option] = option === best ? peak : rest;
+  return out;
+}
+
+/** Thrown when a 200 payload cannot be interpreted; the failure policy decides what happens. */
+export class MalformedResponseError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "MalformedResponseError";
+  }
+}
+
+/**
+ * Requires a JSON number, exactly as the Rust runtime's serde does: a numeric string, a boolean,
+ * `null` or a missing field is a malformed answer, never a silent `NaN` or a silent default.
+ */
+function finiteNumber(value: unknown, field: string, qid: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new MalformedResponseError(
+      `malformed response: answer '${qid}' is missing a numeric ${JSON.stringify(field)}`
+    );
+  }
+  return value;
+}
+
+/** Requires a JSON string field, mirroring the Rust runtime's serde semantics. */
+function requiredText(answer: Record<string, any>, field: string, qid: string): string {
+  if (typeof answer[field] !== "string") {
+    throw new MalformedResponseError(
+      `malformed response: answer '${qid}' is missing a textual ${JSON.stringify(field)}`
+    );
+  }
+  return answer[field];
+}
+
+/**
+ * Renders a structured state (E0.4) as labelled text with real newlines.
+ *
+ * The wire keeps the JSON form (structure + path references), but the offline engine is
+ * line-oriented: `JSON.stringify` escapes every newline, which would collapse a multi-line log
+ * into one line and silently change every line-anchored pattern. Mirrors `render_state_text` in
+ * Python and Rust so the three runtimes score the same text.
+ */
+export function renderStateText(state: string | Record<string, unknown>): string {
+  let parsed: unknown = state;
+  if (typeof state === "string") {
+    const trimmed = state.trim();
+    if (!trimmed.startsWith("{")) return state;
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch {
+      return state;
+    }
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return String(state);
+  const parts: string[] = [];
+  // Perception fields are provider-facing metadata (E3.5): the offline engine keeps scoring the
+  // full log, so its deterministic verdicts stay comparable across runtimes.
+  const ignored = new Set(["focused_slice", "causal_context", "raw_log_ref"]);
+  for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+    if (ignored.has(key)) continue;
+    const rendered =
+      value && typeof value === "object" ? JSON.stringify(value) : String(value);
+    parts.push(`${key}:\n${rendered}`);
+  }
+  return parts.join("\n\n");
+}
+
+/** Structured state builder: drops empty fields, keeps the caller's extras (E0.4). */
+export function buildState(fields: Record<string, unknown>): Record<string, unknown> {
+  const state: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(fields)) {
+    if (value === null || value === undefined || value === "" || (Array.isArray(value) && value.length === 0)) {
+      continue;
+    }
+    state[key] = value;
+  }
+  return state;
+}
+
+/**
+ * E3.5 — masks credential-shaped material before a log is sent to a provider.
+ * Mirrors `redact_secrets` in Python (and Rust): the same shapes must be masked in all three
+ * runtimes, because all three can transmit a failure log.
+ */
+export const SECRET_PATTERNS: RegExp[] = [
+  /\b(?:api[_-]?key|apikey|access[_-]?token|auth[_-]?token|secret|password|passwd|pwd|client[_-]?secret|private[_-]?key|bearer)\b\s*[:=]\s*["']?([A-Za-z0-9._\-/+]{6,})["']?/gi,
+  /\b(?:sk|pk|rk|vck|xox[baprs])[-_][A-Za-z0-9._\-]{12,}/gi,
+  /\bgh[pousr]_[A-Za-z0-9]{20,}/gi,
+  /\bAKIA[0-9A-Z]{16}\b/g,
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
+  /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g,
+  /(?:postgres|mysql|mongodb|redis)(?:\+\w+)?:\/\/[^\s:@/]+:[^\s@/]+@/gi,
+];
+
+export function redactSecrets(text: string): string {
+  if (!text) return text;
+  let redacted = text;
+  for (const pattern of SECRET_PATTERNS) {
+    redacted = redacted.replace(pattern, (match: string, group: unknown) => {
+      // Without a capture group the second argument is the match offset (a number), so the
+      // group must be type-checked before it is used for substitution.
+      if (typeof group === "string" && group) return match.replace(group, "[REDACTED]");
+      if (match.toLowerCase().startsWith("-----begin")) return "[REDACTED PRIVATE KEY]";
+      if (match.includes("://")) return `${match.split("://")[0]}://[REDACTED]@`;
+      return "[REDACTED]";
+    });
+  }
+  return redacted;
+}
+
+/** Abort action derived from the dead-end signals (parity with Python/Rust). */
+export function mockAbortActionChoice(criteria: Record<string, string>, stateLower: string): string {
+  let step = stateLower;
+  for (const marker of ["proposed next step:", "proposed_next_step:"]) {
+    if (step.includes(marker)) step = step.split(marker).pop() as string;
+  }
+  const forward = [
+    "implement", "fix", "resolve", "correct", "update", "create", "write", "add", "install",
+    "apply", "corrigir", "implementar", "executar", "validar", "corregir",
+  ].some((w) => step.includes(w));
+  const repetitive = ["same", "repetir", "tentar novamente", "intentar de nuevo", "4a vez", "again", "identical"].some(
+    (w) => step.includes(w)
+  );
+  const fatal = [
+    "impossible", "impossivel", "imposible", "circular", "deadlock", "dead end", "inviavel",
+    "inviable", "hopeless", "fatal",
+  ].some((w) => stateLower.includes(w));
+  if (repetitive || fatal) return "abort_and_ask" in criteria ? "abort_and_ask" : Object.keys(criteria)[0];
+  if (forward && "proceed" in criteria) return "proceed";
+  return "";
+}
+
+/**
+ * A failure log is *untrusted input*: the model-jaggedness docs show that adversarial content
+ * in the state can steer a decision. These markers mean "this text is addressing the judge",
+ * so the log is escalated instead of classified. Kept identical to the Python and Rust lists.
+ */
+export const INJECTION_PATTERNS: RegExp[] = [
+  /ignore\s+(?:all\s+|any\s+|the\s+)?(?:previous|prior|above|earlier|foregoing)\s+(?:instruction|prompt|rule|direction|message)s?/i,
+  /disregard\s+(?:all\s+|any\s+|the\s+)?(?:above|previous|prior|earlier|system)/i,
+  /\b(?:ignore|bypass|override)\s+(?:the\s+)?(?:gate|harness|instructions?|safety|polic(?:y|ies))\b/i,
+  /<\|(?:im_start|im_end|system|assistant|user)\|>/i,
+  /\[\/?(?:INST|SYS)\]/,
+  /###\s*(?:system|instruction|assistant)\b/im,
+  /"role"\s*:\s*"(?:system|assistant)"\s*,\s*"content"/i,
+  /\bskip_llm\s*[:=]\s*(?:true|false)\b/i,
+  /\b(?:classif|labell?|mark|report|record|return|output|respond|answer)\w*\b[^.\n]{0,60}\b(?:as\s+)?(?:env_missing|flaky_transient|syntax_trivial|no_failure)\b/i,
+  /\b(?:do\s+not|don't|never)\s+(?:call|invoke|use|escalate\s+to)\s+(?:the\s+)?(?:llm|model|api|system\s*2|frontier)\b/i,
+];
+
+/** True when the log is trying to address the judge instead of describing a failure. */
+export function looksLikePromptInjection(log: string): boolean {
+  if (!log) return false;
+  return INJECTION_PATTERNS.some((pattern) => pattern.test(log));
+}
 
 /**
  * Returns true only when a log is unequivocally a *successful* run summary.
@@ -85,12 +266,20 @@ export class JevClient {
   public provider: string;
   public baseUrl: string;
   public model: string;
+  /** Where the effective model came from: "argument" | "env" | ".jev.json" | "provider_default". */
+  public modelSource: string;
   public timeoutMs: number;
   public forceMock: boolean;
+  public maxRetries: number;
+  public retryBaseDelayMs: number;
+  public failOpen: boolean;
 
   constructor(options: JevClientOptions = {}) {
     this.timeoutMs = options.timeoutMs ?? 15000;
     this.forceMock = options.forceMock ?? false;
+    this.maxRetries = Math.max(1, options.maxRetries ?? 3);
+    this.retryBaseDelayMs = Math.max(0, options.retryBaseDelayMs ?? 500);
+    this.failOpen = options.failOpen ?? true;
 
     const { key, provider } = this.resolveCredentials(options.apiKey);
     this.apiKey = key;
@@ -110,24 +299,36 @@ export class JevClient {
       this.baseUrl = TYPESAFE_API_URL;
     }
 
-    // Resolution order: explicit option > repository `.jev.json` override > provider
-    // default. The generic placeholder (`jev-latest`, what `jev init` scaffolds) is treated
-    // as "no override" so scaffolded configs never clobber provider model IDs.
+    // Resolution order: explicit option > `JEV_MODEL` env var > repository `.jev.json`
+    // override > provider default. The generic placeholder (`jev-latest`, what `jev init`
+    // scaffolds) is treated as "no override" so scaffolded configs never clobber provider
+    // model IDs.
     const repoConfig = loadRepoConfig();
+    const envModel = process.env.JEV_MODEL;
     if (options.model) {
       this.model = options.model;
+      this.modelSource = "argument";
+    } else if (envModel && envModel.trim()) {
+      this.model = envModel.trim();
+      this.modelSource = "env";
     } else if (repoConfig.model && repoConfig.model !== DEFAULT_MODEL) {
       this.model = repoConfig.model;
+      this.modelSource = ".jev.json";
     } else if (this.provider === "commandcode") {
       this.model = "typesafe/jev";
+      this.modelSource = "provider_default";
     } else if (this.provider === "opencode") {
       this.model = "jev-1.13-free";
+      this.modelSource = "provider_default";
     } else if (this.provider === "openrouter") {
       this.model = "typesafe/jev-1.13";
+      this.modelSource = "provider_default";
     } else if (this.provider === "vercel") {
       this.model = "typesafe-ai/jev";
+      this.modelSource = "provider_default";
     } else {
       this.model = DEFAULT_MODEL;
+      this.modelSource = "provider_default";
     }
   }
 
@@ -230,11 +431,28 @@ export class JevClient {
     questions: Record<string, Question>,
     overrideModel?: string
   ): Promise<JevResponse> {
-    const stateStr = typeof state === "string" ? state : JSON.stringify(state);
+    const rawState = typeof state === "string" ? state : JSON.stringify(state);
+    const stateStr = redactSecrets(rawState);
     const chosenModel = overrideModel || this.model;
 
     if (!this.isLive) {
       return this.simulateSystemOne(stateStr, questions, chosenModel);
+    }
+
+    // Count code points (not UTF-16 units) so the three runtimes agree on the limit.
+    const stateChars = [...stateStr].length;
+    const questionsChars = [...JSON.stringify(questions)].length;
+    if (stateChars > MAX_STATE_CHARS || stateChars + questionsChars > MAX_TOTAL_CHARS) {
+      throw new Error(
+        `Payload exceeds the provider limit: ${stateChars} state chars + ${questionsChars} question chars ` +
+          `(limit: ${MAX_STATE_CHARS} state / ${MAX_TOTAL_CHARS} total, ~32k/64k tokens). Trim the state or split the questions.`
+      );
+    }
+
+    // E3.1: a question with a single option has no distribution to measure.
+    for (const question of Object.values(questions)) {
+      if (question.type === "choice") validateQuestionOptions(Object.keys(question.criteria));
+      if (question.type === "score") validateQuestionOptions(question.criteria);
     }
 
     const payload: Record<string, any> = {
@@ -248,62 +466,114 @@ export class JevClient {
       payload.providerOptions = { gateway: { only: ["typesafe-ai"] } };
     }
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
+    const providerMap: Record<string, string> = {
+      commandcode: "Command Code",
+      opencode: "OpenCode Zen",
+      openrouter: "OpenRouter",
+      vercel: "Vercel AI Gateway",
+    };
+    const providerName = providerMap[this.provider] || "TypeSafe";
 
-    try {
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-        "User-Agent": DEFAULT_USER_AGENT,
-      };
-      if (this.apiKey && this.apiKey !== "zen") {
-        headers["Authorization"] = `Bearer ${this.apiKey}`;
-      }
-      if (this.provider === "openrouter") {
-        headers["HTTP-Referer"] = "https://github.com/ismaelsoilet/jev-harness";
-        headers["X-Title"] = "Jev Harness";
-      }
-
-      const resp = await fetch(this.baseUrl, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(payload),
-        signal: controller.signal,
-      });
-
-      if (!resp.ok) {
-        const errText = JevClient.redactSecrets(await resp.text(), this.apiKey);
-        const providerMap: Record<string, string> = {
-          commandcode: "Command Code",
-          opencode: "OpenCode Zen",
-          openrouter: "OpenRouter",
-          vercel: "Vercel AI Gateway",
+    for (let attempt = 1; ; attempt++) {
+      const attemptStarted = Date.now();
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
+      try {
+        const headers: Record<string, string> = {
+          "Content-Type": "application/json",
+          "User-Agent": DEFAULT_USER_AGENT,
         };
-        const providerName = providerMap[this.provider] || "TypeSafe";
-        if (resp.status === 401 || resp.status === 403) {
-          process.stderr.write(`[JEV WARNING] ${providerName} auth failed (HTTP ${resp.status}); falling back to offline simulation.\n`);
-          return this.simulateSystemOne(stateStr, questions, chosenModel);
+        if (this.apiKey && this.apiKey !== "zen") {
+          headers["Authorization"] = `Bearer ${this.apiKey}`;
         }
-        throw new Error(`${providerName} API HTTP ${resp.status}: ${errText}`);
-      }
+        if (this.provider === "openrouter") {
+          headers["HTTP-Referer"] = "https://github.com/ismaelsoilet/jev-harness";
+          headers["X-Title"] = "Jev Harness";
+        }
 
-      const data = await resp.json();
-      return this.parseResponse(data, chosenModel, false);
-    } catch (err: any) {
-      if (err.name === "AbortError") {
-        const providerMap: Record<string, string> = {
-          commandcode: "Command Code",
-          opencode: "OpenCode Zen",
-          openrouter: "OpenRouter",
-          vercel: "Vercel AI Gateway",
-        };
-        const providerName = providerMap[this.provider] || "TypeSafe";
-        throw new Error(`${providerName} API request timed out after ${this.timeoutMs}ms`);
+        const resp = await fetch(this.baseUrl, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        });
+
+        if (!resp.ok) {
+          const errText = JevClient.redactSecrets(await resp.text(), this.apiKey);
+          if (resp.status === 401 || resp.status === 403) {
+            const authMessage = `${providerName} auth failed (HTTP ${resp.status})`;
+            if (!this.failOpen) throw new Error(authMessage);
+            process.stderr.write(`[JEV WARNING] ${authMessage}; falling back to offline simulation.\n`);
+            return this.markDegraded(this.simulateSystemOne(stateStr, questions, chosenModel), `auth_${resp.status}`);
+          }
+          const retryable = resp.status === 429 || resp.status >= 500;
+          if (retryable && attempt < this.maxRetries) {
+            await this.sleep(this.retryDelayMs(attempt, resp.headers?.get("retry-after") ?? undefined));
+            continue;
+          }
+          const message = `${providerName} API HTTP ${resp.status}: ${errText}`;
+          if (this.failOpen) {
+            process.stderr.write(`[JEV WARNING] ${message}; falling back to offline simulation.\n`);
+            return this.markDegraded(this.simulateSystemOne(stateStr, questions, chosenModel), `http_${resp.status}`);
+          }
+          throw new Error(message);
+        }
+
+        const data = await resp.json();
+        return this.parseResponse(data, chosenModel, false);
+      } catch (err: any) {
+        const elapsed = Date.now() - attemptStarted;
+        const malformed = err?.name === "MalformedResponseError";
+        const retryableTransport =
+          err?.name === "AbortError" || err?.name === "TypeError" || err?.name === "SyntaxError" || malformed;
+        if (retryableTransport) {
+          if (attempt < this.maxRetries) {
+            await this.sleep(this.retryDelayMs(attempt));
+            continue;
+          }
+          const invalidResponse = err?.name === "SyntaxError" || malformed;
+          // A read timeout can surface as a generic TypeError: classify by elapsed time
+          // so the marker matches Python and Rust.
+          const isTimeout =
+            err?.name === "AbortError" || (!invalidResponse && elapsed >= this.timeoutMs * 0.9);
+          const message = malformed
+            ? `${providerName} returned a malformed response: ${err?.message ?? err}`
+            : invalidResponse
+              ? `${providerName} returned a non-JSON response`
+              : isTimeout
+                ? `${providerName} API request timed out after ${this.timeoutMs}ms`
+                : `Failed to connect to ${providerName} API (${this.baseUrl}): ${err?.message ?? err}`;
+          if (this.failOpen) {
+            process.stderr.write(`[JEV WARNING] ${message}; falling back to offline simulation.\n`);
+            return this.markDegraded(
+              this.simulateSystemOne(stateStr, questions, chosenModel),
+              invalidResponse ? "invalid_response" : isTimeout ? "timeout" : "connection"
+            );
+          }
+          throw new Error(message);
+        }
+        throw err;
+      } finally {
+        clearTimeout(timeoutId);
       }
-      throw err;
-    } finally {
-      clearTimeout(timeoutId);
     }
+  }
+
+  /** Exponential backoff honoring a provider Retry-After (seconds), capped for fast CI. */
+  public retryDelayMs(attempt: number, retryAfter?: string): number {
+    if (retryAfter) {
+      const parsed = Number(String(retryAfter).trim());
+      if (Number.isFinite(parsed) && parsed >= 0) return Math.min(30000, parsed * 1000);
+    }
+    return Math.max(0, Math.min(5000, this.retryBaseDelayMs * Math.pow(2, Math.max(0, attempt - 1))));
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private markDegraded(resp: JevResponse, reason: string): JevResponse {
+    return { ...resp, degradedReason: reason };
   }
 
   public static redactSecrets(text: string, secret?: string): string {
@@ -317,41 +587,65 @@ export class JevClient {
       .slice(0, 400);
   }
 
+  /**
+   * A live payload with type-mismatched fields (`score: "N/A"`, `answers: [...]`) is a parse
+   * failure handled by the failure policy — never a silent `NaN` or a dropped answer.
+   */
   private parseResponse(data: any, model: string, isMock: boolean): JevResponse {
     const answers: Record<string, Answer> = {};
+    if (data && typeof data === "object" && data.answers !== undefined && data.answers !== null) {
+      if (typeof data.answers !== "object" || Array.isArray(data.answers)) {
+        throw new MalformedResponseError("malformed response: 'answers' must be a JSON object");
+      }
+    }
     const rawAnswers = (data && typeof data === "object" && data.answers && typeof data.answers === "object")
       ? data.answers
       : {};
 
     for (const [qid, ans] of Object.entries<any>(rawAnswers)) {
-      if (!ans || typeof ans !== "object") continue;
-      if (ans.type === "choice" || ans.choice !== undefined) {
+      if (!ans || typeof ans !== "object" || Array.isArray(ans)) {
+        throw new MalformedResponseError(`malformed response: answer '${qid}' must be a JSON object`);
+      }
+      if (ans.type === "choice") {
         answers[qid] = {
           type: "choice",
-          choice: String(ans.choice || ""),
-          confidence: Number(ans.confidence ?? 1.0),
+          choice: requiredText(ans, "choice", qid),
+          confidence: finiteNumber(ans.confidence, "confidence", qid),
           probabilities: ans.probabilities,
         };
-      } else if (ans.type === "score" || ans.score !== undefined) {
+      } else if (ans.type === "score") {
         answers[qid] = {
           type: "score",
-          score: Number(ans.score ?? 0.0),
-          confidence: Number(ans.confidence ?? 1.0),
+          score: finiteNumber(ans.score, "score", qid),
+          confidence: finiteNumber(ans.confidence, "confidence", qid),
           probabilities: ans.probabilities,
           legend: ans.legend,
         };
-      } else if (ans.type === "noul" || ans.noul !== undefined) {
+      } else if (ans.type === "noul") {
         answers[qid] = {
           type: "noul",
-          noul: Number(ans.noul ?? 0.0),
+          noul: finiteNumber(ans.noul, "noul", qid),
         };
+      } else {
+        // An answer the runtime cannot interpret must never be dropped: the gate would
+        // silently use its default score instead of the provider's judgement.
+        throw new MalformedResponseError(
+          `malformed response: answer '${qid}' has an unsupported type ${JSON.stringify(ans.type)}`
+        );
       }
     }
 
-    const usage = (data && typeof data === "object" && data.usage) || {
-      input_tokens: Math.max(10, Math.floor(String((data && data.state) || "").length / 4)),
-      output_tokens: 0,
-    };
+    if (Object.keys(answers).length === 0 && !isMock) {
+      // Nothing usable would silently make every gate fall back to its defaults.
+      throw new MalformedResponseError("malformed response: no answers could be parsed");
+    }
+
+    const usage = (data && typeof data === "object" && data.usage && typeof data.usage === "object")
+      ? data.usage
+      : {
+          input_tokens: Math.max(10, Math.floor(String((data && data.state) || "").length / 4)),
+          output_tokens: 0,
+        };
 
     return {
       model: (data && data.model) || model,
@@ -362,13 +656,23 @@ export class JevClient {
     };
   }
 
-  public simulateSystemOne(state: string, questions: Record<string, Question>, model: string): JevResponse {
-    const stateLower = state.toLowerCase();
-    const stateTokens = new Set(stateLower.match(/\w+/g) || []);
+  public simulateSystemOne(
+    state: string | Record<string, unknown>,
+    questions: Record<string, Question>,
+    model: string
+  ): JevResponse {
+    const rendered = renderStateText(state);
+    const stateLower = rendered.toLowerCase();
+    const stateTokens = new Set(stateLower.match(/[\p{L}\p{N}_]+/gu) || []);
     const answers: Record<string, Answer> = {};
 
+    // Mirrors Python exactly: the `^fail...` alternative is line-anchored, so it must be tested
+    // per stripped line (a bare `/^/` without `m` would only match the start of the whole state,
+    // which silently changed the verdict in one runtime).
+    const assertionLine =
+      /(?:assertionerror|assertionfailed|assertionfailederror|assert\b|assert_eq!|assertthat|expect\(.*?\)\.to|expected:.*received:|failures?:|fail(?:ed)?\s+test|^fail(?:ed)?(?!\s+to\b)\b|falha de asserção|fallo de aserción|opentest4j)/i;
     const realAssertion =
-      /(?:assertionerror|assertionfailed|assertionfailederror|assert\b|assert_eq!|assertthat|expect\(.*?\)\.to|expected:.*received:|failures?:|fail(?:ed)?\s+test|^fail(?:ed)?(?!\s+to\b)\b|falha de asserção|fallo de aserción|opentest4j)/i.test(stateLower) ||
+      stateLower.split(/\r?\n/).some((line) => assertionLine.test(line.trim())) ||
       // Cross-line Expectation/Reality pairs (rules/04 precedence) remain explicit assertions.
       /expected:[\s\S]{0,300}?received:/i.test(stateLower);
     const bareException = /(?:^|\n)\s*(?:valueerror|runtimeerror|typeerror|keyerror|indexerror|zerodivisionerror|attributeerror|overflowerror|arithmeticerror|illegalargumentexception|illegalstateexception):/i.test(stateLower);
@@ -437,10 +741,20 @@ export class JevClient {
           : "proceed" in q.criteria
           ? "proceed"
           : Object.keys(q.criteria)[0];
+        // The abort gate's action is derived from the same signals as its dead-end question:
+        // letting token overlap pick "abort_and_ask" beside a low dead-end probability made the
+        // gate contradict its own evidence (parity with Python/Rust).
+        const derivedAbortAction =
+          "abort_and_ask" in q.criteria && "proceed" in q.criteria
+            ? mockAbortActionChoice(q.criteria, stateLower)
+            : "";
+        if (derivedAbortAction) bestChoice = derivedAbortAction;
         let bestScore = 0;
 
-        for (const [opt, desc] of Object.entries(q.criteria)) {
-          const optTokens = (opt + " " + desc).toLowerCase().match(/\w+/g) || [];
+        // Canonical (sorted) order so ties break identically in every runtime.
+        for (const opt of Object.keys(q.criteria).sort()) {
+          const desc = q.criteria[opt];
+          const optTokens = (opt + " " + desc).toLowerCase().match(/[\p{L}\p{N}_]+/gu) || [];
           let matchScore = optTokens.filter((t) => stateTokens.has(t)).length;
 
           if (stateLower.includes(opt.toLowerCase())) matchScore += 3;
@@ -480,6 +794,7 @@ export class JevClient {
             }
           }
 
+          if (derivedAbortAction) continue; // derived from the dead-end signal, not overlap
           if (matchScore > bestScore) {
             bestScore = matchScore;
             bestChoice = opt;
@@ -541,43 +856,124 @@ export class JevClient {
               bestChoice = Object.keys(q.criteria)[0];
             }
           }
-        } else if (qid === "workflow_phase" || ("execute" in q.criteria && "verify" in q.criteria)) {
+        } else if (qid === "workflow_phase" || ("execute" in q.criteria && "complete" in q.criteria)) {
+          // Canonical phase contract (parity with Python/Rust): same lists, same precedence.
           const isWaitingQ = stateLower.includes("?") || [
-            "waiting on user", "need permission", "please clarify", "which option",
-            "would you like me to", "do you want me to", "aguardando usuário",
-            "preciso de permissão", "qual opção"
+            "waiting for your",
+            "waiting on user",
+            "wait for my go-ahead",
+            "please confirm",
+            "which option",
+            "do you approve",
+            "would you like me to",
+            "do you want me to",
+            "need your api key",
+            "aguardando sua aprovação",
+            "aguardando usuário",
+            "qual opção você prefere",
+            "qual opção",
+            "preciso que você confirme",
+            "preciso de permissão",
+            "need clarification",
+            "please clarify",
+            "need permission",
           ].some((w) => stateLower.includes(w));
           const isUnverified = [
-            "without running tests", "tests not run", "unverified", "haven't run pytest",
-            "todo: run tests", "falta rodar os testes", "sem testar", "need to verify",
-            "to verify", "run pytest", "run cargo test", "run npm test", "need to run",
-            "updated file", "edited file", "finished editing", "modified file", "wrote code",
-            "atualizei o arquivo", "alterei o arquivo", "terminei de editar", "arquivo alterado"
+            "without running tests",
+            "tests not run",
+            "unverified",
+            "haven't run pytest",
+            "todo: run tests",
+            "falta rodar os testes",
+            "sem testar",
+            "need to verify",
+            "to verify",
+            "run pytest",
+            "run cargo test",
+            "run npm test",
+            "need to run",
+            "updated file",
+            "edited file",
+            "finished editing",
+            "modified file",
+            "wrote code",
+            "atualizei o arquivo",
+            "alterei o arquivo",
+            "terminei de editar",
+            "arquivo alterado",
           ].some((w) => stateLower.includes(w));
           const isUnfinished = [
-            "todo", "remaining", "next step", "unfinished", "partial", "in progress",
-            "falta implementar", "pendente", "continuarei", "step 1 of"
+            "next i'll",
+            "next i will",
+            "now i will",
+            "continuarei",
+            "a seguir vou",
+            "próximo passo farei",
+            "1 of 5",
+            "2 of 5",
+            "3 of 5",
+            "4 of 5",
+            "step 1 of",
+            "step 1 done",
+            "unfinished",
+            "remaining",
+            "todo:",
+            "pendente",
+            "partial",
+            "parcial",
+            "in progress",
+            "falta implementar",
+            "falta rodar os testes",
+            "sem testar",
+            "without running tests",
+            "tests not run",
+            "haven't run pytest",
+            "need to run",
+            "need to verify",
+            "to verify",
+            "unverified",
+            "run pytest",
+            "run cargo test",
+            "run npm test",
+            "updated file",
+            "edited file",
+            "finished editing",
+            "modified file",
+            "wrote code",
+            "atualizei o arquivo",
+            "alterei o arquivo",
+            "terminei de editar",
+            "arquivo alterado",
+            "next step",
           ].some((w) => stateLower.includes(w));
           const isComplete = [
-            "all tests passed", "tests passed (0 failed)", "completed and verified", "100% passing", "completed all", "task complete",
-            "concluído com sucesso", "todos os testes passaram"
+            "all done",
+            "100% passing",
+            "all criteria satisfied",
+            "tudo concluído",
+            "todas as etapas concluídas",
+            "task complete",
+            "konnichiwa! all done",
+            "all tests passed",
+            "tests passed (0 failed)",
+            "completed and verified",
+            "completed all",
+            "concluído com sucesso",
+            "todos os testes passaram",
           ].some((w) => stateLower.includes(w));
 
           if (isWaitingQ && "ask" in q.criteria) {
             bestChoice = "ask";
+          } else if (isComplete && "complete" in q.criteria) {
+            bestChoice = "complete";
           } else if (isUnverified && "verify" in q.criteria) {
             bestChoice = "verify";
           } else if (isUnfinished && "execute" in q.criteria) {
             bestChoice = "execute";
-          } else if (isComplete && "complete" in q.criteria) {
-            bestChoice = "complete";
-          } else if (["plan", "architecture", "design", "planejamento"].some((w) => stateLower.includes(w)) && "plan" in q.criteria) {
-            bestChoice = "plan";
-          } else if (["research", "investigat", "search", "pesquisando"].some((w) => stateLower.includes(w)) && "research" in q.criteria) {
-            bestChoice = "research";
-          } else {
-            bestChoice = "execute" in q.criteria ? "execute" : Object.keys(q.criteria)[0];
           }
+          // Beyond the four signals above the phase is decided by the generic scoring, which is
+          // what the other runtimes do — the calibration corpus measures it as the better rule
+          // (bare keywords like "test" pointed at `verify` for a transcript that was `execute`).
         } else if (qid === "lease" || ("1" in q.criteria && ["2", "5", "10"].some((x) => x in q.criteria))) {
           // Astra-Ares multi-generation lease question
           if (["error", "fail", "erro", "falha", "deadlock", "panic", "exception"].some((k) => stateLower.includes(k))) {
@@ -592,11 +988,13 @@ export class JevClient {
           }
         }
 
-        const totalOpts = Object.keys(q.criteria).length;
-        const probs: Record<string, number> = {};
-        for (const k of Object.keys(q.criteria)) {
-          probs[k] = k === bestChoice ? 0.88 : 0.12 / Math.max(1, totalOpts - 1);
-        }
+        const hasSignalConflict =
+          (isExplicitAssertion || hasDeadlockOrLoop) && (hasEnvSignal || hasFlakySignal);
+        const probs = mockDistribution(
+          Object.keys(q.criteria),
+          bestChoice,
+          hasSignalConflict ? MOCK_CHOICE_BEST_CONFLICT : MOCK_CHOICE_BEST_PEAKED
+        );
 
         answers[qid] = {
           type: "choice",
@@ -617,7 +1015,7 @@ export class JevClient {
           matchedIdx = 1;
         } else if (
           !hasExplicitFailure &&
-          ["satisfy", "satisfaz", "satisface", "atende", "passed", "passou", "pasó", "sucesso", "éxito", "pass", "success", "excellent", "exhaustively", "complete", "concluido", "completado"].some((w) => stateLower.includes(w)) &&
+          ["satisfy", "satisfaz", "satisface", "atende", "passed", "passou", "pasó", "pass", "sucesso", "éxito", "success", "excellent", "exhaustively", "complete", "concluido", "completado", "proceed"].some((w) => stateLower.includes(w)) &&
           !["not ok", "failed", "falhou"].some((neg) => stateLower.includes(neg))
         ) {
           matchedIdx = nLevels;
@@ -628,7 +1026,7 @@ export class JevClient {
         }
 
         for (let idx = 0; idx < q.criteria.length; idx++) {
-          const levelTokens = (q.criteria[idx] || "").toLowerCase().match(/\w+/g) || [];
+          const levelTokens = (q.criteria[idx] || "").toLowerCase().match(/[\p{L}\p{N}_]+/gu) || [];
           if (levelTokens.some((t) => stateTokens.has(t)) && !(hasExplicitFailure && idx > 0 && ["satisfaction", "rigor"].includes(qid))) {
             matchedIdx = idx + 1;
           }
@@ -638,6 +1036,11 @@ export class JevClient {
           type: "score",
           score: matchedIdx,
           confidence: 0.85,
+          probabilities: mockDistribution(
+            q.criteria.map((_: string, i: number) => String(i + 1)),
+            String(matchedIdx),
+            MOCK_SCORE_BEST_PEAKED
+          ),
           legend: q.criteria,
         };
       } else if (q.type === "noul") {
@@ -647,7 +1050,11 @@ export class JevClient {
         const negativeSignals = ["abort", "abortar", "fail", "falha", "fallo", "error", "erro", "impossible", "impossivel", "imposible", "fatal", "circular", "deadlock", "broken", "unviable", "inviavel", "inviable", "destrutivo"];
         const positiveSignals = ["pass", "passed", "passou", "pasó", "success", "sucesso", "éxito", "resolved", "resuelto", "valid", "válido", "satisfy", "satisfaz", "satisface", "complete", "completado", "proceed", "linear"];
 
-        const proposedPart = stateLower.includes("proposed next step:") ? stateLower.split("proposed next step:")[1] : stateLower;
+        // Structured state (E0.4) or legacy concatenated text — accept both markers.
+        let proposedPart = stateLower;
+        for (const marker of ["proposed next step:", "proposed_next_step:"]) {
+          if (proposedPart.includes(marker)) proposedPart = proposedPart.split(marker).pop() as string;
+        }
         const isForwardProgress = ["implement", "fix", "resolve", "correct", "update", "create", "write", "corrigir", "implementar", "executar", "validar", "corregir"].some((w) => proposedPart.includes(w));
         const isRepetitiveLoop = ["same", "repetir", "tentar novamente", "intentar de nuevo", "4a vez", "again", "identical"].some((w) => proposedPart.includes(w));
         const isFatalDeadlock = ["impossible", "impossivel", "imposible", "circular", "deadlock", "dead end", "inviavel", "inviable", "hopeless", "fatal"].some((w) => stateLower.includes(w));
@@ -701,12 +1108,48 @@ export class JevClient {
           "all tests passed", "tests passed (0 failed)", "completed and verified"
         ].some((w) => stateLower.includes(w));
         const hasUnfinishedWork = [
-          "todo", "remaining", "next step", "unfinished", "partial", "in progress",
-          "without running tests", "tests not run", "unverified", "haven't run pytest",
-          "falta implementar", "pendente", "falta rodar os testes", "sem testar", "need to verify", "step 1 of",
-          "to verify", "run pytest", "run cargo test", "run npm test", "need to run",
-          "updated file", "edited file", "finished editing", "modified file", "wrote code",
-          "atualizei o arquivo", "alterei o arquivo", "terminei de editar", "arquivo alterado"
+          "next i'll",
+          "next i will",
+          "now i will",
+          "continuarei",
+          "a seguir vou",
+          "próximo passo farei",
+          "1 of 5",
+          "2 of 5",
+          "3 of 5",
+          "4 of 5",
+          "step 1 of",
+          "step 1 done",
+          "unfinished",
+          "remaining",
+          "todo:",
+          "pendente",
+          "partial",
+          "parcial",
+          "in progress",
+          "falta implementar",
+          "falta rodar os testes",
+          "sem testar",
+          "without running tests",
+          "tests not run",
+          "haven't run pytest",
+          "need to run",
+          "need to verify",
+          "to verify",
+          "unverified",
+          "run pytest",
+          "run cargo test",
+          "run npm test",
+          "updated file",
+          "edited file",
+          "finished editing",
+          "modified file",
+          "wrote code",
+          "atualizei o arquivo",
+          "alterei o arquivo",
+          "terminei de editar",
+          "arquivo alterado",
+          "next step",
         ].some((w) => stateLower.includes(w));
         const hasNoProgress = [
           "no progress", "stuck", "same output", "unchanged", "repeated without change",
@@ -716,14 +1159,14 @@ export class JevClient {
         if (qid === "waiting" || inst.includes("waiting on the user")) {
           prob = isWaitingOnUser ? 0.88 : 0.08;
         } else if (qid === "progress" || inst.includes("last nudge produce real progress")) {
-          prob = hasNoProgress ? 0.12 : 0.86;
+          prob = hasNoProgress ? 0.12 : 0.85;
         } else if (qid === "nudge" || inst.includes("gentle nudge")) {
           if (isWaitingOnUser || hasNoProgress || isDone) {
-            prob = 0.10;
+            prob = 0.06;
           } else if (hasUnfinishedWork) {
-            prob = 0.89;
+            prob = 0.82;
           } else {
-            prob = 0.14;
+            prob = 0.2;
           }
         }
 
@@ -738,7 +1181,7 @@ export class JevClient {
       model: `${model}-simulation`,
       answers,
       usage: {
-        input_tokens: Math.max(10, Math.floor(state.length / 4)),
+        input_tokens: Math.max(10, Math.floor(rendered.length / 4)),
         output_tokens: 0,
       },
       isMock: true,

@@ -43,6 +43,11 @@ class AttemptRecord:
     action_taken: str
 
 
+# Bumped when the persisted shape changes. Readers merge tolerantly: a writer from an older
+# version must never erase fields it does not know (E3.7).
+SESSION_SCHEMA_VERSION = 2
+
+
 @dataclass
 class SessionState:
     history: List[AttemptRecord] = field(default_factory=list)
@@ -54,11 +59,30 @@ class SessionState:
     nudge_continuations: int = 0
     estimated_tokens_saved: int = 0
     estimated_cost_saved_usd: float = 0.0
+    # Measured (E1.4): what the provider actually reported for the decisions that used the
+    # network. Always kept apart from the heuristic *estimated* savings above.
+    measured_requests: int = 0
+    measured_input_tokens: int = 0
+    measured_output_tokens: int = 0
+    measured_cost_usd: float = 0.0
+    measured_duration_ms: int = 0
+    schema_version: int = SESSION_SCHEMA_VERSION
+    # E3.4: the last decisions per gate, so a gate can use real history instead of whatever the
+    # caller remembered to send. Hashes and metadata only: no raw log content.
+    gate_decisions: List[Dict[str, Any]] = field(default_factory=list)
+    # E3.7: an effort lease with a TTL and a break-glass reported by the caller.
+    lease: Optional[Dict[str, Any]] = None
+    last_tool_error: str = ""
+    # Unknown keys written by another (possibly newer) writer, preserved verbatim on save.
+    _extra: Dict[str, Any] = field(default_factory=dict)
 
 
 def _get_storage_path() -> Path:
     """Returns path to storage file, preferring repo .jev or ~/.config/jev."""
     try:
+        # Repository-scoped state is opt-in: `jev-harness init` creates `.jev/` (git-ignored), and
+        # while it exists the session, the receipts and the lease stay inside that repository.
+        # Without it the state lives in the user-scoped config directory, shared by every project.
         local_dir = Path.cwd() / ".jev"
         if local_dir.exists() and os.access(local_dir, os.W_OK):
             return local_dir / "session.json"
@@ -151,6 +175,28 @@ def load_session() -> SessionState:
                 nudge_continuations=data.get("nudge_continuations", 0),
                 estimated_tokens_saved=data.get("estimated_tokens_saved", 0),
                 estimated_cost_saved_usd=data.get("estimated_cost_saved_usd", 0.0),
+                schema_version=int(data.get("schema_version", 1) or 1),
+                gate_decisions=[d for d in data.get("gate_decisions", []) if isinstance(d, dict)][-200:],
+                lease=data.get("lease") if isinstance(data.get("lease"), dict) else None,
+                last_tool_error=str(data.get("last_tool_error", "")),
+                _extra={
+                    key: value
+                    for key, value in data.items()
+                    if key
+                    not in {
+                        "history", "total_triage_calls", "skipped_llm_calls", "abort_guards_triggered",
+                        "deterministic_routes", "effort_modulations", "nudge_continuations",
+                        "estimated_tokens_saved", "estimated_cost_saved_usd", "measured_requests",
+                        "measured_input_tokens", "measured_output_tokens", "measured_cost_usd",
+                        "measured_duration_ms", "schema_version", "gate_decisions", "lease",
+                        "last_tool_error", "last_updated",
+                    }
+                },
+                measured_requests=data.get("measured_requests", 0),
+                measured_input_tokens=data.get("measured_input_tokens", 0),
+                measured_output_tokens=data.get("measured_output_tokens", 0),
+                measured_cost_usd=data.get("measured_cost_usd", 0.0),
+                measured_duration_ms=data.get("measured_duration_ms", 0),
             )
         except Exception:
             pass
@@ -170,8 +216,20 @@ def save_session(session: SessionState) -> None:
             "nudge_continuations": session.nudge_continuations,
             "estimated_tokens_saved": session.estimated_tokens_saved,
             "estimated_cost_saved_usd": session.estimated_cost_saved_usd,
+            "measured_requests": session.measured_requests,
+            "measured_input_tokens": session.measured_input_tokens,
+            "measured_output_tokens": session.measured_output_tokens,
+            "measured_cost_usd": session.measured_cost_usd,
+            "measured_duration_ms": session.measured_duration_ms,
+            "schema_version": SESSION_SCHEMA_VERSION,
+            "gate_decisions": session.gate_decisions[-200:],
+            "lease": session.lease,
+            "last_tool_error": session.last_tool_error,
             "last_updated": time.time(),
         }
+        # Never erase fields written by another version of the tool.
+        for key, value in getattr(session, "_extra", {}).items():
+            data.setdefault(key, value)
         # Atomic file write with thread/pid unique suffix to avoid collisions on Windows/Unix
         temp_file = p.with_name(f"{p.name}.{os.getpid()}_{threading.get_ident()}_{time.time_ns()}.tmp")
         temp_file.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
@@ -180,6 +238,24 @@ def save_session(session: SessionState) -> None:
         _harden_permissions(p, 0o600)
     except Exception:
         pass
+
+
+def record_measured_usage(
+    input_tokens: int, output_tokens: int, cost_usd: float = 0.0, duration_ms: int = 0
+) -> None:
+    """Accumulates what the provider actually reported for one live decision (E1.4).
+
+    Mock/offline answers never call this: their "usage" is local arithmetic, not a measurement.
+    """
+
+    def _mod(session: SessionState) -> None:
+        session.measured_requests += 1
+        session.measured_input_tokens += max(0, int(input_tokens))
+        session.measured_output_tokens += max(0, int(output_tokens))
+        session.measured_cost_usd += max(0.0, float(cost_usd))
+        session.measured_duration_ms += max(0, int(duration_ms))
+
+    update_session(_mod)
 
 
 def update_session(modifier_fn) -> SessionState:
@@ -328,3 +404,105 @@ def record_abort_step(should_abort: bool, proposed_step: str, action: str = "") 
 def reset_metrics() -> None:
     session = SessionState()
     save_session(session)
+
+
+MAX_GATE_DECISIONS = 20
+DEFAULT_LEASE_TTL_SECONDS = 1800
+
+
+def record_gate_decision(gate: str, decision: str, action: str = "", input_hash: str = "") -> None:
+    """E3.4: remembers one decision so the gates can use real history on the next call."""
+
+    def _mod(session: SessionState) -> None:
+        session.gate_decisions.append(
+            {
+                "gate": gate,
+                "decision": decision,
+                "action": action,
+                "input_hash": input_hash,
+                "ts": round(time.time(), 3),
+            }
+        )
+        kept: List[Dict[str, Any]] = []
+        per_gate: Dict[str, int] = {}
+        for record in reversed(session.gate_decisions):
+            name = str(record.get("gate", ""))
+            per_gate[name] = per_gate.get(name, 0) + 1
+            if per_gate[name] <= MAX_GATE_DECISIONS:
+                kept.append(record)
+        session.gate_decisions = list(reversed(kept))
+
+    update_session(_mod)
+
+
+def gate_history(gate: str) -> List[Dict[str, Any]]:
+    """The remembered decisions for one gate, oldest first."""
+    return [record for record in load_session().gate_decisions if record.get("gate") == gate]
+
+
+def set_lease(effort: str, provider_params: Optional[Dict[str, Any]] = None, steps_remaining: int = 1) -> None:
+    """E3.7: stores the effort lease with its contract (`schema_version`, TTL, steps)."""
+
+    def _mod(session: SessionState) -> None:
+        # A new decision is a fresh start: the previous break-glass no longer applies.
+        session.last_tool_error = ""
+        session.lease = {
+            "effort": effort,
+            "provider_params": provider_params or {},
+            "steps_remaining": max(0, int(steps_remaining)),
+            "issued_at": round(time.time(), 3),
+            "ttl_seconds": DEFAULT_LEASE_TTL_SECONDS,
+            "schema_version": SESSION_SCHEMA_VERSION,
+        }
+
+    update_session(_mod)
+
+
+def get_lease(now: Optional[float] = None) -> Optional[Dict[str, Any]]:
+    """The live lease, or None when it is exhausted, expired or invalidated by a tool error."""
+    session = load_session()
+    lease = session.lease
+    if not isinstance(lease, dict):
+        return None
+    if session.last_tool_error:
+        return None
+    if int(lease.get("steps_remaining", 0) or 0) <= 0:
+        return None
+    issued_at = float(lease.get("issued_at", 0) or 0)
+    ttl = int(lease.get("ttl_seconds", DEFAULT_LEASE_TTL_SECONDS) or DEFAULT_LEASE_TTL_SECONDS)
+    reference = time.time() if now is None else now
+    if issued_at <= 0 or reference - issued_at > ttl:
+        return None
+    return lease
+
+
+def consume_lease() -> Optional[Dict[str, Any]]:
+    """Returns the live lease and spends one step of it."""
+    lease = get_lease()
+    if lease is None:
+        return None
+
+    def _mod(session: SessionState) -> None:
+        if isinstance(session.lease, dict):
+            session.lease["steps_remaining"] = max(0, int(session.lease.get("steps_remaining", 0)) - 1)
+
+    update_session(_mod)
+    remaining = max(0, int(lease.get("steps_remaining", 0) or 0) - 1)
+    return {**lease, "steps_remaining": remaining}
+
+
+def record_tool_error(summary: str) -> None:
+    """E3.7 break-glass: a tool error invalidates the lease immediately."""
+
+    def _mod(session: SessionState) -> None:
+        session.last_tool_error = summary[:400]
+        session.lease = None
+
+    update_session(_mod)
+
+
+def clear_tool_error() -> None:
+    def _mod(session: SessionState) -> None:
+        session.last_tool_error = ""
+
+    update_session(_mod)

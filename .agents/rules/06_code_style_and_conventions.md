@@ -1,6 +1,6 @@
 # 📝 Convenções de Código e Padrões por Linguagem
 
-> **Documento Oficial de Engenharia — Versão: v0.1.14**  
+> **Documento Oficial de Engenharia — Versão: v0.2.0**  
 > *Guia de Estilo Estrito para Python, TypeScript, Rust e Git.*
 
 ---

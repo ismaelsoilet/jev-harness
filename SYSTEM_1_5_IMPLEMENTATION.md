@@ -3,9 +3,65 @@
 > **Documento companheiro de [`SYSTEM_1_5_PLAN.md`](SYSTEM_1_5_PLAN.md) (arquitetura-alvo) e [`SYSTEM_1_5_OPPORTUNITIES.md`](SYSTEM_1_5_OPPORTUNITIES.md) (oportunidades e veredito).**
 > Este é o plano **executável**: cada item tem escopo, arquivos, critérios de aceite verificáveis e testes obrigatórios.
 > **Isto não é um plano de release.** Nenhum item fixa versão; cada um entra em release quando passar o DoD (§2) pelo protocolo do repositório (`.agents/rules/05_release_and_quad_sync_protocol.md`).
-> **Base:** `v0.1.14` · 211 testes verdes (117 Python + 49 Rust + 45 TS) · 2026-09-23.
+> **Base:** `v0.2.0` · **H1 entregue** (E0.1–E0.3, E1.1) · 569 testes verdes (393 Python + 89 TS + 87 Rust) · pesquisa datada de 2026-09-23.
 
 ---
+
+## Status de entrega
+
+> **Estado do working tree (2026-09-23, não publicado):** H1 está implementado e verificado; parte de H2/H3 também. Nada foi commitado/publicado ainda — a decisão de release é do proprietário (§10).
+
+| Onda | Épico | Estado |
+| :--- | :--- | :--- |
+| **H1** | E0.1 (paridade Score no live + fixture tri-runtime) | ✅ implementado |
+| **H1** | E0.2 (retry/`Retry-After`/fail-open/`--fail-closed`/`--retries`, payload malformado, sem traceback) | ✅ implementado |
+| **H1** | E0.3 (modelo fixável + origem no `status`, limites de payload em code points) | ✅ implementado |
+| **H1** | E1.1 (shadow mode; precedência do shadow sobre `--fail-closed`) | ✅ implementado |
+| **H2** | E1.2 (corpus 160 casos rotulados + `replay` + `docs/REPLAY_REPORT.*` + gate de regressão no CI) | ✅ implementado |
+| **H2** | E1.3 (recibos append-only `0600` + comando `receipts` + `--no-receipts`) | ✅ implementado |
+| **H2** | E1.4 (tokens/custo medidos no `metrics`, separados da estimativa) | ✅ implementado |
+| **H2** | E0.4 (estado estruturado + `--state-json`) | ✅ implementado |
+| **H2** | E3.1 (incerteza com guardas + paridade tri-runtime da matemática) | ✅ implementado |
+| **H2** | E3.5 (slice focado + contexto causal + redação do `state` nos 3 runtimes) | ✅ implementado |
+| **H2** | E3.6 (recuperação estruturada sem auto-execução, com allowlist + flag) | ✅ implementado |
+| **H2** | E3.8 (`.jev/` ignorado, retenção, permissões, matriz de privacidade) | ✅ implementado |
+| **H2** | E3.9 (probabilidades da mock paritárias + conflito de sinais) | ✅ implementado |
+| **H3** | E2.1 (GitHub Action), E2.4 (`doctor`) | ✅ implementado |
+| **H3** | E2.2 (plugins Claude Code + Codex/OpenCode), E2.3 (interop + link-checker) | ✅ implementado |
+| **H3** | E3.2 (cache por hash + hit-rate), E3.3 (debounce/coalescing) | ✅ implementado |
+| **H3** | E3.4 (memória de sessão nos gates), E3.7 (lease persistente + break-glass) | ✅ implementado |
+| **WS5** | O4.1–O4.4 | 🚫 Fora de escopo (com gatilhos no §7) |
+
+**Assimetrias declaradas (Python-first, deliberadas):** recibos, cache de decisão e o lease são
+estado do lado Python (o CLI, o MCP server e o SDK Python escrevem; TS/Rust permanecem stateless,
+como já acontecia com a sessão). Os campos aditivos `recovery` (E3.6) e `uncertainty` (E3.1) são
+emitidos pelo runtime Python; a **matemática** da incerteza é paritária nos três (fixture
+`tests/fixtures/uncertainty_golden.json`) e a **redação de segredos** roda nos três runtimes.
+Nenhum desses campos altera `skip_llm` ou exit codes.
+
+**Pré-requisitos fora da ordem original:** o detector determinístico de injeção (escopo do E3.8/E3.6) entrou junto com o E1.2, porque o gate de CI do E1.2 exige que nenhum caso adversarial seja classificado de forma determinística.
+
+**Correções de paridade encontradas pelo próprio corpus (E1.2):** o gate de paridade
+(`tests/fixtures/corpus_parity.json`, 160 casos × 6 gates, lido por TS e Rust) revelou e fechou:
+critérios do triage diferentes no Rust, triggers extras, tokenizador ASCII no TypeScript, `^fail`
+ancorado na string inteira em vez de por linha, **ordem de iteração não determinística do
+`HashMap` de critérios no Rust** (empates mudavam de veredito), fallback de fase divergente e
+listas de sinais positivos/negativos desalinhadas. Após a canonicalização: **0 divergências em
+160 casos**, e o `verify` subiu de 0.625 para 0.829 de macro-F1 no corpus.
+
+**Fechados na rodada de revisão adversarial (2026-09-23):** a redação de segredos passou para o
+cliente (valia só no triage — `route/verify/abort/effort/nudge` transmitiam o segredo cru);
+`--state-json` passou a existir de fato (estava documentado e ausente, com `parse_state_json` sem
+chamador); a memória do `abort` era calculada e descartada (agora entra no `state`); a allowlist de
+recuperação aceitava um pacote apenas **citado em prosa** num manifesto; o break-glass deixava o
+lease permanentemente inerte; a contagem de passos do lease reportava o valor anterior ao consumo;
+a validação `K >= 2` não era chamada no TS/Rust; a regra de chaves não numéricas da incerteza
+divergia entre os runtimes; o renderizador do TS/Rust não ignorava os campos de percepção; o
+`uncertainty` não era exposto no MCP; e a matriz de privacidade contradizia a redação do state.
+`cargo fmt --check` e `cargo clippy -D warnings` passaram a ser executados na CI (a dívida de
+formatação herdada foi zerada).
+
+**Achados medidos e ainda abertos** (ver `docs/REPLAY_REPORT.md` e `tests/corpus/README.md`): a linha `FAILED <nodeid>` de um runner pode dominar uma causa-raiz concreta de ambiente; a sobreposição acidental de tokens com as descrições dos critérios pode inverter uma categoria (direção perigosa: `skip_llm=true` num erro de sintaxe); `502`/broker não estão nas listas de transientes; os gates Noul (`verify`/`nudge`/`effort`) ficam entre 0.5 e 0.7 de macro-F1. Corrigir isso é *calibração* (mudança de heurística com comparação antes/depois no corpus e paridade tri-runtime), deliberadamente fora do épico que mede.
 
 ## 0. Como usar este plano (regras para agentes implementadores)
 
@@ -36,7 +92,7 @@
 
 ### DoD global (todo item)
 1. Testes novos cobrindo o comportamento e os limites (ver testes por épico).
-2. Bateria completa verde: `./scripts/release.sh --check` (211 + novos testes, 3 runtimes).
+2. Bateria completa verde: `./scripts/release.sh --check` (3 runtimes, com os testes novos já somados à bateria vigente).
 3. Paridade tri-runtime verificada para mudanças de gate (ou divergência documentada e testada); persistência de sessão/lease é Python-first com leitura nos demais (E3.4/E3.7).
 4. `./scripts/release.sh --verify-sync` verde.
 5. Documentação afetada atualizada (README EN/PT, guia, `.agents/rules/` quando aplicável).
@@ -112,7 +168,7 @@
 1. Fixture com payload live gravado (`tests/fixtures/live_score.json`) — capturado da API real (sanitizado).
 2. Teste de contrato Rust: parse do fixture → `score=1.76`, `legend` mapa, `probabilities` presentes.
 3. Teste diferencial tri-runtime: mesma pergunta live (ou fixture) → `severity/viability/rigor/complexity` equivalentes.
-**Aceite:** `verify` live no Rust deixa de reprovar sempre; valores batem com Python/TS no fixture; nota semver no CHANGELOG.
+**Aceite:** `verify` live no Rust deixa de reprovar sempre; valores batem com Python/TS no fixture; nota semver em "What's New" do README (o repositório não mantém um arquivo CHANGELOG separado; a seção de release do README é o changelog oficial).
 **Testes:** unit (Rust) + contrato (fixture compartilhado) + integração live opcional (gated).
 **Riscos:** quebra de tipo público no crate → documentar e lançar em versão 0.x com nota explícita.
 **Esforço:** P. **Deps:** nenhuma (fazer primeiro).
@@ -120,7 +176,7 @@
 #### E0.2 — Resiliência de provider: retry, `Retry-After` e política de falha *(O0.2)*
 **Objetivo:** nenhum erro de rede/rate-limit derruba o pipeline; comportamento explícito e configurável.
 **Escopo:**
-- Cliente (3 runtimes): retry com backoff exponencial + jitter para `429`/`5xx`/timeout; respeitar `Retry-After`; limite de tentativas configurável.
+- Cliente (3 runtimes): retry com backoff exponencial **com teto (jitter-free, para CI determinístico)** para `429`/`5xx`/timeout; respeitar `Retry-After`; limite de tentativas configurável (`--retries`).
 - Política de falha: `--fail-open` (**default** para gates) → cai no motor offline e marca `is_mock=true` + `degraded_reason`; `--fail-closed` → erro explícito com exit `2`.
 - CLI: `try/except` em todos os comandos de gate (hoje `cmd_test_gate` não tem — `RuntimeError` vaza).
 - Documentar e testar a diferença entre `is_mock=true` (decisão offline) e `degraded_reason` (fallback por falha).
@@ -134,7 +190,7 @@
 **Escopo:**
 - `model` fixável e documentado (`jev-1.13.0` para thresholds calibrados; alias por default com aviso de que o alias muda).
 - Validação de limite: aviso/erro claro quando `state + perguntas` > 32k e total > 64k tokens (estimativa por caracteres com fator conservador; sem tokenizer externo).
-- `status`/`doctor` mostram o modelo efetivo e a origem (default/`.jev.json`/env).
+- `status`/`doctor` mostram o modelo efetivo e a origem (default/`.jev.json`/env). *Entregue no `status` (v0.2.0); a metade `doctor` entra junto com E2.4, que é quem cria o comando.*
 **Aceite:** com payload gigante, mensagem clara e exit `2`; com modelo pinado, o campo `model` do request é o pinado.
 **Testes:** limites (limite-1, limite, limite+1), resolução de modelo nos 3 runtimes.
 **Esforço:** P. **Deps:** —
@@ -157,7 +213,7 @@
 #### E1.1 — Shadow mode *(O1.1)*
 **Objetivo:** permitir adoção segura (decidir sem agir) e medir antes de confiar.
 **Escopo:** flag `--shadow` (e chave `.jev.json` `"shadow": true`) nos gates: executa a decisão, grava recibo/telemetria, imprime o que **teria** feito, e **não** altera exit code previsto nem ação; `test-gate` verde continua `no_failure`.
-**Aceite:** em shadow, o gate **sempre** retorna exit `0` (pipelines nunca quebram); o JSON expõe `shadow: true` e `would_exit` com o exit que teria ocorrido; a saída humana mostra `SHADOW — would exit N`.
+**Aceite:** em shadow, o gate **sempre** retorna exit `0` (pipelines nunca quebram); a saída humana mostra `SHADOW — would exit N`; `test-gate --json` expõe `shadow: true` e `would_exit` (os demais gates reportam no stderr). **Entregue na v0.2.0.**
 **Testes:** por comando; garantir que scripts que usam o exit não quebram.
 **Esforço:** P. **Deps:** —
 
@@ -302,7 +358,7 @@
 - "instant startup (< 50ms)" → valor medido (~80–100 ms no modo offline).
 - "never crash" → precisão: sem chave e 401/403 caem para offline; outras falhas sobem (e o E0.2 adiciona fail-open configurável).
 - "Zero-hallucination" → "probabilidades calibradas (não infalíveis; ver jaggedness do modelo)".
-- "122 tests" (seção de release) → 211; "210-Test Battery" → 211; exemplos de bump `0.1.6` → versão atual/placeholder.
+- "122 tests" (seção de release) → a bateria vigente (hoje 569); "210-Test Battery" → idem; exemplos de bump `0.1.6` → versão atual/placeholder.
 - Adicionar data de verificação e link do método onde houver benchmark (offline latency): **só manter a tabela se reproduzível** — caso contrário, rotular como "medido na v0.1.7" ou re-medir com script versionado.
 **Aceite:** nenhum número/claim sem qualificação; auditoria de claims do README em `docs/` (checklist no E4.3); ambos os idiomas sincronizados.
 **Testes:** script de verificação (grep dos padrões proibidos) + revisão.
@@ -377,7 +433,7 @@ E4.1 overclaims (docs)      │        E3.1 incerteza        │             E3.
 2. **Confiabilidade:** 0 tracebacks em cenários de falha de provider; fallback marcado em 100% dos casos `--fail-open`.
 3. **Custo:** tokens/custo medidos por decisão no `metrics`; cache com hit-rate reportado.
 4. **Alcance:** GitHub Action instalada em ≥1 repo externo; ≥2 plugins publicados; `doctor` usado no guia.
-5. **Regressão:** 211+ testes verdes em 3 runtimes; clippy 0; `--verify-sync` verde.
+5. **Regressão:** 569+ testes verdes em 3 runtimes; clippy 0; `--verify-sync` verde.
 
 ---
 
@@ -397,7 +453,7 @@ E4.1 overclaims (docs)      │        E3.1 incerteza        │             E3.
 
 **Comandos de verificação obrigatórios:**
 ```bash
-./scripts/release.sh --check        # 211+ testes, 3 runtimes
+./scripts/release.sh --check        # 569+ testes, 3 runtimes
 ./scripts/release.sh --verify-sync  # paridade de manifestos
 python3 -m unittest discover -s tests
 (cd packages/ts && npm test) && (cd packages/rust && cargo test --quiet)

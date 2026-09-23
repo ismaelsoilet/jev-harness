@@ -9,6 +9,7 @@
  *   - model                 (string) -> overrides the provider default model
  *   - skip_llm_threshold    (number) -> triage gate confidence threshold
  *   - abort_threshold       (number) -> trajectory abort gate threshold
+ *   - shadow                (boolean)-> decide and report, but never change the exit code
  *
  * Credential keys (`api_key`, `provider`) are resolved by `JevClient.resolveCredentials`.
  */
@@ -21,6 +22,8 @@ export const DEFAULT_ABORT_THRESHOLD = 0.7;
 
 export interface RepoConfig {
   model: string | null;
+  /** Decide and report, but never change the exit code. */
+  shadow: boolean;
   skipLlmThreshold: number;
   abortThreshold: number;
 }
@@ -59,6 +62,7 @@ function clampProbability(value: number): number {
 export function loadRepoConfig(): RepoConfig {
   const defaults: RepoConfig = {
     model: null,
+    shadow: false,
     skipLlmThreshold: DEFAULT_SKIP_LLM_THRESHOLD,
     abortThreshold: DEFAULT_ABORT_THRESHOLD,
   };
@@ -84,6 +88,9 @@ export function loadRepoConfig(): RepoConfig {
     if (data && typeof data === "object") {
       if (typeof data.model === "string" && data.model.trim()) {
         config.model = data.model.trim();
+      }
+      if (typeof data.shadow === "boolean") {
+        config.shadow = data.shadow;
       }
       if (typeof data.skip_llm_threshold === "number" && Number.isFinite(data.skip_llm_threshold)) {
         config.skipLlmThreshold = clampProbability(data.skip_llm_threshold);

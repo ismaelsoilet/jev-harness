@@ -1,0 +1,1086 @@
+{
+ "_comment": "Parity lock covering ALL gates: the offline mock verdict recorded from the Python runtime for every corpus case. This is a parity lock, not ground truth (see tests/corpus/README.md for labels). TypeScript and Rust must agree exactly; a divergence fails their tests.",
+ "cases": {
+  "abort-flaky-reboot": {
+   "gate": "abort",
+   "observed": {
+    "should_abort": true
+   }
+  },
+  "abort-loop-identical": {
+   "gate": "abort",
+   "observed": {
+    "should_abort": true
+   }
+  },
+  "abort-progress-1": {
+   "gate": "abort",
+   "observed": {
+    "should_abort": false
+   }
+  },
+  "abort-progress-2": {
+   "gate": "abort",
+   "observed": {
+    "should_abort": false
+   }
+  },
+  "abort-progress-3": {
+   "gate": "abort",
+   "observed": {
+    "should_abort": false
+   }
+  },
+  "abort-progress-4": {
+   "gate": "abort",
+   "observed": {
+    "should_abort": false
+   }
+  },
+  "abort-repeat-assert": {
+   "gate": "abort",
+   "observed": {
+    "should_abort": true
+   }
+  },
+  "abort-repeat-timeout": {
+   "gate": "abort",
+   "observed": {
+    "should_abort": true
+   }
+  },
+  "abort-schema-reset": {
+   "gate": "abort",
+   "observed": {
+    "should_abort": true
+   }
+  },
+  "abort-scope-creep": {
+   "gate": "abort",
+   "observed": {
+    "should_abort": false
+   }
+  },
+  "adv-chatml": {
+   "gate": "triage",
+   "observed": {
+    "category": "deep_logic",
+    "skip_llm": false
+   }
+  },
+  "adv-classify-as": {
+   "gate": "triage",
+   "observed": {
+    "category": "deep_logic",
+    "skip_llm": false
+   }
+  },
+  "adv-ignore-previous": {
+   "gate": "triage",
+   "observed": {
+    "category": "deep_logic",
+    "skip_llm": false
+   }
+  },
+  "adv-inst": {
+   "gate": "triage",
+   "observed": {
+    "category": "deep_logic",
+    "skip_llm": false
+   }
+  },
+  "adv-never-escalate": {
+   "gate": "triage",
+   "observed": {
+    "category": "deep_logic",
+    "skip_llm": false
+   }
+  },
+  "adv-override": {
+   "gate": "triage",
+   "observed": {
+    "category": "deep_logic",
+    "skip_llm": false
+   }
+  },
+  "adv-role-json": {
+   "gate": "triage",
+   "observed": {
+    "category": "deep_logic",
+    "skip_llm": false
+   }
+  },
+  "adv-skip-flag": {
+   "gate": "triage",
+   "observed": {
+    "category": "deep_logic",
+    "skip_llm": false
+   }
+  },
+  "adv-system-prompt": {
+   "gate": "triage",
+   "observed": {
+    "category": "deep_logic",
+    "skip_llm": false
+   }
+  },
+  "effort-arch-design": {
+   "gate": "effort",
+   "observed": {
+    "effort": "high"
+   }
+  },
+  "effort-chain": {
+   "gate": "effort",
+   "observed": {
+    "effort": "high"
+   }
+  },
+  "effort-debug-race": {
+   "gate": "effort",
+   "observed": {
+    "effort": "medium"
+   }
+  },
+  "effort-format": {
+   "gate": "effort",
+   "observed": {
+    "effort": "low"
+   }
+  },
+  "effort-git-status": {
+   "gate": "effort",
+   "observed": {
+    "effort": "low"
+   }
+  },
+  "effort-ls": {
+   "gate": "effort",
+   "observed": {
+    "effort": "low"
+   }
+  },
+  "effort-refactor-plan": {
+   "gate": "effort",
+   "observed": {
+    "effort": "medium"
+   }
+  },
+  "effort-traceback": {
+   "gate": "effort",
+   "observed": {
+    "effort": "medium"
+   }
+  },
+  "env-bundler-gem": {
+   "gate": "triage",
+   "observed": {
+    "category": "env_missing",
+    "skip_llm": true
+   }
+  },
+  "env-cargo-crate": {
+   "gate": "triage",
+   "observed": {
+    "category": "env_missing",
+    "skip_llm": true
+   }
+  },
+  "env-cargo-workspace": {
+   "gate": "triage",
+   "observed": {
+    "category": "env_missing",
+    "skip_llm": true
+   }
+  },
+  "env-conda-cmd": {
+   "gate": "triage",
+   "observed": {
+    "category": "env_missing",
+    "skip_llm": true
+   }
+  },
+  "env-docker-binary": {
+   "gate": "triage",
+   "observed": {
+    "category": "env_missing",
+    "skip_llm": true
+   }
+  },
+  "env-dotnet-nuget": {
+   "gate": "triage",
+   "observed": {
+    "category": "env_missing",
+    "skip_llm": true
+   }
+  },
+  "env-es-modulo": {
+   "gate": "triage",
+   "observed": {
+    "category": "env_missing",
+    "skip_llm": true
+   }
+  },
+  "env-es-paquete": {
+   "gate": "triage",
+   "observed": {
+    "category": "env_missing",
+    "skip_llm": true
+   }
+  },
+  "env-eslint-plugin": {
+   "gate": "triage",
+   "observed": {
+    "category": "env_missing",
+    "skip_llm": true
+   }
+  },
+  "env-go-package": {
+   "gate": "triage",
+   "observed": {
+    "category": "env_missing",
+    "skip_llm": true
+   }
+  },
+  "env-gradle-dep": {
+   "gate": "triage",
+   "observed": {
+    "category": "env_missing",
+    "skip_llm": true
+   }
+  },
+  "env-java-classnotfound": {
+   "gate": "triage",
+   "observed": {
+    "category": "env_missing",
+    "skip_llm": true
+   }
+  },
+  "env-java-noclassdef": {
+   "gate": "triage",
+   "observed": {
+    "category": "env_missing",
+    "skip_llm": true
+   }
+  },
+  "env-jest-module": {
+   "gate": "triage",
+   "observed": {
+    "category": "env_missing",
+    "skip_llm": true
+   }
+  },
+  "env-maven-plugin": {
+   "gate": "triage",
+   "observed": {
+    "category": "env_missing",
+    "skip_llm": true
+   }
+  },
+  "env-npm-command": {
+   "gate": "triage",
+   "observed": {
+    "category": "env_missing",
+    "skip_llm": true
+   }
+  },
+  "env-playwright-browser": {
+   "gate": "triage",
+   "observed": {
+    "category": "deep_logic",
+    "skip_llm": false
+   }
+  },
+  "env-poetry-lock": {
+   "gate": "triage",
+   "observed": {
+    "category": "env_missing",
+    "skip_llm": true
+   }
+  },
+  "env-postgres-cmd": {
+   "gate": "triage",
+   "observed": {
+    "category": "env_missing",
+    "skip_llm": true
+   }
+  },
+  "env-pt-modulo": {
+   "gate": "triage",
+   "observed": {
+    "category": "env_missing",
+    "skip_llm": true
+   }
+  },
+  "env-pt-pacote": {
+   "gate": "triage",
+   "observed": {
+    "category": "env_missing",
+    "skip_llm": true
+   }
+  },
+  "env-pytest-cov": {
+   "gate": "triage",
+   "observed": {
+    "category": "env_missing",
+    "skip_llm": true
+   }
+  },
+  "env-pytest-import": {
+   "gate": "triage",
+   "observed": {
+    "category": "env_missing",
+    "skip_llm": true
+   }
+  },
+  "env-pytest-module": {
+   "gate": "triage",
+   "observed": {
+    "category": "deep_logic",
+    "skip_llm": false
+   }
+  },
+  "env-pytest-pandas": {
+   "gate": "triage",
+   "observed": {
+    "category": "env_missing",
+    "skip_llm": true
+   }
+  },
+  "env-ruby-loaderror": {
+   "gate": "triage",
+   "observed": {
+    "category": "env_missing",
+    "skip_llm": true
+   }
+  },
+  "env-ts-jest": {
+   "gate": "triage",
+   "observed": {
+    "category": "env_missing",
+    "skip_llm": true
+   }
+  },
+  "env-tsc-ts2307": {
+   "gate": "triage",
+   "observed": {
+    "category": "env_missing",
+    "skip_llm": true
+   }
+  },
+  "env-unittest-mock": {
+   "gate": "triage",
+   "observed": {
+    "category": "deep_logic",
+    "skip_llm": false
+   }
+  },
+  "env-vitest-alias": {
+   "gate": "triage",
+   "observed": {
+    "category": "env_missing",
+    "skip_llm": true
+   }
+  },
+  "env-webpack-loader": {
+   "gate": "triage",
+   "observed": {
+    "category": "env_missing",
+    "skip_llm": true
+   }
+  },
+  "flaky-502": {
+   "gate": "triage",
+   "observed": {
+    "category": "deep_logic",
+    "skip_llm": false
+   }
+  },
+  "flaky-503": {
+   "gate": "triage",
+   "observed": {
+    "category": "flaky_transient",
+    "skip_llm": true
+   }
+  },
+  "flaky-504": {
+   "gate": "triage",
+   "observed": {
+    "category": "flaky_transient",
+    "skip_llm": true
+   }
+  },
+  "flaky-broker": {
+   "gate": "triage",
+   "observed": {
+    "category": "deep_logic",
+    "skip_llm": false
+   }
+  },
+  "flaky-db-startup": {
+   "gate": "triage",
+   "observed": {
+    "category": "flaky_transient",
+    "skip_llm": true
+   }
+  },
+  "flaky-dns": {
+   "gate": "triage",
+   "observed": {
+    "category": "flaky_transient",
+    "skip_llm": true
+   }
+  },
+  "flaky-eaddrinuse": {
+   "gate": "triage",
+   "observed": {
+    "category": "flaky_transient",
+    "skip_llm": true
+   }
+  },
+  "flaky-econnreset": {
+   "gate": "triage",
+   "observed": {
+    "category": "flaky_transient",
+    "skip_llm": true
+   }
+  },
+  "flaky-es-conexion": {
+   "gate": "triage",
+   "observed": {
+    "category": "flaky_transient",
+    "skip_llm": true
+   }
+  },
+  "flaky-es-espera": {
+   "gate": "triage",
+   "observed": {
+    "category": "flaky_transient",
+    "skip_llm": true
+   }
+  },
+  "flaky-etimedout": {
+   "gate": "triage",
+   "observed": {
+    "category": "flaky_transient",
+    "skip_llm": true
+   }
+  },
+  "flaky-k8s-evict": {
+   "gate": "triage",
+   "observed": {
+    "category": "flaky_transient",
+    "skip_llm": true
+   }
+  },
+  "flaky-npm-network": {
+   "gate": "triage",
+   "observed": {
+    "category": "flaky_transient",
+    "skip_llm": true
+   }
+  },
+  "flaky-port-in-use": {
+   "gate": "triage",
+   "observed": {
+    "category": "flaky_transient",
+    "skip_llm": true
+   }
+  },
+  "flaky-porta-pt": {
+   "gate": "triage",
+   "observed": {
+    "category": "flaky_transient",
+    "skip_llm": true
+   }
+  },
+  "flaky-pt-conexao": {
+   "gate": "triage",
+   "observed": {
+    "category": "flaky_transient",
+    "skip_llm": true
+   }
+  },
+  "flaky-pt-tempo": {
+   "gate": "triage",
+   "observed": {
+    "category": "flaky_transient",
+    "skip_llm": true
+   }
+  },
+  "flaky-puerto-es": {
+   "gate": "triage",
+   "observed": {
+    "category": "deep_logic",
+    "skip_llm": false
+   }
+  },
+  "flaky-read-timeout": {
+   "gate": "triage",
+   "observed": {
+    "category": "flaky_transient",
+    "skip_llm": true
+   }
+  },
+  "flaky-redis-timeout": {
+   "gate": "triage",
+   "observed": {
+    "category": "flaky_transient",
+    "skip_llm": true
+   }
+  },
+  "flaky-registry-502": {
+   "gate": "triage",
+   "observed": {
+    "category": "deep_logic",
+    "skip_llm": false
+   }
+  },
+  "flaky-reset": {
+   "gate": "triage",
+   "observed": {
+    "category": "flaky_transient",
+    "skip_llm": true
+   }
+  },
+  "flaky-socket-hangup": {
+   "gate": "triage",
+   "observed": {
+    "category": "flaky_transient",
+    "skip_llm": true
+   }
+  },
+  "green-build": {
+   "gate": "triage",
+   "observed": {
+    "category": "no_failure",
+    "skip_llm": true
+   }
+  },
+  "green-cargo": {
+   "gate": "triage",
+   "observed": {
+    "category": "no_failure",
+    "skip_llm": true
+   }
+  },
+  "green-generic": {
+   "gate": "triage",
+   "observed": {
+    "category": "no_failure",
+    "skip_llm": true
+   }
+  },
+  "green-go": {
+   "gate": "triage",
+   "observed": {
+    "category": "no_failure",
+    "skip_llm": true
+   }
+  },
+  "green-jest": {
+   "gate": "triage",
+   "observed": {
+    "category": "no_failure",
+    "skip_llm": true
+   }
+  },
+  "green-mocha": {
+   "gate": "triage",
+   "observed": {
+    "category": "no_failure",
+    "skip_llm": true
+   }
+  },
+  "green-pytest": {
+   "gate": "triage",
+   "observed": {
+    "category": "no_failure",
+    "skip_llm": true
+   }
+  },
+  "green-rspec": {
+   "gate": "triage",
+   "observed": {
+    "category": "no_failure",
+    "skip_llm": true
+   }
+  },
+  "green-unittest": {
+   "gate": "triage",
+   "observed": {
+    "category": "no_failure",
+    "skip_llm": true
+   }
+  },
+  "logic-asan": {
+   "gate": "triage",
+   "observed": {
+    "category": "deep_logic",
+    "skip_llm": false
+   }
+  },
+  "logic-assert-eq": {
+   "gate": "triage",
+   "observed": {
+    "category": "deep_logic",
+    "skip_llm": false
+   }
+  },
+  "logic-assert-es": {
+   "gate": "triage",
+   "observed": {
+    "category": "deep_logic",
+    "skip_llm": false
+   }
+  },
+  "logic-assert-expected": {
+   "gate": "triage",
+   "observed": {
+    "category": "deep_logic",
+    "skip_llm": false
+   }
+  },
+  "logic-assert-nested": {
+   "gate": "triage",
+   "observed": {
+    "category": "deep_logic",
+    "skip_llm": false
+   }
+  },
+  "logic-assert-pt": {
+   "gate": "triage",
+   "observed": {
+    "category": "deep_logic",
+    "skip_llm": false
+   }
+  },
+  "logic-deadlock": {
+   "gate": "triage",
+   "observed": {
+    "category": "deep_logic",
+    "skip_llm": false
+   }
+  },
+  "logic-float": {
+   "gate": "triage",
+   "observed": {
+    "category": "deep_logic",
+    "skip_llm": false
+   }
+  },
+  "logic-go-panic": {
+   "gate": "triage",
+   "observed": {
+    "category": "deep_logic",
+    "skip_llm": false
+   }
+  },
+  "logic-index": {
+   "gate": "triage",
+   "observed": {
+    "category": "deep_logic",
+    "skip_llm": false
+   }
+  },
+  "logic-infinite-loop": {
+   "gate": "triage",
+   "observed": {
+    "category": "deep_logic",
+    "skip_llm": false
+   }
+  },
+  "logic-invariant": {
+   "gate": "triage",
+   "observed": {
+    "category": "deep_logic",
+    "skip_llm": false
+   }
+  },
+  "logic-jest-fail": {
+   "gate": "triage",
+   "observed": {
+    "category": "deep_logic",
+    "skip_llm": false
+   }
+  },
+  "logic-keyerror": {
+   "gate": "triage",
+   "observed": {
+    "category": "deep_logic",
+    "skip_llm": false
+   }
+  },
+  "logic-mocha-assert": {
+   "gate": "triage",
+   "observed": {
+    "category": "deep_logic",
+    "skip_llm": false
+   }
+  },
+  "logic-mutex": {
+   "gate": "triage",
+   "observed": {
+    "category": "deep_logic",
+    "skip_llm": false
+   }
+  },
+  "logic-nil-deref": {
+   "gate": "triage",
+   "observed": {
+    "category": "deep_logic",
+    "skip_llm": false
+   }
+  },
+  "logic-npe": {
+   "gate": "triage",
+   "observed": {
+    "category": "deep_logic",
+    "skip_llm": false
+   }
+  },
+  "logic-partial-refactor": {
+   "gate": "triage",
+   "observed": {
+    "category": "deep_logic",
+    "skip_llm": false
+   }
+  },
+  "logic-race": {
+   "gate": "triage",
+   "observed": {
+    "category": "flaky_transient",
+    "skip_llm": true
+   }
+  },
+  "logic-rspec-fail": {
+   "gate": "triage",
+   "observed": {
+    "category": "deep_logic",
+    "skip_llm": false
+   }
+  },
+  "logic-rust-panic": {
+   "gate": "triage",
+   "observed": {
+    "category": "deep_logic",
+    "skip_llm": false
+   }
+  },
+  "logic-segfault": {
+   "gate": "triage",
+   "observed": {
+    "category": "deep_logic",
+    "skip_llm": false
+   }
+  },
+  "logic-timeout-noloop": {
+   "gate": "triage",
+   "observed": {
+    "category": "deep_logic",
+    "skip_llm": false
+   }
+  },
+  "logic-valueerror": {
+   "gate": "triage",
+   "observed": {
+    "category": "deep_logic",
+    "skip_llm": false
+   }
+  },
+  "logic-zerodiv": {
+   "gate": "triage",
+   "observed": {
+    "category": "deep_logic",
+    "skip_llm": false
+   }
+  },
+  "nudge-batch-begun": {
+   "gate": "nudge",
+   "observed": {
+    "should_nudge": true,
+    "workflow_phase": "execute"
+   }
+  },
+  "nudge-complete": {
+   "gate": "nudge",
+   "observed": {
+    "should_nudge": false,
+    "workflow_phase": "complete"
+   }
+  },
+  "nudge-plan-done": {
+   "gate": "nudge",
+   "observed": {
+    "should_nudge": false,
+    "workflow_phase": "plan"
+   }
+  },
+  "nudge-research": {
+   "gate": "nudge",
+   "observed": {
+    "should_nudge": false,
+    "workflow_phase": "execute"
+   }
+  },
+  "nudge-stalled": {
+   "gate": "nudge",
+   "observed": {
+    "should_nudge": false,
+    "workflow_phase": "plan"
+   }
+  },
+  "nudge-stopped-midway": {
+   "gate": "nudge",
+   "observed": {
+    "should_nudge": true,
+    "workflow_phase": "execute"
+   }
+  },
+  "nudge-verify-pending": {
+   "gate": "nudge",
+   "observed": {
+    "should_nudge": true,
+    "workflow_phase": "verify"
+   }
+  },
+  "nudge-waiting-user": {
+   "gate": "nudge",
+   "observed": {
+    "should_nudge": false,
+    "workflow_phase": "ask"
+   }
+  },
+  "redundant-deprecated": {
+   "gate": "triage",
+   "observed": {
+    "category": "test_redundant",
+    "skip_llm": false
+   }
+  },
+  "redundant-duplicate": {
+   "gate": "triage",
+   "observed": {
+    "category": "test_redundant",
+    "skip_llm": false
+   }
+  },
+  "redundant-obsolete": {
+   "gate": "triage",
+   "observed": {
+    "category": "test_redundant",
+    "skip_llm": false
+   }
+  },
+  "route-bugfix": {
+   "gate": "route",
+   "observed": {
+    "selected_tier": "lightweight_system2"
+   }
+  },
+  "route-distributed": {
+   "gate": "route",
+   "observed": {
+    "selected_tier": "heavy_system2"
+   }
+  },
+  "route-docs": {
+   "gate": "route",
+   "observed": {
+    "selected_tier": "lightweight_system2"
+   }
+  },
+  "route-format": {
+   "gate": "route",
+   "observed": {
+    "selected_tier": "lightweight_system2"
+   }
+  },
+  "route-migration": {
+   "gate": "route",
+   "observed": {
+    "selected_tier": "heavy_system2"
+   }
+  },
+  "route-perf": {
+   "gate": "route",
+   "observed": {
+    "selected_tier": "heavy_system2"
+   }
+  },
+  "route-refactor": {
+   "gate": "route",
+   "observed": {
+    "selected_tier": "heavy_system2"
+   }
+  },
+  "route-rename": {
+   "gate": "route",
+   "observed": {
+    "selected_tier": "lightweight_system2"
+   }
+  },
+  "route-typo": {
+   "gate": "route",
+   "observed": {
+    "selected_tier": "deterministic"
+   }
+  },
+  "route-unit-test": {
+   "gate": "route",
+   "observed": {
+    "selected_tier": "lightweight_system2"
+   }
+  },
+  "syntax-csharp-brace": {
+   "gate": "triage",
+   "observed": {
+    "category": "syntax_trivial",
+    "skip_llm": false
+   }
+  },
+  "syntax-es": {
+   "gate": "triage",
+   "observed": {
+    "category": "syntax_trivial",
+    "skip_llm": false
+   }
+  },
+  "syntax-go-brace": {
+   "gate": "triage",
+   "observed": {
+    "category": "env_missing",
+    "skip_llm": true
+   }
+  },
+  "syntax-indent": {
+   "gate": "triage",
+   "observed": {
+    "category": "syntax_trivial",
+    "skip_llm": false
+   }
+  },
+  "syntax-json-bracket": {
+   "gate": "triage",
+   "observed": {
+    "category": "syntax_trivial",
+    "skip_llm": false
+   }
+  },
+  "syntax-pt": {
+   "gate": "triage",
+   "observed": {
+    "category": "syntax_trivial",
+    "skip_llm": false
+   }
+  },
+  "syntax-py": {
+   "gate": "triage",
+   "observed": {
+    "category": "syntax_trivial",
+    "skip_llm": false
+   }
+  },
+  "syntax-ruby-end": {
+   "gate": "triage",
+   "observed": {
+    "category": "syntax_trivial",
+    "skip_llm": false
+   }
+  },
+  "syntax-sql": {
+   "gate": "triage",
+   "observed": {
+    "category": "syntax_trivial",
+    "skip_llm": false
+   }
+  },
+  "syntax-ts1005": {
+   "gate": "triage",
+   "observed": {
+    "category": "syntax_trivial",
+    "skip_llm": false
+   }
+  },
+  "syntax-yml": {
+   "gate": "triage",
+   "observed": {
+    "category": "env_missing",
+    "skip_llm": true
+   }
+  },
+  "verify-api-status": {
+   "gate": "verify",
+   "observed": {
+    "is_verified": false
+   }
+  },
+  "verify-build": {
+   "gate": "verify",
+   "observed": {
+    "is_verified": true
+   }
+  },
+  "verify-error-output": {
+   "gate": "verify",
+   "observed": {
+    "is_verified": false
+   }
+  },
+  "verify-failing-criteria": {
+   "gate": "verify",
+   "observed": {
+    "is_verified": false
+   }
+  },
+  "verify-flaky-once": {
+   "gate": "verify",
+   "observed": {
+    "is_verified": false
+   }
+  },
+  "verify-green-claimed": {
+   "gate": "verify",
+   "observed": {
+    "is_verified": false
+   }
+  },
+  "verify-green-criteria": {
+   "gate": "verify",
+   "observed": {
+    "is_verified": true
+   }
+  },
+  "verify-lint": {
+   "gate": "verify",
+   "observed": {
+    "is_verified": false
+   }
+  },
+  "verify-partial": {
+   "gate": "verify",
+   "observed": {
+    "is_verified": false
+   }
+  },
+  "verify-pt": {
+   "gate": "verify",
+   "observed": {
+    "is_verified": true
+   }
+  },
+  "verify-specific-test": {
+   "gate": "verify",
+   "observed": {
+    "is_verified": true
+   }
+  },
+  "verify-timeout": {
+   "gate": "verify",
+   "observed": {
+    "is_verified": true
+   }
+  }
+ },
+ "engine": "mock"
+}

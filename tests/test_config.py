@@ -11,6 +11,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 _PKG_ROOT = str(Path(__file__).resolve().parents[1] / "src")
 if _PKG_ROOT not in sys.path:
@@ -29,6 +30,23 @@ class TestRepoConfig(unittest.TestCase):
         self._original_cwd = os.getcwd()
         self._tmp = tempfile.TemporaryDirectory()
         os.chdir(self._tmp.name)
+        # Hermetic credential discovery: a developer's `cmd login` file or provider env
+        # vars must not change which provider a mock client resolves to.
+        self._env_patcher = mock.patch.dict(
+            os.environ,
+            {
+                "HOME": self._tmp.name,
+                "USERPROFILE": self._tmp.name,
+                "TYPESAFE_API_KEY": "",
+                "CMD_API_KEY": "",
+                "COMMAND_CODE_API_KEY": "",
+                "OPENCODE_API_KEY": "",
+                "OPENROUTER_API_KEY": "",
+                "AI_GATEWAY_API_KEY": "",
+            },
+        )
+        self._env_patcher.start()
+        self.addCleanup(self._env_patcher.stop)
         self.addCleanup(self._restore_cwd)
 
     def _restore_cwd(self):

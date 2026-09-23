@@ -58,6 +58,7 @@ pub async fn triage_test_failure(
                 "NO-OP: The log shows a successful test run; no triage and no LLM call are needed."
                     .to_string(),
             is_mock: true,
+            degraded_reason: String::new(),
         });
     }
 
@@ -70,6 +71,27 @@ pub async fn triage_test_failure(
         }
     };
 
+    // Untrusted-input guard: a log that addresses the judge (prompt injection) is escalated
+    // instead of classified. It runs after the green short-circuit on purpose — a green run
+    // must never escalate or cost an API call (Rule 0).
+    if crate::client::looks_like_prompt_injection(raw_error_log) {
+        return Ok(TestTriageResult {
+            category: "deep_logic".to_string(),
+            confidence: 1.0,
+            skip_llm: false,
+            skip_llm_prob: 0.0,
+            severity_score: 3.0,
+            action_recommendation:
+                "ESCALATE: the log contains text addressed at the decision engine (possible prompt injection). Review the failure manually; no deterministic action is taken."
+                    .to_string(),
+            recommendation:
+                "ESCALATE: the log contains text addressed at the decision engine (possible prompt injection). Review the failure manually; no deterministic action is taken."
+                    .to_string(),
+            is_mock: true,
+            degraded_reason: String::new(),
+        });
+    }
+
     let truncated_log = if raw_error_log.len() > 6000 {
         safe_truncate_head_tail(raw_error_log, 2000, 4000)
     } else {
@@ -78,34 +100,38 @@ pub async fn triage_test_failure(
 
     let mut questions = HashMap::new();
 
+    // The criteria text is part of the decision (the offline mock scores by token overlap and
+    // the provider reads it verbatim), so it must be byte-identical to the Python and TypeScript
+    // runtimes: any wording change silently changes verdicts and breaks tri-runtime parity.
+    // See `tests/fixtures/triage_parity.json`, which locks the three runtimes together.
     let mut cat_criteria = HashMap::new();
     cat_criteria.insert(
         "env_missing".to_string(),
-        "Missing dependency, package not found, uninstalled CLI tool, or environment path misconfiguration (e.g. TS2307, ModuleNotFoundError, E0463)".to_string(),
+        "Missing module, package not installed, environment variable missing, or runtime command not found".to_string(),
     );
     cat_criteria.insert(
         "flaky_transient".to_string(),
-        "Transient network glitch, connection reset, socket timeout, port conflict, or busy worker (e.g. ETIMEDOUT, ECONNRESET)".to_string(),
-    );
-    cat_criteria.insert(
-        "syntax_trivial".to_string(),
-        "Simple syntax error, missing bracket, typo in variable, or formatting linter violation"
+        "Network timeout, port already in use, race condition, or transient socket hangup"
             .to_string(),
     );
     cat_criteria.insert(
-        "deep_logic".to_string(),
-        "Real semantic bug, failed unit assertion, invariant violation, panic, or unexpected state"
+        "syntax_trivial".to_string(),
+        "Small typo, missing bracket, indentation error, or simple import name mismatch"
             .to_string(),
     );
     cat_criteria.insert(
         "test_redundant".to_string(),
-        "Failure is due to an obsolete, redundant, or malformed test case rather than system defect".to_string(),
+        "Deprecated test, duplicate assertion, or obsolete fixture".to_string(),
+    );
+    cat_criteria.insert(
+        "deep_logic".to_string(),
+        "Complex algorithmic bug, business logic defect, or architectural regression".to_string(),
     );
 
     questions.insert(
         "category".to_string(),
         Question::Choice(ChoiceQuestion {
-            instructions: "Categorize the primary root cause of this execution failure".to_string(),
+            instructions: "What is the root failure type in this error trace?".to_string(),
             criteria: cat_criteria,
         }),
     );
@@ -130,7 +156,13 @@ pub async fn triage_test_failure(
         }),
     );
 
-    let resp = active_client.system_one(&truncated_log, questions).await?;
+    let structured = crate::client::build_state(
+        serde_json::json!({"failure_log": truncated_log})
+            .as_object()
+            .cloned()
+            .unwrap_or_default(),
+    );
+    let resp = active_client.system_one(&structured, questions).await?;
 
     let cat_ans = resp.answers.get("category").and_then(|a| a.as_choice());
     let skip_ans = resp.answers.get("skip_llm").and_then(|a| a.as_noul());
@@ -140,7 +172,7 @@ pub async fn triage_test_failure(
         .map(|a| a.choice.clone())
         .unwrap_or_else(|| "deep_logic".to_string());
     let confidence = cat_ans.map(|a| a.confidence).unwrap_or(0.5);
-    let sev_score = sev_ans.map(|a| a.score as f64).unwrap_or(3.0);
+    let sev_score = sev_ans.map(|a| a.score).unwrap_or(3.0);
     let skip_prob = skip_ans.map(|a| a.noul).unwrap_or(0.0);
     let skip_llm = category != "deep_logic"
         && (skip_prob >= crate::config::load_repo_config().skip_llm_threshold
@@ -164,6 +196,7 @@ pub async fn triage_test_failure(
         action_recommendation: rec.to_string(),
         recommendation: rec.to_string(),
         is_mock: resp.is_mock,
+        degraded_reason: resp.degraded_reason.clone(),
     })
 }
 
@@ -182,9 +215,16 @@ pub async fn should_abort_trajectory(
         }
     };
 
-    let state = format!(
-        "RECENT ATTEMPTS & CONTEXT:\n{}\n\nPROPOSED NEXT STEP:\n{}",
-        recent_attempts_summary, proposed_step
+    // E0.4: same key names and order as Python/TypeScript (the engine reads everything after
+    // the step marker as the proposed step, so the history comes first).
+    let state = crate::client::build_state(
+        serde_json::json!({
+            "previous_attempts": recent_attempts_summary,
+            "proposed_step": proposed_step,
+        })
+        .as_object()
+        .cloned()
+        .unwrap_or_default(),
     );
 
     let mut questions = HashMap::new();
@@ -243,7 +283,7 @@ pub async fn should_abort_trajectory(
     let action = action_ans
         .map(|a| a.choice.clone())
         .unwrap_or_else(|| "proceed".to_string());
-    let viability = viability_ans.map(|a| a.score as f64).unwrap_or(3.0);
+    let viability = viability_ans.map(|a| a.score).unwrap_or(3.0);
 
     let should_abort = dead_end_prob >= crate::config::load_repo_config().abort_threshold
         || action == "abort_and_ask"
@@ -271,6 +311,7 @@ pub async fn should_abort_trajectory(
         reasoning_summary: summary.clone(),
         summary,
         is_mock: resp.is_mock,
+        degraded_reason: resp.degraded_reason.clone(),
     })
 }
 
@@ -328,7 +369,15 @@ pub async fn route_model_tier(
     );
 
     let resp = active_client
-        .system_one(task_description, questions)
+        .system_one(
+            &crate::client::build_state(
+                serde_json::json!({"task": task_description})
+                    .as_object()
+                    .cloned()
+                    .unwrap_or_default(),
+            ),
+            questions,
+        )
         .await?;
 
     let tier_ans = resp.answers.get("tier").and_then(|a| a.as_choice());
@@ -338,7 +387,7 @@ pub async fn route_model_tier(
         .map(|a| a.choice.clone())
         .unwrap_or_else(|| "lightweight_system2".to_string());
     let confidence = tier_ans.map(|a| a.confidence).unwrap_or(0.5);
-    let complexity_score = comp_ans.map(|a| a.score as f64).unwrap_or(2.0);
+    let complexity_score = comp_ans.map(|a| a.score).unwrap_or(2.0);
 
     let (rec_model, rationale) = match selected_tier.as_str() {
         "deterministic" => (
@@ -362,6 +411,7 @@ pub async fn route_model_tier(
         recommended_model: rec_model.to_string(),
         rationale: rationale.to_string(),
         is_mock: resp.is_mock,
+        degraded_reason: resp.degraded_reason.clone(),
     })
 }
 
@@ -380,9 +430,15 @@ pub async fn verify_step_completion(
         }
     };
 
-    let state = format!(
-        "CRITERIA TO SATISFY:\n{}\n\nACTUAL STEP OUTPUT:\n{}",
-        criteria, output
+    // E0.4: same key names and order as Python/TypeScript.
+    let state = crate::client::build_state(
+        serde_json::json!({
+            "acceptance_criteria": criteria,
+            "produced_output": output,
+        })
+        .as_object()
+        .cloned()
+        .unwrap_or_default(),
     );
 
     let mut questions = HashMap::new();
@@ -397,7 +453,8 @@ pub async fn verify_step_completion(
     questions.insert(
         "rigor".to_string(),
         Question::Score(ScoreQuestion {
-            instructions: "Rate how rigorously the criteria are verified by the evidence".to_string(),
+            instructions: "Rate how rigorously the criteria are verified by the evidence"
+                .to_string(),
             criteria: vec![
                 "unverified".to_string(),
                 "partially_verified".to_string(),
@@ -413,7 +470,7 @@ pub async fn verify_step_completion(
     let rig_ans = resp.answers.get("rigor").and_then(|a| a.as_score());
 
     let sat_prob = sat_ans.map(|a| a.noul).unwrap_or(0.0);
-    let rig_score = rig_ans.map(|a| a.score as f64).unwrap_or(2.0);
+    let rig_score = rig_ans.map(|a| a.score).unwrap_or(2.0);
     let confidence = rig_ans.map(|a| a.confidence).unwrap_or(0.8);
 
     let is_verified = sat_prob >= 0.80 && rig_score >= 2.5;
@@ -425,6 +482,7 @@ pub async fn verify_step_completion(
         confidence,
         needs_rework: !is_verified,
         is_mock: resp.is_mock,
+        degraded_reason: resp.degraded_reason.clone(),
     })
 }
 
@@ -495,7 +553,11 @@ pub fn build_provider_params(
                 cache_rec.to_string(),
             )
         } else {
-            let effort_val = if matches!(effort, "minimal" | "low") { "low" } else { "high" };
+            let effort_val = if matches!(effort, "minimal" | "low") {
+                "low"
+            } else {
+                "high"
+            };
             (
                 serde_json::json!({
                     "extra_body": { "thinking": { "type": "enabled" } },
@@ -537,7 +599,8 @@ pub fn build_provider_params(
                     "thinking": { "type": "disabled" }
                 }),
                 true,
-                "Disabled Anthropic Adaptive Thinking for deterministic/zero-reasoning step.".to_string(),
+                "Disabled Anthropic Adaptive Thinking for deterministic/zero-reasoning step."
+                    .to_string(),
                 cache_rec.to_string(),
             )
         } else {
@@ -577,7 +640,11 @@ pub fn build_provider_params(
                 "Eliminates internal CoT overhead.".to_string(),
             )
         } else {
-            let k_effort = if matches!(effort, "high" | "xhigh" | "max" | "ultra") { "high" } else { "low" };
+            let k_effort = if matches!(effort, "high" | "xhigh" | "max" | "ultra") {
+                "high"
+            } else {
+                "low"
+            };
             (
                 serde_json::json!({ "reasoning_effort": k_effort }),
                 true,
@@ -656,10 +723,17 @@ pub async fn modulate_reasoning_effort_full(
         effort_criteria.insert(eff.to_string(), astra_effort_description(eff).to_string());
     }
 
-    let valid_leases: Vec<u32> = [1, 2, 5, 10]
+    let requested_leases: Vec<u32> = [1, 2, 5, 10]
         .into_iter()
         .filter(|&n| n <= max_lease_steps.max(1))
         .collect();
+    // E3.1: a single-option question has no distribution to measure, so the option space keeps
+    // two levels and the answer is clamped below.
+    let valid_leases: Vec<u32> = if requested_leases.len() < 2 {
+        vec![1, 2]
+    } else {
+        requested_leases
+    };
 
     let mut lease_criteria = HashMap::new();
     for &n in &valid_leases {
@@ -707,7 +781,17 @@ pub async fn modulate_reasoning_effort_full(
         context.to_string()
     };
 
-    let resp = active_client.system_one(&clean_context, questions).await?;
+    let structured = crate::client::build_state(
+        serde_json::json!({
+            "context": clean_context,
+            "provider": provider,
+            "session_context_tokens": session_context_tokens,
+        })
+        .as_object()
+        .cloned()
+        .unwrap_or_default(),
+    );
+    let resp = active_client.system_one(&structured, questions).await?;
 
     let effort_ans = resp.answers.get("effort").and_then(|a| a.as_choice());
     let lease_ans = resp.answers.get("lease").and_then(|a| a.as_choice());
@@ -724,7 +808,7 @@ pub async fn modulate_reasoning_effort_full(
         };
     }
     let confidence = effort_ans.map(|a| a.confidence).unwrap_or(0.85);
-    let complexity_score = comp_ans.map(|a| a.score as f64).unwrap_or(2.0);
+    let complexity_score = comp_ans.map(|a| a.score).unwrap_or(2.0);
 
     let lease_steps = lease_ans
         .and_then(|a| a.choice.parse::<u32>().ok())
@@ -752,6 +836,7 @@ pub async fn modulate_reasoning_effort_full(
         cache_safe_recommendation: cache_rec,
         lease_steps,
         is_mock: resp.is_mock,
+        degraded_reason: resp.degraded_reason.clone(),
     })
 }
 
@@ -762,7 +847,16 @@ pub async fn modulate_reasoning_effort_with_tokens(
     session_context_tokens: usize,
     client: Option<&JevClient>,
 ) -> Result<ReasoningEffortResult, JevError> {
-    modulate_reasoning_effort_full(context, provider, model, session_context_tokens, None, 10, client).await
+    modulate_reasoning_effort_full(
+        context,
+        provider,
+        model,
+        session_context_tokens,
+        None,
+        10,
+        client,
+    )
+    .await
 }
 
 pub async fn modulate_reasoning_effort(
@@ -791,37 +885,27 @@ pub async fn should_nudge_continuation(
 
     let prev_trimmed = previous_nudge_summary.trim();
     let has_prev_nudge = !prev_trimmed.is_empty();
-    let raw_state = if has_prev_nudge {
-        format!(
-            "Transcript Tail:\n{}\n\nPrevious Nudge Summary:\n{}",
-            transcript_tail.trim(),
-            prev_trimmed
-        )
-    } else {
-        format!("Transcript Tail:\n{}", transcript_tail.trim())
-    };
-    let clean_state = if raw_state.len() > 4000 {
-        safe_truncate_head_tail(&raw_state, 1500, 2500)
-    } else {
-        raw_state
-    };
 
     let mut phase_criteria = HashMap::new();
     phase_criteria.insert(
         "research".to_string(),
-        "Investigating codebase, gathering context, or discovering dependencies before planning.".to_string(),
+        "Investigating codebase, gathering context, or discovering dependencies before planning."
+            .to_string(),
     );
     phase_criteria.insert(
         "ask".to_string(),
-        "Blocked on ambiguous requirements or waiting on user clarification/permission.".to_string(),
+        "Blocked on ambiguous requirements or waiting on user clarification/permission."
+            .to_string(),
     );
     phase_criteria.insert(
         "plan".to_string(),
-        "Structuring implementation strategy, test strategy, or architecture before coding.".to_string(),
+        "Structuring implementation strategy, test strategy, or architecture before coding."
+            .to_string(),
     );
     phase_criteria.insert(
         "execute".to_string(),
-        "Actively implementing changes or paused mid-implementation with unfinished edits/todos.".to_string(),
+        "Actively implementing changes or paused mid-implementation with unfinished edits/todos."
+            .to_string(),
     );
     phase_criteria.insert(
         "verify".to_string(),
@@ -836,7 +920,9 @@ pub async fn should_nudge_continuation(
     questions.insert(
         "workflow_phase".to_string(),
         Question::Choice(ChoiceQuestion {
-            instructions: "Identify the active workflow phase based on the agent's recent transcript.".to_string(),
+            instructions:
+                "Identify the active workflow phase based on the agent's recent transcript."
+                    .to_string(),
             criteria: phase_criteria,
         }),
     );
@@ -849,7 +935,9 @@ pub async fn should_nudge_continuation(
     questions.insert(
         "waiting".to_string(),
         Question::Noul(NoulQuestion {
-            instructions: "Is the agent waiting on the user (for permission, missing info, or a choice)?".to_string(),
+            instructions:
+                "Is the agent waiting on the user (for permission, missing info, or a choice)?"
+                    .to_string(),
         }),
     );
     if has_prev_nudge {
@@ -861,7 +949,16 @@ pub async fn should_nudge_continuation(
         );
     }
 
-    let resp = active_client.system_one(&clean_state, questions).await?;
+    let structured = crate::client::build_state(
+        serde_json::json!({
+            "transcript_tail": transcript_tail.trim(),
+            "previous_nudge": if has_prev_nudge { previous_nudge_summary } else { "" },
+        })
+        .as_object()
+        .cloned()
+        .unwrap_or_default(),
+    );
+    let resp = active_client.system_one(&structured, questions).await?;
 
     let mut phase = resp
         .answers
@@ -962,5 +1059,6 @@ pub async fn should_nudge_continuation(
         suggested_nudge_prompt,
         rationale,
         is_mock: resp.is_mock,
+        degraded_reason: resp.degraded_reason.clone(),
     })
 }

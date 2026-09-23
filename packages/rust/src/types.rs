@@ -47,10 +47,14 @@ pub struct ChoiceAnswer {
 /// Score answer with integer rating (1-indexed) and confidence.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ScoreAnswer {
-    pub score: i32,
+    /// Live payloads return a float score (e.g. 1.76); the offline mock uses whole numbers.
+    pub score: f64,
     pub confidence: f64,
+    /// Live payloads return a level -> description map; some clients send a list.
     #[serde(default)]
-    pub legend: Option<Vec<String>>,
+    pub legend: Option<serde_json::Value>,
+    #[serde(default)]
+    pub probabilities: Option<HashMap<String, f64>>,
 }
 
 /// Noul answer with calibrated probability between 0.0 and 1.0.
@@ -112,6 +116,9 @@ pub struct JevResponse {
     pub usage: JevUsage,
     #[serde(default)]
     pub is_mock: bool,
+    /// Set when the answer came from a fallback (auth_401, http_500, timeout, connection).
+    #[serde(default)]
+    pub degraded_reason: String,
 }
 
 /// Triage result for test or execution failure.
@@ -125,6 +132,9 @@ pub struct TestTriageResult {
     pub action_recommendation: String,
     pub recommendation: String,
     pub is_mock: bool,
+    /// Set when a provider failure caused the offline fallback (E0.2).
+    #[serde(default)]
+    pub degraded_reason: String,
 }
 
 /// Result of loop abort and dead-end check.
@@ -137,6 +147,9 @@ pub struct AbortGateResult {
     pub reasoning_summary: String,
     pub summary: String,
     pub is_mock: bool,
+    /// Set when a provider failure caused the offline fallback (E0.2).
+    #[serde(default)]
+    pub degraded_reason: String,
 }
 
 /// Model tier routing decision.
@@ -148,6 +161,9 @@ pub struct ModelRouteResult {
     pub recommended_model: String,
     pub rationale: String,
     pub is_mock: bool,
+    /// Set when a provider failure caused the offline fallback (E0.2).
+    #[serde(default)]
+    pub degraded_reason: String,
 }
 
 /// Step completion verification result.
@@ -159,6 +175,9 @@ pub struct VerificationResult {
     pub confidence: f64,
     pub needs_rework: bool,
     pub is_mock: bool,
+    /// Set when a provider failure caused the offline fallback (E0.2).
+    #[serde(default)]
+    pub degraded_reason: String,
 }
 
 /// Dynamic reasoning effort modulation result (Astra-Jev).
@@ -174,6 +193,9 @@ pub struct ReasoningEffortResult {
     pub cache_safe_recommendation: String,
     pub lease_steps: u32,
     pub is_mock: bool,
+    /// Set when a provider failure caused the offline fallback (E0.2).
+    #[serde(default)]
+    pub degraded_reason: String,
 }
 
 /// Continuation nudge decision result (CommandCode Jev Nudge).
@@ -187,6 +209,9 @@ pub struct NudgeGateResult {
     pub suggested_nudge_prompt: String,
     pub rationale: String,
     pub is_mock: bool,
+    /// Set when a provider failure caused the offline fallback (E0.2).
+    #[serde(default)]
+    pub degraded_reason: String,
 }
 
 /// Error type for Jev operations.

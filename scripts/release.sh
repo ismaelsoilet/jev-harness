@@ -53,9 +53,13 @@ run_checks() {
     cd "${REPO_ROOT}/packages/ts"
     npm test
 
-    echo "[3/3] Testing Rust..."
+    echo "[3/4] Testing Rust..."
     cd "${REPO_ROOT}/packages/rust"
     cargo test --quiet
+
+    echo "[4/4] Replay calibration gate (mock corpus vs recorded baseline)..."
+    cd "${REPO_ROOT}"
+    python3 -m jev_harness.cli replay --corpus tests/corpus --mock --no-report
 
     echo ""
     echo "✅ ALL TESTS PASSED ACROSS PYTHON, TYPESCRIPT, AND RUST!"
