@@ -2,6 +2,8 @@
 
 <p align="center">
   <a href="https://github.com/ismaelsoilet/jev-harness/actions/workflows/ci.yml"><img src="https://github.com/ismaelsoilet/jev-harness/actions/workflows/ci.yml/badge.svg" alt="CI Status"></a>
+  <a href="https://github.com/ismaelsoilet/jev-harness/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/tests-569%20passed-brightgreen.svg?logo=githubactions&logoColor=white" alt="Tests Passed"></a>
+  <a href="https://github.com/ismaelsoilet/jev-harness/releases"><img src="https://img.shields.io/github/v/release/ismaelsoilet/jev-harness?color=teal&logo=github&logoColor=white&cacheSeconds=0" alt="GitHub Release"></a>
   <a href="https://pypi.org/project/jev-harness/"><img src="https://img.shields.io/pypi/v/jev-harness.svg?color=blue&logo=pypi&logoColor=white&cacheSeconds=0" alt="PyPI version"></a>
   <a href="https://www.npmjs.com/package/@ismaelsoilet/jev-harness"><img src="https://img.shields.io/npm/v/@ismaelsoilet/jev-harness.svg?color=cb3837&logo=npm&logoColor=white&cacheSeconds=0" alt="npm version"></a>
   <a href="https://crates.io/crates/jev-harness"><img src="https://img.shields.io/crates/v/jev-harness.svg?color=dea584&logo=rust&logoColor=white&cacheSeconds=0" alt="crates.io version"></a>
@@ -12,7 +14,7 @@
   <a href="https://typesafe.ai"><img src="https://img.shields.io/badge/powered%20by-TypeSafe%20Jev%20System%20One-orange.svg" alt="TypeSafe Jev"></a>
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-Compatible-purple.svg" alt="MCP Compatible"></a>
   <a href="#"><img src="https://img.shields.io/badge/dependencies-0%20(pure%20stdlib)-success.svg" alt="Zero Dependencies"></a>
-  <a href="SYSTEM_1_5_IMPLEMENTATION.md"><img src="https://img.shields.io/badge/docs-System%201.5%20roadmap-8A2BE2.svg" alt="System 1.5 Docs"></a>
+  <a href="SYSTEM_1_5_IMPLEMENTATION.md"><img src="https://img.shields.io/badge/architecture-System%201.5%20Layer-8A2BE2.svg" alt="System 1.5 Architecture"></a>
 </p>
 
 <p align="center">
@@ -52,39 +54,83 @@ When an autonomous coding agent encounters a test failure or compiler error, the
 
 ## 🏗️ How It Works: System 1 → System 1.5 → System 2
 
-Daniel Kahneman's cognitive paradigm applied to agentic engineering, with this harness acting as the executive layer in between:
-- **System 1 (Fast, Intuitive, Calibrated):** **Jev** makes non-autoregressive, parallel, typed decisions. The provider reports ~100 ms typical latency (70 ms floor); measured end-to-end from this harness: **~80–100 ms** offline CLI and **~0.5–1.0 s** live on the free tier. Pricing: **$0.042 per 1M input tokens** ($0 output tokens).
-- **System 2 (Slow, Deliberative, Generative):** Frontier LLMs (GPT-6 Astra, Claude Fable 5.1) write code and solve deep algorithmic logic.
+Daniel Kahneman's cognitive paradigm applied to agentic engineering, with this harness acting as the **System 1.5 executive governance layer** between System 1 perception and System 2 deliberation:
+- **System 1 (Fast, Intuitive, Calibrated):** **TypeSafe Jev System One** provides non-autoregressive, parallel, typed micro-decisions. Latency: 70–300 ms (measured: **~80–100 ms** offline CLI, **~0.5–1.0 s** live on the free tier). Pricing: **$0.042 per 1M input tokens** ($0 output tokens). It answers specific closed-world questions (`triage_category`, `severity_score`, `should_abort`, `target_tier`, `completion_status`) without generative hallucinations.
+- **System 1.5 (Deterministic Connective Tissue & Executive Gate):** **`jev-harness`** is the executive decision layer that coordinates System 1 and System 2 into a robust, bounded feedback loop (Josh Rosen's cognitive agent paradigm):
+  - **Zero-trust state sanitization & focused perception:** Redacts sensitive credentials, masks prompt injections, and extracts targeted assertion slices (≤15 lines) instead of flooding models with 500-line terminal logs.
+  - **Deterministic short-circuits & auto-recovery:** Instantly diagnoses missing dependencies (`pip`, `npm`, `cargo`) and transient network/port hiccups in < 500 µs locally without spending any LLM tokens.
+  - **Uncertainty calibration & entropy envelopes:** Computes confidence margins and normalized entropy to guard against borderline calls, automatically escalating ambiguous cases to System 2.
+  - **Reasoning-effort leasing & doom-loop breaking:** Regulates cognitive effort tiers (`low` to `extra_high`) for frontier models and trips an automatic circuit breaker (`exit 1`) when agents get stuck in repetitive repair loops.
+  - **Cross-runtime parity:** Implemented natively in Python, TypeScript, and Rust with zero external runtime dependencies and full offline fallback.
+- **System 2 (Slow, Deliberative, Generative):** Frontier reasoning models (**GPT-6 Astra**, **Claude Fable 5.1**, **Claude Opus 5**) write complex code, architect multi-file refactorings, and solve deep logic defects. System 1.5 ensures System 2 is **only invoked when strictly necessary**, cutting token spend by up to ~80–90%.
 
 ```
-       ┌────────────────────────────────────────────────────────┐
-       │                 AI Coding Agent Loop                   │
-       └──────────────────────────┬─────────────────────────────┘
-                                  │
-                       Command/Test Execution
-                                  │
-                                  ▼
-                         [Test / Step Output]
-                                  │
-         ┌────────────────────────┴────────────────────────┐
-         ▼                                                 ▼
-   [PASS: Continue]                                 [FAIL: Error Log]
-                                                           │
-                                                           ▼
-                                               ┌───────────────────────┐
-                                               │   jev-harness gate    │
-                                               │ (Jev System One) │
-                                               └───────────┬───────────┘
-                                                           │
-                        ┌──────────────────────────────────┴──────────────────────────────────┐
-                        ▼                                                                     ▼
-             [skip_llm = True]                                                         [skip_llm = False]
-      (Env missing / Flaky / Trivial)                                                    (Deep Logic Bug)
-                        │                                                                     │
-                        ▼                                                                     ▼
-           Deterministic Shell Action                                                 Dispatch Targeted
-        (pip/npm install or fast retry)                                            Trace to Frontier LLM
-     ⚡ 0 Frontier Tokens / Instant Fix                                          💸 Cost Reduced by ~80%
+       ┌────────────────────────────────────────────────────────────────────────┐
+       │                   AI Coding Agent Execution Loop                       │
+       │     (OpenCode / Claude Code / Cursor / Windsurf / Antigravity IDE)     │
+       └───────────────────────────────────┬────────────────────────────────────┘
+                                           │
+                                [Step / Test Execution]
+                                           │
+                                           ▼
+                                 [Execution Output]
+                                           │
+                 ┌─────────────────────────┴─────────────────────────┐
+                 ▼                                                   ▼
+         [✅ PASS: Continue]                                  [❌ FAIL: Traceback]
+                                                                     │
+ ════════════════════════════════════════════════════════════════════╪══════════════════════════════════
+ 🧠 SYSTEM 1.5: EXECUTIVE DECISION & GOVERNANCE LAYER (jev-harness)  │
+ ────────────────────────────────────────────────────────────────────┼──────────────────────────────────
+                                                                     ▼
+                                                     ┌───────────────────────────────┐
+                                                     │ 1. Perception & Sanitization  │
+                                                     │  • Credential Redaction       │
+                                                     │  • Focused Traceback Slicing  │
+                                                     │  • Injection Screening Guard  │
+                                                     └───────────────┬───────────────┘
+                                                                     │
+                                                                     ▼
+                                                     ┌───────────────────────────────┐
+                                                     │ 2. Local Deterministic Fast   │
+                                                     │    Heuristics (< 500 µs)      │
+                                                     │  • Missing packages (regex)   │
+                                                     │  • Transient network / ports  │
+                                                     │  • Doom loop pattern match    │
+                                                     └───────────────┬───────────────┘
+                                                                     │
+                                                 ┌───────────────────┴───────────────────┐
+                                                 ▼ (Hit / Certain)                       ▼ (Ambiguous)
+ ┌──────────────────────────────────────────────────────────────┐        ┌───────────────────────────────┐
+ │ 3. Decision Cache & Receipts                                 │        │ ⚡ SYSTEM 1 (TypeSafe Jev)    │
+ │  • Deduplication via .jev/cache.json                         │        │  • Non-autoregressive model   │
+ │  • Append-only audit receipts (SHA-256)                      │        │  • Sub-second micro-decisions │
+ │  • Reasoning effort lease management                         │        │  • Typed score & distribution │
+ └──────────────────────────────┬───────────────────────────────┘        └───────────────┬───────────────┘
+                                │                                                        │
+                                └───────────────────────────┬────────────────────────────┘
+                                                            │
+                                                            ▼
+                                             ┌───────────────────────────────┐
+                                             │ 4. Uncertainty & Policy Gate  │
+                                             │  • Margin & Normalized Entropy│
+                                             │  • Dynamic effort modulation  │
+                                             │  • Fail-open / fail-closed    │
+                                             └──────────────┬────────────────┘
+                                                            │
+ ═══════════════════════════════════════════════════════════╪═══════════════════════════════════════════
+                         ┌──────────────────────────────────┴──────────────────────────────────┐
+                         ▼                                                                     ▼
+         [skip_llm = True / Actionable]                                        [skip_llm = False / Escalated]
+                         │                                                                     │
+                         ▼                                                                     ▼
+            Deterministic Shell Recovery                                         🧠 SYSTEM 2 (Frontier LLM)
+          • pip/npm/cargo install package                                         (GPT-6 Astra / Claude Fable)
+          • Exponential backoff retry                                             • Deep algorithmic debugging
+          • Abort circuit breaker (exit 1)                                        • Multi-file architectural fix
+                         │                                                        • Bounded reasoning effort
+                         ▼                                                                     │
+             ⚡ 0 Frontier Tokens Spent                                                💸 Cost cut by ~80%
 ```
 
 ---
@@ -134,9 +180,10 @@ Available on all three major package registries with zero external runtime depen
 
 | Ecosystem | Registry | Package / Command | Status |
 | :--- | :--- | :--- | :--- |
-| **Python** | [PyPI](https://pypi.org/project/jev-harness/) | `pip install jev-harness` | [![PyPI](https://img.shields.io/pypi/v/jev-harness.svg?color=blue&logo=pypi&logoColor=white&cacheSeconds=300)](https://pypi.org/project/jev-harness/) |
-| **TypeScript / Node** | [npm](https://www.npmjs.com/package/@ismaelsoilet/jev-harness) | `npm install @ismaelsoilet/jev-harness` | [![npm](https://img.shields.io/npm/v/@ismaelsoilet/jev-harness.svg?color=cb3837&logo=npm&logoColor=white)](https://www.npmjs.com/package/@ismaelsoilet/jev-harness) |
-| **Rust** | [crates.io](https://crates.io/crates/jev-harness) | `cargo add jev-harness` | [![crates.io](https://img.shields.io/crates/v/jev-harness.svg?color=dea584&logo=rust&logoColor=white)](https://crates.io/crates/jev-harness) |
+| **Python** | [PyPI](https://pypi.org/project/jev-harness/) | `pip install jev-harness` | [![PyPI](https://img.shields.io/pypi/v/jev-harness.svg?color=blue&logo=pypi&logoColor=white&cacheSeconds=0)](https://pypi.org/project/jev-harness/) |
+| **TypeScript / Node** | [npm](https://www.npmjs.com/package/@ismaelsoilet/jev-harness) | `npm install @ismaelsoilet/jev-harness` | [![npm](https://img.shields.io/npm/v/@ismaelsoilet/jev-harness.svg?color=cb3837&logo=npm&logoColor=white&cacheSeconds=0)](https://www.npmjs.com/package/@ismaelsoilet/jev-harness) |
+| **Rust** | [crates.io](https://crates.io/crates/jev-harness) | `cargo add jev-harness` | [![crates.io](https://img.shields.io/crates/v/jev-harness.svg?color=dea584&logo=rust&logoColor=white&cacheSeconds=0)](https://crates.io/crates/jev-harness) |
+| **GitHub Releases** | [Releases](https://github.com/ismaelsoilet/jev-harness/releases) | Prebuilt binaries & assets | [![GitHub Release](https://img.shields.io/github/v/release/ismaelsoilet/jev-harness?color=teal&logo=github&logoColor=white&cacheSeconds=0)](https://github.com/ismaelsoilet/jev-harness/releases) |
 
 ```bash
 # Python (CLI + SDK)
