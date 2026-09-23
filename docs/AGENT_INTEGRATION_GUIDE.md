@@ -97,7 +97,7 @@ claude mcp add jev-harness -- npx -y @ismaelsoilet/jev-harness mcp
 claude mcp add jev-harness -- jev-mcp
 ```
 
-### MCP tools exposed by the server (v0.1.13)
+### MCP tools exposed by the server (verified for the current release)
 
 The server exposes **six** tools. Call `tools/list` yourself if you need the live schema — the argument names below are the ones to pass in `tools/call`:
 
@@ -141,6 +141,29 @@ printf '%s\n%s\n%s\n' \
 
 > Shell-quoting note: escape sequences like `\'` inside single quotes are **not** valid shell or JSON. For payloads that contain quotes, newlines or non-ASCII text, write a tiny stdio client (or use the CLI with `--log <file>`), instead of inlining the log in `printf`.
 
+#### Tiny stdio MCP client (for logs with quotes, newlines or non-ASCII text)
+
+Inlining a real traceback in `printf` is fragile. Save this as `mcp_triage.py` and call `python3 mcp_triage.py path/to/failure.log`:
+
+```python
+import json, subprocess, sys
+
+log = open(sys.argv[1], encoding="utf-8", errors="replace").read()
+messages = [
+    {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+    {"jsonrpc": "2.0", "method": "notifications/initialized"},
+    {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
+        "name": "jev_triage_test_failure", "arguments": {"failure_log": log}}},
+]
+payload = "".join(json.dumps(m) + "\n" for m in messages)
+proc = subprocess.run([sys.executable, "-m", "jev_harness.mcp_server"], input=payload,
+                      capture_output=True, text=True)
+for line in proc.stdout.splitlines():
+    msg = json.loads(line)
+    if msg.get("id") == 2:
+        print(msg["result"]["content"][0]["text"])
+```
+
 > **Virtualenv note.** An MCP client does not inherit your shell: it launches the server with a minimal environment. If `jev-harness` is installed inside a project virtualenv, point the client at the absolute path (`"command": "/abs/path/.venv/bin/jev-mcp"`), or use the `npx` form which needs no Python at all.
 
 **For CommandCode (`.commandcode/config.json`):**
@@ -180,7 +203,7 @@ printf '%s\n%s\n%s\n' \
   }
 }
 ```
-*(Or if Python is installed: `"command": "jev-mcp"`)*
+*(Or if Python is installed: `"command": "jev-mcp"` — with a project virtualenv, use the absolute path and empty args: `{"command": "/abs/path/.venv/bin/jev-mcp", "args": []}`)*
 
 **For Claude Desktop (`claude_desktop_config.json`):**
 ```json
@@ -243,7 +266,8 @@ cargo test 2>&1 | jev test-gate
 #### Semantic Exit Codes:
 - `0`: **Safe to proceed deterministically** (`skip_llm = true`). Jev outputs the exact fix (e.g. `pip install pytest-mock`).
 - `1`: **Deep logic failure** (`skip_llm = false`) or **Trajectory Abort Recommended**. Only now should the agent invoke a frontier reasoning model.
-- `2`: Syntax or invocation error (for example an invalid flag, an unknown subcommand, or a `--log` path that does not exist).
+- `2`: Syntax or invocation error (for example an invalid flag, an unknown subcommand, or a `--log` path that does not exist). Invocation errors are printed as plain text to stderr **even with `--json`**, so machine consumers must branch on the exit code first.
+- Note that exit `0` covers two distinct outcomes: a deterministic fix for a real failure (`skip_llm=true`) and a green run (`category="no_failure"`). Branch on `category`, not only on the exit code.
 
 #### Automated Trajectory Guard (Check before repeating steps):
 ```bash
@@ -343,7 +367,12 @@ jev-harness init --git   # must run inside a git repository
 jev-harness init --git --test-cmd "make test-fast"
 ```
 
-What `init` writes: `.git/hooks/pre-commit` (executable; detects npm/pytest/cargo, prefers the project virtualenv binaries, regenerable), `.jev.json`, `.env.jev.example` and `.agents/skills/jev-harness/SKILL.md`; `.cursor/mcp.json` only with `--cursor`/`--all`. It **never overwrites existing files**; if a foreign hook is present it is preserved and the gate is written to `.git/hooks/pre-commit.jev` — **the gate is NOT active until you merge it**, and `init` says so.
+What `init` writes: `.git/hooks/pre-commit` (executable; detects npm/pytest/cargo, prefers the project virtualenv binaries, regenerable), `.jev.json`, `.env.jev.example` and `.agents/skills/jev-harness/SKILL.md`; `.cursor/mcp.json` only with `--cursor`/`--all`. It **never overwrites existing files**; if a foreign hook is present it is preserved and the gate is written to `.git/hooks/pre-commit.jev` — **the gate is NOT active until you merge it**, and `init` says so. The simplest merge is to chain it at the end of your existing hook:
+
+```sh
+# .git/hooks/pre-commit (after your own checks)
+exec "$(dirname "$0")/pre-commit.jev" "$@"
+```
 > **Virtualenv note:** the generated hook uses `./.venv/bin/...` when a virtualenv exists, so it works without activating the environment. If you install the CLI globally and run tests inside a venv, the hook still resolves both through that venv.
 
 **In GitHub Actions (`.github/workflows/ci.yml`):**

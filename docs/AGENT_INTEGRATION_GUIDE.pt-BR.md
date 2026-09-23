@@ -97,7 +97,7 @@ claude mcp add jev-harness -- npx -y @ismaelsoilet/jev-harness mcp
 claude mcp add jev-harness -- jev-mcp
 ```
 
-### Ferramentas MCP expostas pelo servidor (v0.1.13)
+### Ferramentas MCP expostas pelo servidor (verified for the current release)
 
 O servidor expõe **seis** ferramentas. Chame `tools/list` se precisar do schema ao vivo — os nomes de argumento abaixo são os que devem ser passados em `tools/call`:
 
@@ -140,6 +140,29 @@ printf '%s\n%s\n%s\n' \
 ```
 
 > Nota de quoting no shell: sequências como `\'` dentro de aspas simples **não** são válidas em shell nem em JSON. Para payloads com aspas, quebras de linha ou texto não-ASCII, escreva um pequeno cliente stdio (ou use a CLI com `--log <arquivo>`), em vez de embutir o log no `printf`.
+
+#### Cliente MCP stdio mínimo (para logs com aspas, quebras de linha ou texto não-ASCII)
+
+Embutir um traceback real no `printf` é frágil. Salve como `mcp_triage.py` e chame `python3 mcp_triage.py caminho/para/falha.log`:
+
+```python
+import json, subprocess, sys
+
+log = open(sys.argv[1], encoding="utf-8", errors="replace").read()
+messages = [
+    {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+    {"jsonrpc": "2.0", "method": "notifications/initialized"},
+    {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
+        "name": "jev_triage_test_failure", "arguments": {"failure_log": log}}},
+]
+payload = "".join(json.dumps(m) + "\n" for m in messages)
+proc = subprocess.run([sys.executable, "-m", "jev_harness.mcp_server"], input=payload,
+                      capture_output=True, text=True)
+for line in proc.stdout.splitlines():
+    msg = json.loads(line)
+    if msg.get("id") == 2:
+        print(msg["result"]["content"][0]["text"])
+```
 
 > **Nota sobre virtualenv.** Um cliente MCP não herda o seu shell: ele inicia o servidor com um ambiente mínimo. Se o `jev-harness` estiver instalado dentro de um virtualenv do projeto, aponte o cliente para o caminho absoluto (`"command": "/caminho/absoluto/.venv/bin/jev-mcp"`), ou use a forma `npx`, que não precisa de Python.
 
@@ -244,7 +267,8 @@ cargo test 2>&1 | jev test-gate
 #### Códigos de Saída Semânticos:
 - `0`: **Seguro para agir deterministicamente** (`skip_llm = true`). O Jev imprime a ação exata (ex: `pip install pytest-mock`).
 - `1`: **Falha lógica profunda** (`skip_llm = false`) ou **Aborto Recomendado**. Apenas neste momento o agente deve acionar o modelo de fronteira.
-- `2`: Erro de sintaxe ou invocação (por exemplo flag inválida, subcomando desconhecido ou um caminho `--log` inexistente).
+- `2`: Erro de sintaxe ou invocação (por exemplo flag inválida, subcomando desconhecido ou um caminho `--log` inexistente). Erros de invocação são impressos como texto simples no stderr **mesmo com `--json`**, então consumidores de máquina devem ramificar pelo exit code primeiro.
+- O exit `0` cobre dois resultados distintos: correção determinística para uma falha real (`skip_llm=true`) e execução verde (`category="no_failure"`). Ramifique por `category`, não apenas pelo exit code.
 
 #### Disjuntor de Trajetória Automatizado (Checar antes de repetir passos):
 ```bash
@@ -344,7 +368,12 @@ jev-harness init --git   # precisa rodar dentro de um repositório git
 jev-harness init --git --test-cmd "make test-fast"
 ```
 
-O que o `init` escreve: `.git/hooks/pre-commit` (executável; detecta npm/pytest/cargo, prefere os binários do virtualenv, regenerável), `.jev.json`, `.env.jev.example` e `.agents/skills/jev-harness/SKILL.md`; `.cursor/mcp.json` apenas com `--cursor`/`--all`. **Nunca sobrescreve ficheiros existentes**; se já existir um hook alheio, ele é preservado e o gate vai para `.git/hooks/pre-commit.jev` — **o gate NÃO fica ativo até você fazer o merge**, e o `init` avisa isso.
+O que o `init` escreve: `.git/hooks/pre-commit` (executável; detecta npm/pytest/cargo, prefere os binários do virtualenv, regenerável), `.jev.json`, `.env.jev.example` e `.agents/skills/jev-harness/SKILL.md`; `.cursor/mcp.json` apenas com `--cursor`/`--all`. **Nunca sobrescreve ficheiros existentes**; se já existir um hook alheio, ele é preservado e o gate vai para `.git/hooks/pre-commit.jev` — **o gate NÃO fica ativo até você fazer o merge**, e o `init` avisa isso. O merge mais simples é encadear no fim do seu hook existente:
+
+```sh
+# .git/hooks/pre-commit (depois das suas verificações)
+exec "$(dirname "$0")/pre-commit.jev" "$@"
+```
 > **Nota sobre virtualenv:** o hook gerado usa `./.venv/bin/...` quando existe virtualenv, então funciona sem ativar a env. Se instalar a CLI globalmente e rodar os testes dentro de uma venv, o hook continua resolvendo ambos por essa venv.
 
 **No GitHub Actions (`.github/workflows/ci.yml`):**
