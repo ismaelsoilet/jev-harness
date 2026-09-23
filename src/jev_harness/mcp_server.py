@@ -13,29 +13,20 @@ from pathlib import Path
 import sys
 from typing import Any, Dict, List, Optional
 
-try:
-    from . import __version__
-    from .client import JevClient
-    from .gates import (
-        modulate_reasoning_effort,
-        route_model_tier,
-        should_abort_trajectory,
-        should_nudge_continuation,
-        triage_test_failure,
-        verify_step_completion,
-    )
-except (ImportError, ValueError):
+if __package__ is None or __package__ == "":
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from jev_harness import __version__
-    from jev_harness.client import JevClient
-    from jev_harness.gates import (
-        modulate_reasoning_effort,
-        route_model_tier,
-        should_abort_trajectory,
-        should_nudge_continuation,
-        triage_test_failure,
-        verify_step_completion,
-    )
+    __package__ = "jev_harness"
+
+from . import __version__
+from .client import JevClient
+from .gates import (
+    modulate_reasoning_effort,
+    route_model_tier,
+    should_abort_trajectory,
+    should_nudge_continuation,
+    triage_test_failure,
+    verify_step_completion,
+)
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "jev-harness"

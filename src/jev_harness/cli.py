@@ -12,43 +12,27 @@ from pathlib import Path
 import sys
 from typing import Optional
 
-try:
-    from . import __version__
-    from .client import JevClient
-    from .config import load_repo_config
-    from .session import (
-        ASSUMED_COST_PER_ABORT_USD,
-        ASSUMED_COST_PER_TRIAGE_SKIP_USD,
-        ASSUMED_TOKENS_PER_ABORT,
-        ASSUMED_TOKENS_PER_TRIAGE_SKIP,
-    )
-    from .gates import (
-        modulate_reasoning_effort,
-        route_model_tier,
-        should_abort_trajectory,
-        should_nudge_continuation,
-        triage_test_failure,
-        verify_step_completion,
-    )
-except (ImportError, ValueError):
+if __package__ is None or __package__ == "":
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from jev_harness import __version__
-    from jev_harness.client import JevClient
-    from jev_harness.config import load_repo_config
-    from jev_harness.session import (
-        ASSUMED_COST_PER_ABORT_USD,
-        ASSUMED_COST_PER_TRIAGE_SKIP_USD,
-        ASSUMED_TOKENS_PER_ABORT,
-        ASSUMED_TOKENS_PER_TRIAGE_SKIP,
-    )
-    from jev_harness.gates import (
-        modulate_reasoning_effort,
-        route_model_tier,
-        should_abort_trajectory,
-        should_nudge_continuation,
-        triage_test_failure,
-        verify_step_completion,
-    )
+    __package__ = "jev_harness"
+
+from . import __version__
+from .client import JevClient
+from .config import load_repo_config
+from .session import (
+    ASSUMED_COST_PER_ABORT_USD,
+    ASSUMED_COST_PER_TRIAGE_SKIP_USD,
+    ASSUMED_TOKENS_PER_ABORT,
+    ASSUMED_TOKENS_PER_TRIAGE_SKIP,
+)
+from .gates import (
+    modulate_reasoning_effort,
+    route_model_tier,
+    should_abort_trajectory,
+    should_nudge_continuation,
+    triage_test_failure,
+    verify_step_completion,
+)
 
 
 def _path_is_file(value: str) -> bool:
