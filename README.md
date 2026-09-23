@@ -22,7 +22,7 @@
 >
 > `jev-harness` is an ultra-fast, zero-dependency token optimizer, test failure triage gate, and semantic guardrail for AI coding agents (OpenCode, Command Code, Claude Code, Cursor, Antigravity IDE, Windsurf, Zed, and Pi). Powered by **TypeSafe AI's Jev System One** non-autoregressive decision model.
 >
-> 🤖 **Operating as an AI Agent?** You **MUST** read [`AGENTS.md`](AGENTS.md) ([Português](AGENTS.pt-BR.md)) before executing tasks, and refer to our [**Universal AI Agent Integration Guide**](docs/AGENT_INTEGRATION_GUIDE.md) to plug the harness into any project in 2 minutes.
+> 🤖 **Operating as an AI Agent?** If you are **working on this repository**, read [`AGENTS.md`](AGENTS.md) ([Português](AGENTS.pt-BR.md)) first. If you are **integrating the tool into your own project**, you do not need it — use the [**Universal AI Agent Integration Guide**](docs/AGENT_INTEGRATION_GUIDE.md) (2-minute setup, no API key required to start).
 
 ---
 
@@ -378,7 +378,7 @@ Add to your project's `CLAUDE.md`:
 ```markdown
 ## Jev Harness Token Governance
 - Before querying LLMs on test/build failures, call `jev_triage_test_failure`. If `skip_llm=true`, execute the deterministic fix directly.
-- If a task retries twice without progress, call `jev_should_abort_trajectory` to break doom loops.
+- If a task retries twice without progress, call `jev_abort_check` to break doom loops.
 - For mechanical bash commands or file lookups, call `jev_modulate_reasoning_effort` with effort="low".
 ```
 
@@ -589,7 +589,7 @@ Ultra-low latency (< 500µs local, zero-overhead) for systems programming, Tauri
 
 ```toml
 [dependencies]
-jev-harness = "0.1.12"
+jev-harness = "0.1.13"
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -641,18 +641,21 @@ The hook needs your test command as an argument (a hook repository cannot guess 
 ```yaml
 repos:
   - repo: https://github.com/ismaelsoilet/jev-harness
-    rev: v0.1.12
+    rev: v0.1.13
     hooks:
       - id: jev-test-gate
         args: ["pytest -q"]     # or "npm test", "cargo test --quiet", ...
 ```
 
 ### Generated Git Hook (`jev-harness init --git`)
-Detects your runner (`npm`/`pytest`/`cargo`), writes a failure-only hook and never overwrites an existing one (it saves `pre-commit.jev` instead):
+Detects your runner (`npm`/`pytest`/`cargo`), writes a failure-only hook and never overwrites an existing one (it saves `pre-commit.jev` instead). It is **virtualenv-aware**: when a `.venv`/`venv` exists the hook uses its binaries (e.g. `./.venv/bin/python`, `./.venv/bin/jev-harness`), so it works whether or not the environment is activated.
 
 ```bash
 jev-harness init --git
+jev-harness init --git --test-cmd "make test-fast"   # override the detected command
 ```
+
+`init` also scaffolds `.jev.json`, `.env.jev.example` (all providers), `.agents/skills/jev-harness/SKILL.md` and, with `--cursor`, `.cursor/mcp.json`. It **never overwrites existing files or foreign hooks**; re-running regenerates only the hook it generated itself (recognised by its marker, including pre-v0.1.13 variants).
 
 ### Husky Hook (`.husky/pre-commit`)
 Let the runner decide; ask Jev only for the triage of a failure:
@@ -662,6 +665,8 @@ if ! OUT=$(npm test 2>&1); then printf '%s\n' "$OUT" | jev-harness test-gate; ex
 ```
 
 > Green runs are detected deterministically (`category: "no_failure"`, exit `0`, zero API calls), so `npm test 2>&1 | jev-harness test-gate` is also safe — but the failure-only form above is the most explicit and never depends on run-summary parsing.
+>
+> ⚠️ **`.git/hooks/` is not version-controlled.** A generated hook lives only on your machine; for teams, commit a hook script (or use the `pre-commit` framework with `id: jev-test-gate`) so every developer gets the same gate.
 
 ---
 
@@ -746,6 +751,15 @@ You can also trigger releases via GitHub Actions:
 
 *(Requires `PYPI_API_TOKEN` and `CARGO_REGISTRY_TOKEN` in GitHub Repository Secrets; npm uses OpenID Connect (OIDC) Trusted Publishing with cryptographic Sigstore provenance without static tokens).*
 
+## 🌟 What's New in v0.1.13
+
+- 🔌 **MCP integration actually works out of the box**: the guide now lists the **real** tool names and their arguments (`jev_triage_test_failure`, `jev_abort_check`, `jev_route_task`, `jev_verify_completion`, `jev_modulate_reasoning_effort`, `jev_should_nudge_continuation`), a 20-second smoke test, a valid `tools/call` example, a virtualenv note for client configs and an OpenCode snippet. The previous names (`jev_should_abort_trajectory`, `jev_route_model_tier`, `jev_verify_step_completion`, `jev_get_telemetry`) did not exist.
+- 🪝 **`init --git` is virtualenv-aware**: the generated hook uses the project's environment binaries (`./.venv/bin/python`, `./.venv/bin/jev-harness`) when present, so a green suite is no longer blocked when the virtualenv is not activated, and `--test-cmd "<command>"` overrides the detected runner.
+- 🛡️ **`init` never clobbers**: existing agent skills are preserved (like `.jev.json` and `.env.jev.example`), and only the hook it generated itself (marker, including pre-v0.1.13 variants) is regenerated.
+- 📋 **MCP/CLI output parity**: the Python MCP server now returns `action_recommendation` alongside `recommendation` (and `summary` alongside `reasoning_summary`), matching the TypeScript runtime.
+- 🧭 **Clearer onboarding**: the Quickstart states that **no API key is required** (offline mode is free and makes zero network calls), `status` guidance is fully in English, `.env.jev.example` lists every provider, and the README scopes `AGENTS.md` to people working on the repository itself.
+- 🧪 **210-Test Battery**: 100% pass rate across 210 tests (116 Python, 49 Rust, 45 TypeScript). A fresh, context-free AI agent reproduced the full integration twice from the published docs; every gap it found is fixed here.
+
 ## 🌟 What's New in v0.1.12
 
 - ✅ **Green runs never block or escalate**: a strict, deterministic success detector recognizes passing summaries from pytest, vitest, jest, cargo, go, mocha, rspec and unittest, returning `category: "no_failure"` with exit `0` and **zero API calls**. Real failures always veto the shortcut (`1 failed`, `FAILED`, tracebacks, panics, dependency/transient errors). This fixes false failures in pre-commit/husky recipes for JS and Rust projects.
@@ -766,7 +780,7 @@ You can also trigger releases via GitHub Actions:
 - 🚦 **Release gate hardened**: `release.yml` now requires the full CI matrix (Linux/macOS/Windows, Python 3.9-3.13, Node 18-22, Rust) through a reusable workflow gate before publishing to PyPI, npm or crates.io — a red CI can no longer ship a release.
 - 🧹 **Zero clippy warnings** across the Rust workspace.
 - 🧩 **Tri-runtime heuristic parity**: the TypeScript engine now scores an explicit assertion exactly like Python and Rust, so the rules/04 precedence snippet (`FAIL` + cross-line `Expected:`/`Received:` containing a module name) is `deep_logic`/`skip_llm=false` on every runtime. Assertions spanning multiple lines are detected, and `Port 8080 is already in use`-style messages are `flaky_transient`.
-- 🧪 **197-Test Battery**: 100% pass rate across 197 tests (107 Python, 47 Rust, 43 TypeScript) at v0.1.11; superseded by the 207-test battery in v0.1.12.
+- 🧪 **197-Test Battery**: 100% pass rate across 197 tests (107 Python, 47 Rust, 43 TypeScript) at v0.1.11; superseded by the 210-test battery in v0.1.12.
 
 ## 🌟 What's New in v0.1.10
 

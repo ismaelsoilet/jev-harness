@@ -376,7 +376,7 @@ Adicione ao arquivo `CLAUDE.md` do seu projeto:
 ```markdown
 ## Governança de Tokens com Jev Harness
 - Antes de consultar LLMs em falhas de teste ou build, execute `jev_triage_test_failure`. Se `skip_llm=true`, execute a correção determinística diretamente no shell.
-- Se uma tarefa falhar 2 vezes seguidas sem progresso, execute `jev_should_abort_trajectory` para quebrar loops circulares.
+- Se uma tarefa falhar 2 vezes seguidas sem progresso, execute `jev_abort_check` para quebrar loops circulares.
 - Para comandos mecânicos ou busca de arquivos, chame `jev_modulate_reasoning_effort` com effort="low".
 ```
 
@@ -545,7 +545,7 @@ Latência ultra-baixa (< 500µs local, zero-overhead) para Tauri, ferramentas de
 
 ```toml
 [dependencies]
-jev-harness = "0.1.12"
+jev-harness = "0.1.13"
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -571,18 +571,21 @@ O hook exige o seu comando de teste como argumento (um repositório de hooks nã
 ```yaml
 repos:
   - repo: https://github.com/ismaelsoilet/jev-harness
-    rev: v0.1.12
+    rev: v0.1.13
     hooks:
       - id: jev-test-gate
         args: ["pytest -q"]     # ou "npm test", "cargo test --quiet", ...
 ```
 
 ### Hook de Git gerado (`jev-harness init --git`)
-Detecta o seu runner (`npm`/`pytest`/`cargo`), escreve um hook failure-only e nunca sobrescreve um existente (salva `pre-commit.jev`):
+Detecta o seu runner (`npm`/`pytest`/`cargo`), escreve um hook failure-only e nunca sobrescreve um existente (salva `pre-commit.jev`). É **compatível com virtualenv**: quando existe `.venv`/`venv`, o hook usa os binários dessa env (ex.: `./.venv/bin/python`, `./.venv/bin/jev-harness`), funcionando com ou sem a env ativada.
 
 ```bash
 jev-harness init --git
+jev-harness init --git --test-cmd "make test-fast"   # sobrescreve o comando detectado
 ```
+
+O `init` também cria `.jev.json`, `.env.jev.example` (todos os provedores), `.agents/skills/jev-harness/SKILL.md` e, com `--cursor`, `.cursor/mcp.json`. **Nunca sobrescreve ficheiros existentes nem hooks alheios**; reexecutar regenera apenas o hook que ele próprio gerou (reconhecido pelo marcador, incluindo variantes anteriores à v0.1.13).
 
 ### Hook do Husky (`.husky/pre-commit`)
 Deixe o runner decidir; peça ao Jev apenas o triage da falha:
@@ -592,6 +595,8 @@ if ! OUT=$(npm test 2>&1); then printf '%s\n' "$OUT" | jev-harness test-gate; ex
 ```
 
 > Execuções verdes são detectadas deterministicamente (`category: "no_failure"`, exit `0`, zero chamadas de API), então `npm test 2>&1 | jev-harness test-gate` também é seguro — mas a forma failure-only acima é mais explícita e não depende de parsing do resumo.
+>
+> ⚠️ **`.git/hooks/` não é versionado.** Um hook gerado existe apenas na sua máquina; para equipas, faça commit de um script de hook (ou use o framework `pre-commit` com `id: jev-test-gate`) para que todos tenham o mesmo gate.
 
 ---
 
@@ -628,6 +633,15 @@ Quando em modo de simulação offline (`--mock` ou durante partições de rede),
 
 ---
 
+## 🌟 O que há de Novo na v0.1.13
+
+- 🔌 **Integração MCP funciona de imediato**: o guia agora lista os nomes **reais** das ferramentas e seus argumentos (`jev_triage_test_failure`, `jev_abort_check`, `jev_route_task`, `jev_verify_completion`, `jev_modulate_reasoning_effort`, `jev_should_nudge_continuation`), um smoke test de 20 segundos, um exemplo válido de `tools/call`, nota de virtualenv para configs de cliente e snippet do OpenCode. Os nomes anteriores (`jev_should_abort_trajectory`, `jev_route_model_tier`, `jev_verify_step_completion`, `jev_get_telemetry`) não existiam.
+- 🪝 **`init --git` é compatível com virtualenv**: o hook gerado usa os binários da env do projeto (`./.venv/bin/python`, `./.venv/bin/jev-harness`) quando existem, então uma suíte verde deixa de ser bloqueada com a env desativada, e `--test-cmd "<comando>"` sobrescreve o runner detectado.
+- 🛡️ **`init` nunca destrói nada**: skills existentes são preservadas (como `.jev.json` e `.env.jev.example`), e apenas o hook gerado por ele próprio (marcador, incluindo variantes anteriores à v0.1.13) é regenerado.
+- 📋 **Paridade de saída MCP/CLI**: o servidor MCP em Python agora retorna `action_recommendation` junto de `recommendation` (e `summary` junto de `reasoning_summary`), igual ao runtime TypeScript.
+- 🧭 **Onboarding mais claro**: o Início Rápido informa que **nenhuma chave de API é necessária** (o modo offline é grátis e faz zero chamadas de rede), as instruções do `status` estão em inglês, o `.env.jev.example` lista todos os provedores e o README delimita o `AGENTS.md` a quem trabalha no próprio repositório.
+- 🧪 **Bateria de 210 Testes**: 100% de aprovação em 210 testes (116 Python, 49 Rust, 45 TypeScript). Um agente de IA novo, sem contexto, reproduziu a integração completa duas vezes a partir dos docs publicados; cada lacuna que encontrou está corrigida aqui.
+
 ## 🌟 O que há de Novo na v0.1.12
 
 - ✅ **Execuções verdes nunca bloqueiam nem escalam**: um detector determinístico e estrito reconhece resumos aprovados de pytest, vitest, jest, cargo, go, mocha, rspec e unittest, retornando `category: "no_failure"` com exit `0` e **zero chamadas de API**. Falhas reais sempre vetam o atalho (`1 failed`, `FAILED`, tracebacks, panics, erros de dependência/transientes). Isso corrige as falsas falhas nas receitas de pre-commit/husky em projetos JS e Rust.
@@ -648,7 +662,7 @@ Quando em modo de simulação offline (`--mock` ou durante partições de rede),
 - 🚦 **Gate de release endurecido**: o `release.yml` agora exige toda a matriz de CI (Linux/macOS/Windows, Python 3.9-3.13, Node 18-22, Rust) via workflow reutilizável antes de publicar no PyPI, npm ou crates.io — uma CI vermelha não consegue mais publicar uma release.
 - 🧹 **Zero avisos de clippy** em todo o workspace Rust.
 - 🧩 **Paridade heurística tri-runtime**: o motor TypeScript agora pontua uma asserção explícita exatamente como Python e Rust, então o snippet de precedência da regra 04 (`FAIL` + `Expected:`/`Received:` em linhas separadas contendo nome de módulo) é `deep_logic`/`skip_llm=false` em todos os runtimes. Asserções em múltiplas linhas são detectadas, e mensagens como `Port 8080 is already in use` são `flaky_transient`.
-- 🧪 **Bateria de 197 Testes**: 100% de aprovação em 197 testes (107 Python, 47 Rust, 43 TypeScript) na v0.1.11; substituída pela bateria de 207 testes na v0.1.12.
+- 🧪 **Bateria de 197 Testes**: 100% de aprovação em 197 testes (107 Python, 47 Rust, 43 TypeScript) na v0.1.11; substituída pela bateria de 210 testes na v0.1.12.
 
 ## 🌟 O que há de Novo na v0.1.10
 

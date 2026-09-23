@@ -1,6 +1,6 @@
 # 🚀 Protocolo de Release e Sincronização nos 4 Registries (Quad-Sync)
 
-> **Documento Oficial de Engenharia — Versão: v0.1.12**  
+> **Documento Oficial de Engenharia — Versão: v0.1.13**  
 > *Procedimento Obrigatório para Releases, Builds e Sincronização.*
 
 ---
@@ -22,8 +22,8 @@ O `jev-harness` é distribuído simultaneamente para três ecossistemas de lingu
 
 Toda nova versão, build ou correção que mereça lançamento deve seguir estritamente estes 6 passos sequenciais:
 
-### Passo 1: Execução da Bateria Completa de 207 Testes
-Antes de qualquer alteração de versão, todos os 207 testes devem passar nos 3 runtimes:
+### Passo 1: Execução da Bateria Completa de 210 Testes
+Antes de qualquer alteração de versão, todos os 210 testes devem passar nos 3 runtimes:
 ```bash
 ./scripts/release.sh --check
 ```

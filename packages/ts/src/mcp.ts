@@ -11,7 +11,7 @@ import {
 
 const PROTOCOL_VERSION = "2024-11-05";
 const SERVER_NAME = "jev-harness";
-const SERVER_VERSION = "0.1.12";
+const SERVER_VERSION = "0.1.13";
 
 export const TOOLS_MANIFEST = [
   {

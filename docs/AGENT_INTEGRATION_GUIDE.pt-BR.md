@@ -2,6 +2,8 @@
 
 **[ 🇬🇧 English ](AGENT_INTEGRATION_GUIDE.md) | [ 🇧🇷 Português ](AGENT_INTEGRATION_GUIDE.pt-BR.md)**
 
+> **Nota para integradores:** o `AGENTS.md` do repositório jev-harness é o ficheiro de governança *daquele* repositório (protocolo de release, registro de modelos). Você **não** precisa dele para integrar a ferramenta no seu projeto — este guia é autossuficiente.
+
 > **Manual de implementação pronta para uso (turnkey) para agentes autônomos de codificação com IA (Claude Code, OpenAI Codex, Pi, Oh My Pi, CommandCode, Cursor, Antigravity, OpenCode, Windsurf, Zed, Devin, Aider) e engenheiros equipando fluxos de agentes em QUALQUER projeto.**
 
 ---
@@ -62,6 +64,8 @@ O triage live envia o log no campo `state`. Strings com aparência de segredo s�
 
 ## ⚡ Início Rápido: 4 Modos Universais de Integração
 
+> **Comece aqui:** nenhuma chave de API é necessária. Siga com o modo offline e adicione uma chave de provedor depois, apenas se quiser decisões live do modelo.
+
 Escolha o modo mais adequado para o ambiente de execução do seu agente:
 
 ```
@@ -93,6 +97,47 @@ claude mcp add jev-harness -- npx -y @ismaelsoilet/jev-harness mcp
 claude mcp add jev-harness -- jev-mcp
 ```
 
+### Ferramentas MCP expostas pelo servidor (v0.1.12)
+
+O servidor expõe **seis** ferramentas. Chame `tools/list` se precisar do schema ao vivo — os nomes de argumento abaixo são os que devem ser passados em `tools/call`:
+
+| Ferramenta | Argumentos obrigatórios | Retorna |
+| :--- | :--- | :--- |
+| `jev_triage_test_failure` | `failure_log` | categoria, `skip_llm`, recomendação (execuções verdes retornam `no_failure`) |
+| `jev_abort_check` | `proposed_step` (opcional: `recent_attempts_summary`) | `should_abort`, ação, viabilidade, resumo |
+| `jev_route_task` | `task_description` | tier de modelo, modelo recomendado, justificativa |
+| `jev_verify_completion` | `acceptance_criteria`, `produced_output` | `is_verified`, rigor, probabilidade |
+| `jev_modulate_reasoning_effort` | `context` (opcional: `provider`, `model`, `session_context_tokens`, `supported_efforts`, `max_lease_steps`) | nível de esforço + parâmetros do provedor |
+| `jev_should_nudge_continuation` | `transcript_tail` (opcional: `previous_nudge_summary`, `threshold`) | `should_nudge`, fase do workflow, justificativa |
+
+#### Smoke test do MCP em 20 segundos (qualquer runtime)
+
+```bash
+# Python (instalado com o pacote)
+printf '%s\n%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | jev-mcp | head -2
+
+# Node (sem instalação)
+printf '%s\n%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | npx -y @ismaelsoilet/jev-harness mcp | head -2
+```
+
+Uma chamada real tem este formato (a resposta é JSON em `result.content[0].text`):
+
+```bash
+printf '%s\n%s\n%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+  '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"jev_triage_test_failure","arguments":{"failure_log":"ModuleNotFoundError: No module named scipy"}}}' \
+  | jev-mcp
+```
+
+> Nota de quoting no shell: sequências como `\'` dentro de aspas simples **não** são válidas em shell nem em JSON. Para payloads com aspas, quebras de linha ou texto não-ASCII, escreva um pequeno cliente stdio (ou use a CLI com `--log <arquivo>`), em vez de embutir o log no `printf`.
+
+> **Nota sobre virtualenv.** Um cliente MCP não herda o seu shell: ele inicia o servidor com um ambiente mínimo. Se o `jev-harness` estiver instalado dentro de um virtualenv do projeto, aponte o cliente para o caminho absoluto (`"command": "/caminho/absoluto/.venv/bin/jev-mcp"`), ou use a forma `npx`, que não precisa de Python.
+
 **Para o CommandCode (`.commandcode/config.json`):**
 ```json
 {
@@ -104,6 +149,20 @@ claude mcp add jev-harness -- jev-mcp
   }
 }
 ```
+
+**Para o OpenCode (`.opencode.json`, no projeto ou global):**
+```json
+{
+  "mcp": {
+    "jev-harness": {
+      "type": "local",
+      "command": ["npx", "-y", "@ismaelsoilet/jev-harness", "mcp"],
+      "enabled": true
+    }
+  }
+}
+```
+*(Confira o schema da sua versão do OpenCode; a forma `npx` não precisa de Python.)*
 
 **Para o Cursor (`.cursor/mcp.json` na raiz do projeto ou `~/.cursor/mcp.json` global):**
 ```json
@@ -142,19 +201,28 @@ claude mcp add jev-harness -- jev-mcp
 }
 ```
 
-#### 2. Ferramentas Disponíveis para o Agente via MCP:
-- `jev_triage_test_failure`: Analisa o log de erro bruto. Retorna se deve pular o LLM e qual comando shell determinístico executar.
-- `jev_should_abort_trajectory`: Avalia se o plano proposto repete falhas anteriores (disjuntor contra loops circulares).
-- `jev_route_model_tier`: Sugere se deve usar script local, tier rápido (Gemini 3.8 Flash) ou tier de fronteira (Claude Fable 5.1 / GPT-6 Astra).
-- `jev_verify_step_completion`: Avalia de forma determinística se os critérios do passo foram cumpridos.
-- `jev_modulate_reasoning_effort`: Modula dinamicamente o esforço de raciocínio por geração (`low`, `medium`, `high`) e compila payloads para OpenAI, Anthropic, Gemini, DeepSeek e Qwen.
-- `jev_get_telemetry`: Exibe economia de tokens da sessão, dólares economizados e loops circulares interrompidos.
+#### 2. Ferramentas disponíveis para o agente via MCP:
+
+Os nomes e argumentos exatos estão na tabela no topo deste guia. Resumo:
+
+- `jev_triage_test_failure` (`failure_log`): tria a saída de erro; informa se a chamada ao LLM pode ser evitada e qual ação determinística executar.
+- `jev_abort_check` (`proposed_step`, `recent_attempts_summary`): quebra loops de repetição ou planos inviáveis.
+- `jev_route_task` (`task_description`): sugere script, tier rápido ou tier de fronteira.
+- `jev_verify_completion` (`acceptance_criteria`, `produced_output`): avalia se os critérios foram satisfeitos.
+- `jev_modulate_reasoning_effort` (`context`, provider/model opcionais): esforço de raciocínio por geração com payloads por provedor.
+- `jev_should_nudge_continuation` (`transcript_tail`): se o agente parou com trabalho inacabado ou não verificado.
+
+A telemetria é um comando de **CLI** (`jev-harness metrics`), não uma ferramenta MCP.
+
+> **Chame sempre `tools/list` primeiro** se um nome for rejeitado: o servidor é a fonte de verdade, e este guia registra o schema na v0.1.12.
 
 ---
 
 ### Modo 2: Pipelines Shell & CLI (Agnóstico à Linguagem)
 
 Se o seu agente executa comandos via terminal (bash, zsh, pwsh), encadeie os comandos de teste com pipes Unix:
+
+> **Nenhuma chave de API é necessária para começar.** O modo offline é o padrão e faz zero chamadas de rede; `--mock` força isso explicitamente. Adicione uma chave de provedor apenas quando quiser decisões live (veja [Acesso a Provedores e Chaves de API](#-acesso-a-provedores-e-chaves-de-api)).
 
 > **Padrão correto:** deixe o runner de testes decidir se o comando falhou e peça ao Jev o *triage* da falha. O Jev nunca bloqueia uma execução verde: logs de suíte aprovada são detectados deterministicamente e retornam `category: "no_failure"`, exit code `0` e **zero** chamadas de API.
 
@@ -269,7 +337,10 @@ repos:
 ```bash
 jev-harness init --git   # detecta npm/pytest/cargo, escreve .git/hooks/pre-commit,
                          # nunca sobrescreve um hook existente (salva pre-commit.jev)
+                         # e prefere os binários do virtualenv do projeto
+jev-harness init --git --test-cmd "make test-fast"
 ```
+> **Nota sobre virtualenv:** o hook gerado usa `./.venv/bin/...` quando existe virtualenv, então funciona sem ativar a env. Se instalar a CLI globalmente e rodar os testes dentro de uma venv, o hook continua resolvendo ambos por essa venv.
 
 **No GitHub Actions (`.github/workflows/ci.yml`):**
 ```yaml
@@ -318,7 +389,7 @@ Para tornar seu agente completamente autônomo e econômico, injete estas 3 regr
 - Se `skip_llm == true`, execute a ação determinística descrita em `action_recommendation`.
 
 ### Rule 2: Disjuntor em Ações Repetitivas
-- Se uma operação falhar duas vezes consecutivas, o agente **DEVE** executar `jev-harness abort-check` (ou `jev_should_abort_trajectory`).
+- Se uma operação falhar duas vezes consecutivas, o agente **DEVE** executar `jev-harness abort-check` (ou `jev_abort_check`).
 - Se `should_abort == true`, o agente deve **PARAR**, explicar o beco sem saída ao usuário e solicitar direcionamento em vez de queimar mais tokens em loop.
 
 ### Regra 3: Modulação de Raciocínio por Geração (Astra-Jev)
@@ -344,7 +415,7 @@ claude mcp add jev-harness -- jev-mcp
 #### Como funciona dentro do Claude Code:
 1. Quando o Claude Code executa uma suíte de testes ou comando de compilação via bash e ele falha, o Claude Code chama a ferramenta MCP `jev_triage_test_failure`.
 2. Se `skip_llm == true`, o Claude Code imediatamente executa `triage.action_recommendation` (ex: `pip install pytest-mock` ou `npm install -D vitest`) **sem gerar um único token de raciocínio de fronteira**.
-3. Para falhas repetitivas em refatorações multi-turnos, o Claude Code invoca `jev_should_abort_trajectory` antes de insistir em uma 3ª tentativa fracassada.
+3. Para falhas repetitivas em refatorações multi-turnos, o Claude Code invoca `jev_abort_check` antes de insistir em uma 3ª tentativa fracassada.
 
 ---
 
@@ -464,7 +535,7 @@ Copie o snippet adequado diretamente no arquivo de configuração do seu agente 
 # Salvaguardas e Gate de Tokens no CommandCode
 - Chame `jev_triage_test_failure` em comandos com código de saída diferente de zero.
 - Siga estritamente o veredito `skip_llm` para preservar cotas de API.
-- Aborte loops circulares quando `jev_should_abort_trajectory` retornar true.
+- Aborte loops circulares quando `jev_abort_check` retornar true.
 ```
 
 ### Para o Cursor (`.cursorrules` ou `.cursor/rules/jev.mdc`):
@@ -474,7 +545,7 @@ Copie o snippet adequado diretamente no arquivo de configuração do seu agente 
 Antes de gastar tokens com falhas de compilação ou testes:
 1. Sempre passe a saída do teste por `jev-harness test-gate` ou use a ferramenta MCP `jev_triage_test_failure`.
 2. Se `skip_llm` for true, execute a ação recomendada imediatamente sem consultar o modelo.
-3. Se uma tarefa falhar em 2 tentativas seguidas, invoque `jev_should_abort_trajectory` antes de propor a terceira.
+3. Se uma tarefa falhar em 2 tentativas seguidas, invoque `jev_abort_check` antes de propor a terceira.
 4. Se `should_abort` for true, interrompa a execução e relate o bloqueio ao usuário.
 ```
 

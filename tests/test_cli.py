@@ -222,9 +222,54 @@ class TestCLI(unittest.TestCase):
                 content = hook.read_text(encoding="utf-8")
                 self.assertIn("Jev Harness pre-commit gate", content)
                 self.assertIn('TEST_CMD="python3 -m pytest -q"', content)
-                self.assertIn("jev-harness test-gate", content)
+                self.assertIn('"$JEV_BIN" test-gate', content)
+                self.assertIn('JEV_BIN="jev-harness"', content)
                 self.assertNotIn("python -m unittest 2>&1", content)
                 self.assertTrue(os.access(hook, os.X_OK))
+            finally:
+                os.chdir(original)
+
+    def test_cli_init_git_prefers_virtualenv_binaries(self):
+        import tempfile
+        from pathlib import Path as _Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = _Path(tmp)
+            (cwd / ".git" / "hooks").mkdir(parents=True)
+            (cwd / ".venv" / "bin").mkdir(parents=True)
+            (cwd / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
+            (cwd / "pytest.ini").write_text("", encoding="utf-8")
+            (cwd / ".venv" / "bin" / "python").write_text("", encoding="utf-8")
+            (cwd / ".venv" / "bin" / "jev-harness").write_text("", encoding="utf-8")
+            original = os.getcwd()
+            try:
+                os.chdir(cwd)
+                with patch.object(sys, "argv", ["jev-harness", "init", "--git"]):
+                    with patch("sys.stdout", new_callable=StringIO):
+                        with self.assertRaises(SystemExit):
+                            main()
+                content = (cwd / ".git" / "hooks" / "pre-commit").read_text(encoding="utf-8")
+                self.assertIn('TEST_CMD="./.venv/bin/python -m pytest -q"', content)
+                self.assertIn('JEV_BIN="./.venv/bin/jev-harness"', content)
+            finally:
+                os.chdir(original)
+
+    def test_cli_init_git_respects_test_cmd_override(self):
+        import tempfile
+        from pathlib import Path as _Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = _Path(tmp)
+            (cwd / ".git" / "hooks").mkdir(parents=True)
+            original = os.getcwd()
+            try:
+                os.chdir(cwd)
+                with patch.object(sys, "argv", ["jev-harness", "init", "--git", "--test-cmd", "make test-fast"]):
+                    with patch("sys.stdout", new_callable=StringIO):
+                        with self.assertRaises(SystemExit):
+                            main()
+                content = (cwd / ".git" / "hooks" / "pre-commit").read_text(encoding="utf-8")
+                self.assertIn('TEST_CMD="make test-fast"', content)
             finally:
                 os.chdir(original)
 

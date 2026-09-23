@@ -1,6 +1,6 @@
 # 🛡️ Testes Exaustivos, Verificação Adversarial e Honestidade Absoluta
 
-> **Documento Oficial de Engenharia — Versão: v0.1.12**  
+> **Documento Oficial de Engenharia — Versão: v0.1.13**  
 > *Diretrizes Inegociáveis de Qualidade para Agentes de IA.*
 
 ---
@@ -36,9 +36,9 @@ Um **teste tautológico** é um teste que passa unicamente porque o mock local f
 
 ---
 
-## 3. Bateria Oficial Tri-Runtime (207 Testes)
+## 3. Bateria Oficial Tri-Runtime (210 Testes)
 
-O repositório mantém **207 testes exaustivos** com 100% de taxa de aprovação através dos três runtimes:
+O repositório mantém **210 testes exaustivos** com 100% de taxa de aprovação através dos três runtimes:
 
 ```bash
 # Executa a bateria completa unificada:
@@ -46,7 +46,7 @@ O repositório mantém **207 testes exaustivos** com 100% de taxa de aprovação
 ```
 
 ### Distribuição dos Testes:
-1. **Python (`tests/`)**: **113 testes**
+1. **Python (`tests/`)**: **116 testes**
    * `test_gates.py`: Testes unitários dos 6 gates semânticos.
    * `test_config.py`: Carregamento e honra do `.jev.json` (modelo, thresholds, clamp, arquivo corrompido) com isolamento de diretório de trabalho.
    * `test_adversarial.py`: Casos de concorrência com `fcntl.flock`, paridade de esquemas JSON, negação em português/inglês, truncamento UTF-8 com emojis de 4 bytes, domínio de palavras-chave arquiteturais sobre typos, telemetria de doom loop e dialeto limpo Anthropic.
@@ -64,5 +64,5 @@ O repositório mantém **207 testes exaustivos** com 100% de taxa de aprovação
 
 Ao relatar resultados de auditoria, execução ou teste:
 * **Relate o resultado no topo**: Diga imediatamente se os testes passaram, se falharam ou se há ressalvas.
-* **Nunca esconda regressões**: Se uma alteração causou a quebra de um único teste dos 207, pare imediatamente, não faça commit e investigue a causa raiz.
+* **Nunca esconda regressões**: Se uma alteração causou a quebra de um único teste dos 210, pare imediatamente, não faça commit e investigue a causa raiz.
 * **Transparência em Modo Mock**: Sempre evidencie se uma resposta foi gerada via simulação heurística local (`is_mock=true`) ou via chamada real ao Jev System One.

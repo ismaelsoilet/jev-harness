@@ -1,6 +1,6 @@
 # 🏛️ Planta Arquitetural Completa: Jev Harness
 
-> **Documento Oficial de Engenharia — Versão do Projeto: v0.1.12**  
+> **Documento Oficial de Engenharia — Versão do Projeto: v0.1.13**  
 > *Obrigatório para todos os agentes autônomos e desenvolvedores que operam no repositório.*
 
 ---
@@ -112,7 +112,7 @@ jev-harness/
 │       ├── gates.py                  # Gates semânticos (triage, abort, route, verify, reasoning-effort, nudge)
 │       ├── mcp_server.py             # Servidor MCP stdio universal (`jev-mcp`)
 │       └── session.py                # Telemetria, persistência de sessão e lock de concorrência
-├── tests/                            # Bateria de testes Python (113 testes, 100% pass)
+├── tests/                            # Bateria de testes Python (116 testes, 100% pass)
 │   ├── test_adversarial.py           # Testes adversariais, concorrência, negação, emojis UTF-8
 │   ├── test_config.py                # Testes do .jev.json (modelo, thresholds, clamp, corrompido)
 │   ├── test_cli.py                   # Testes de argumentos CLI e códigos de saída
@@ -126,7 +126,7 @@ jev-harness/
 ├── LICENSE                           # Licença MIT
 └── scripts/
     ├── jev_test_gate_hook.sh         # Wrapper do hook pre-commit (runner decide, Jev aconselha)
-    └── release.sh                    # Script mestre de release, check (207 testes) e sync
+    └── release.sh                    # Script mestre de release, check (210 testes) e sync
 ```
 
 ---

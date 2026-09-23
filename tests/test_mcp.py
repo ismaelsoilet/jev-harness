@@ -67,6 +67,25 @@ class TestMCPServer(unittest.TestCase):
         content = json.loads(resp["result"]["content"][0]["text"])
         self.assertEqual(content["category"], "env_missing")
         self.assertTrue(content["skip_llm"])
+        # Contract parity: both snake_case keys must be present (matches the TS runtime).
+        self.assertIn("action_recommendation", content)
+        self.assertIn("recommendation", content)
+        self.assertEqual(content["action_recommendation"], content["recommendation"])
+
+    def test_mcp_tools_call_triage_green_run(self):
+        req = json.dumps({
+            "jsonrpc": "2.0",
+            "id": 31,
+            "method": "tools/call",
+            "params": {
+                "name": "jev_triage_test_failure",
+                "arguments": {"failure_log": "Tests: 12 passed, 12 total"},
+            },
+        })
+        resp = process_message(req, self.client)
+        content = json.loads(resp["result"]["content"][0]["text"])
+        self.assertEqual(content["category"], "no_failure")
+        self.assertTrue(content["skip_llm"])
 
     def test_mcp_tools_call_abort(self):
         req = json.dumps({
