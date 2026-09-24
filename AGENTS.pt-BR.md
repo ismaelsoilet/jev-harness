@@ -18,8 +18,9 @@ Este documento é o portal de entrada. O repositório organiza suas convenções
 4. 🛡️ **[Testes Exaustivos e Honestidade Absoluta](.agents/rules/04_testing_and_truthfulness.md)**: Postura de zero-trust, proibição de testes tautológicos, bateria de 569 testes.
 5. 🚀 **[Protocolo de Release e Sincronização Quad-Sync](.agents/rules/05_release_and_quad_sync_protocol.md)**: Pipeline síncrono nos 4 registries (GitHub, PyPI, npm, Crates.io).
 6. 📝 **[Convenções de Código por Linguagem](.agents/rules/06_code_style_and_conventions.md)**: Padrões estritos para Python (stdlib pura), TypeScript (ESM nativo) e Rust (Tokio 2021).
-7. 🤖 **[Guia de Implementação Rápida para Agentes em Qualquer Projeto](docs/AGENT_INTEGRATION_GUIDE.pt-BR.md)** ([English](docs/AGENT_INTEGRATION_GUIDE.md)): Como plugar o Jev Harness via MCP, CLI ou SDK nativo no seu projeto em 2 minutos.
-8. 🗺️ **[System 1.5 — Arquitetura, Oportunidades e Plano de Implementação](SYSTEM_1_5_IMPLEMENTATION.md)**: posicionamento entre o System 1 (Jev) e o System 2, fatos verificados, comparativo de ecossistema e o plano faseado. **Não é um plano de release** — a próxima versão (v0.2.0) segue o protocolo de `.agents/rules/05`.
+7. 🔌 **[Padrões de Qualidade MCP e TDQS](.agents/rules/07_mcp_quality_and_tdqs_standards.md)**: Requisitos Glama TDQS A+ (5.0), nomenclatura canônica verb_noun, anotações MCP (`readOnlyHint`, `idempotentHint`), diretrizes de uso e paridade estrita nos 3 runtimes.
+8. 🤖 **[Guia de Implementação Rápida para Agentes em Qualquer Projeto](docs/AGENT_INTEGRATION_GUIDE.pt-BR.md)** ([English](docs/AGENT_INTEGRATION_GUIDE.md)): Como plugar o Jev Harness via MCP, CLI ou SDK nativo no seu projeto em 2 minutos.
+9. 🗺️ **[System 1.5 — Arquitetura, Oportunidades e Plano de Implementação](SYSTEM_1_5_IMPLEMENTATION.md)**: posicionamento entre o System 1 (Jev) e o System 2, fatos verificados, comparativo de ecossistema e o plano faseado. **Não é um plano de release** — a próxima versão (v0.2.0) segue o protocolo de `.agents/rules/05`.
 
 ---
 

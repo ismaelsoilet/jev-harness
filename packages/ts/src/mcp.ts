@@ -13,11 +13,20 @@ const PROTOCOL_VERSION = "2024-11-05";
 const SERVER_NAME = "jev-harness";
 const SERVER_VERSION = "0.2.0";
 
+export const MCP_TOOL_ANNOTATIONS = {
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: false,
+};
+
 export const TOOLS_MANIFEST = [
   {
     name: "jev_triage_test_failure",
+    title: "Triage Test Failure",
     description:
-      "Triages test traceback, compile error, or runtime failure using Jev System One (70-300ms, zero-generation). Returns root cause category, skip_llm flag (true if resolvable deterministically without frontier LLM), and immediate action recommendation.",
+      "Triages test failure traceback, compilation error, or runtime exception using Jev System One non-autoregressive decision classification (70-300ms, zero LLM generation). Detects missing environment packages, flaky transient glitches, or deep logic defects.\n\nUse when: An agent encounters a test failure, traceback, compiler error (e.g. TS2307, ModuleNotFoundError, E0463), or needs to decide whether to invoke a frontier LLM.\nDo NOT use when: Tests pass, or for general code review or feature generation.\n\nReturns: JSON object with 'category' (env_missing, flaky_transient, deep_logic, no_failure), 'skip_llm' (boolean: true if resolvable deterministically without frontier LLM), and 'action_recommendation' (string with concrete recovery action).",
+    annotations: MCP_TOOL_ANNOTATIONS,
     inputSchema: {
       type: "object",
       properties: {
@@ -25,14 +34,20 @@ export const TOOLS_MANIFEST = [
           type: "string",
           description: "Raw test failure output, stack trace, or compiler error log.",
         },
+        test_command: {
+          type: "string",
+          description: "Optional test command that was executed (e.g. 'pytest tests/', 'npm test').",
+        },
       },
       required: ["failure_log"],
     },
   },
   {
-    name: "jev_abort_check",
+    name: "jev_check_abort",
+    title: "Check Trajectory Abort",
     description:
-      "Guards against doom loops, dead-ends, circular retries, and destructive refactors. Evaluates proposed plan against recent attempt history before burning tokens.",
+      "Guards against doom loops, repetitive circular retries, dead-ends, and destructive refactoring before burning frontier reasoning tokens. Evaluates the agent's proposed plan against recent attempt history.\n\nUse when: An agent is about to retry a failed step, execute a code edit after previous failed attempts, or before embarking on a potentially circular fix.\nDo NOT use when: Making the first attempt on a fresh task with no prior failure history.\n\nReturns: JSON object with 'should_abort' (boolean: true if the trajectory is stuck in a circular loop), 'abort_probability' (number: 0.0 to 1.0), 'action' (string: PROCEED, HALT, PIVOT), and 'reasoning_summary' (string explaining the decision).",
+    annotations: MCP_TOOL_ANNOTATIONS,
     inputSchema: {
       type: "object",
       properties: {
@@ -50,8 +65,10 @@ export const TOOLS_MANIFEST = [
   },
   {
     name: "jev_route_task",
+    title: "Route Task Model Tier",
     description:
-      "Routes programming task to the minimal sufficient model tier (deterministic script, lightweight fast flash model, or heavy frontier reasoning model) to optimize cost and latency.",
+      "Routes a programming task to the minimal sufficient model tier (deterministic script, lightweight flash model, or heavy frontier reasoning model) to minimize latency and token expenditure.\n\nUse when: Starting a new task, refactoring step, or bug fix to choose between lightweight models and expensive reasoning frontier models.\nDo NOT use when: Diagnosing test execution tracebacks (use jev_triage_test_failure instead).\n\nReturns: JSON object with 'selected_tier' (string: deterministic, lightweight, heavy), 'complexity_score' (number: 1.0 to 5.0), 'recommended_model' (string), and 'rationale' (string).",
+    annotations: MCP_TOOL_ANNOTATIONS,
     inputSchema: {
       type: "object",
       properties: {
@@ -65,8 +82,10 @@ export const TOOLS_MANIFEST = [
   },
   {
     name: "jev_verify_completion",
+    title: "Verify Step Completion",
     description:
-      "Calibrates step completion against acceptance criteria using typed rubric scoring. Checks if evidence is sufficient to declare done without launching expensive extra review loops.",
+      "Calibrates step completion against acceptance criteria using typed rubric scoring. Evaluates whether produced evidence proves the task is finished without running redundant review loops.\n\nUse when: An agent believes a task or milestone is complete and wants to verify acceptance criteria before concluding.\nDo NOT use when: Work is still underway or tests are actively failing.\n\nReturns: JSON object with 'is_verified' (boolean: true if acceptance criteria are satisfied with proof), 'satisfaction_probability' (number: 0.0 to 1.0), 'rigor_score' (number: 1.0 to 4.0), 'needs_rework' (boolean), and 'confidence' (number: 0.0 to 1.0).",
+    annotations: MCP_TOOL_ANNOTATIONS,
     inputSchema: {
       type: "object",
       properties: {
@@ -84,8 +103,10 @@ export const TOOLS_MANIFEST = [
   },
   {
     name: "jev_modulate_reasoning_effort",
+    title: "Modulate Reasoning Effort",
     description:
-      "Dynamically modulates reasoning effort (low, medium, high) for the immediate generation step. Maps exact parameters for OpenAI (GPT-6 Astra/o3), DeepSeek (V4.1-Flash/R1), Qwen (3.8 Max), Anthropic (Claude Fable 5.1), and Gemini (3.8 Thinking). Eliminates reasoning token waste and cuts multi-minute delays on mechanical tool calls.",
+      "Dynamically modulates reasoning effort (low, medium, high, etc.) and generation stability lease steps for the immediate LLM call. Maps provider-specific parameters for OpenAI (GPT-6 Astra/o3), DeepSeek (V4.1-Flash/R1), Qwen (3.8 Max), Anthropic (Claude Fable 5.1), and Gemini (3.8 Thinking) to prevent reasoning token waste.\n\nUse when: Preparing a prompt or tool call for a reasoning-capable LLM to calibrate thinking effort according to task complexity.\nDo NOT use when: Calling standard non-reasoning models or local deterministic scripts.\n\nReturns: JSON object with 'effort' (string), 'provider' (string), 'provider_params' (object with provider-native kwargs), 'is_reasoning_supported' (boolean), 'cache_safe_recommendation' (string), and 'lease_steps' (integer).",
+    annotations: MCP_TOOL_ANNOTATIONS,
     inputSchema: {
       type: "object",
       properties: {
@@ -95,7 +116,9 @@ export const TOOLS_MANIFEST = [
         },
         provider: {
           type: "string",
-          description: "Target provider (openai, deepseek, qwen, anthropic, gemini, kimi, mimo). Default: openai.",
+          enum: ["openai", "deepseek", "qwen", "anthropic", "gemini", "kimi", "mimo"],
+          default: "openai",
+          description: "Target provider dialect (openai, deepseek, qwen, anthropic, gemini, kimi, mimo). Default: openai.",
         },
         model: {
           type: "string",
@@ -103,6 +126,8 @@ export const TOOLS_MANIFEST = [
         },
         session_context_tokens: {
           type: "integer",
+          minimum: 0,
+          default: 0,
           description: "Optional active prompt tokens in session context to evaluate prompt cache risk.",
         },
         supported_efforts: {
@@ -112,6 +137,9 @@ export const TOOLS_MANIFEST = [
         },
         max_lease_steps: {
           type: "integer",
+          minimum: 1,
+          maximum: 50,
+          default: 10,
           description: "Optional upper bound for generation stability lease steps (default: 10).",
         },
       },
@@ -119,9 +147,11 @@ export const TOOLS_MANIFEST = [
     },
   },
   {
-    name: "jev_should_nudge_continuation",
+    name: "jev_evaluate_nudge",
+    title: "Evaluate Continuation Nudge",
     description:
-      "Evaluates whether an autonomous agent paused prematurely with unfinished work or unverified changes (Workflow phases: research, ask, plan, execute, verify, complete + CommandCode Jev Nudge protocol). Vetoes nudges when waiting on user permission/input or when the previous nudge produced no progress.",
+      "Evaluates whether an autonomous agent paused prematurely with unfinished work or unverified changes (covering workflow phases: research, ask, plan, execute, verify, complete). Vetoes nudges when waiting on user input or when repeated nudges make no progress.\n\nUse when: A background worker or agent loop stops and you need to determine if it should be nudged to continue autonomously.\nDo NOT use when: The agent explicitly requested user confirmation or required credentials.\n\nReturns: JSON object with 'should_nudge' (boolean), 'workflow_phase' (string: research, ask, plan, execute, verify, complete), 'action' (string: NUDGE, WAIT, STOP), and 'confidence' (number: 0.0 to 1.0).",
+    annotations: MCP_TOOL_ANNOTATIONS,
     inputSchema: {
       type: "object",
       properties: {
@@ -135,6 +165,9 @@ export const TOOLS_MANIFEST = [
         },
         threshold: {
           type: "number",
+          minimum: 0.0,
+          maximum: 1.0,
+          default: 0.5,
           description: "Optional probability threshold for nudge/waiting/progress (default: 0.5).",
         },
       },
@@ -215,7 +248,7 @@ export async function processMessage(line: string, client: JevClient): Promise<R
           degraded_reason: res.degradedReason ?? "",
           isMock: res.isMock,
         };
-      } else if (toolName === "jev_abort_check") {
+      } else if (toolName === "jev_check_abort" || toolName === "jev_abort_check") {
         if (!args.proposed_step) {
           return {
             jsonrpc: "2.0",
@@ -318,7 +351,7 @@ export async function processMessage(line: string, client: JevClient): Promise<R
           degraded_reason: res.degradedReason ?? "",
           isMock: res.isMock,
         };
-      } else if (toolName === "jev_should_nudge_continuation") {
+      } else if (toolName === "jev_evaluate_nudge" || toolName === "jev_should_nudge_continuation") {
         if (!args.transcript_tail) {
           return {
             jsonrpc: "2.0",

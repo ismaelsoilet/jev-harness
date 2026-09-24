@@ -44,10 +44,16 @@ class TestMCPServer(unittest.TestCase):
         tools = resp["result"]["tools"]
         tool_names = [t["name"] for t in tools]
         self.assertIn("jev_triage_test_failure", tool_names)
-        self.assertIn("jev_abort_check", tool_names)
+        self.assertIn("jev_check_abort", tool_names)
         self.assertIn("jev_route_task", tool_names)
         self.assertIn("jev_verify_completion", tool_names)
         self.assertIn("jev_modulate_reasoning_effort", tool_names)
+        self.assertIn("jev_evaluate_nudge", tool_names)
+        for tool in tools:
+            self.assertIn("annotations", tool)
+            self.assertTrue(tool["annotations"]["readOnlyHint"])
+            self.assertFalse(tool["annotations"]["destructiveHint"])
+            self.assertTrue(tool["annotations"]["idempotentHint"])
 
     def test_mcp_tools_call_triage(self):
         req = json.dumps({
@@ -91,6 +97,24 @@ class TestMCPServer(unittest.TestCase):
         req = json.dumps({
             "jsonrpc": "2.0",
             "id": 4,
+            "method": "tools/call",
+            "params": {
+                "name": "jev_check_abort",
+                "arguments": {
+                    "proposed_step": "Tentar novamente sem alterar nada",
+                    "recent_attempts_summary": "Falha circular 3 vezes",
+                },
+            },
+        })
+        resp = process_message(req, self.client)
+        self.assertIsNotNone(resp)
+        content = json.loads(resp["result"]["content"][0]["text"])
+        self.assertTrue(content["should_abort"])
+
+    def test_mcp_tools_call_abort_legacy_alias(self):
+        req = json.dumps({
+            "jsonrpc": "2.0",
+            "id": 41,
             "method": "tools/call",
             "params": {
                 "name": "jev_abort_check",
@@ -240,6 +264,25 @@ class TestMCPServer(unittest.TestCase):
         req = json.dumps({
             "jsonrpc": "2.0",
             "id": 15,
+            "method": "tools/call",
+            "params": {
+                "name": "jev_evaluate_nudge",
+                "arguments": {
+                    "transcript_tail": "Modified client.py without running tests. Need to verify.",
+                },
+            },
+        })
+        resp = process_message(req, self.client)
+        self.assertIsNotNone(resp)
+        self.assertFalse(resp["result"]["isError"])
+        content = json.loads(resp["result"]["content"][0]["text"])
+        self.assertTrue(content["should_nudge"])
+        self.assertEqual(content["workflow_phase"], "verify")
+
+    def test_mcp_tools_call_nudge_continuation_legacy_alias(self):
+        req = json.dumps({
+            "jsonrpc": "2.0",
+            "id": 151,
             "method": "tools/call",
             "params": {
                 "name": "jev_should_nudge_continuation",
