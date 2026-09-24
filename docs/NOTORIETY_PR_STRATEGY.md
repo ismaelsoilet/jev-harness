@@ -9,7 +9,7 @@ Este documento contém os **Pull Requests estratégicos**, **textos persuasivos*
 | Alvo | Relevância | O que vamos submeter | Impacto Esperado |
 | :--- | :--- | :--- | :--- |
 | **1. `punkpeye/awesome-mcp-servers`** | O maior diretório MCP do mundo (>10k★). Referência obrigatória para Claude Desktop, Cursor, Antigravity e OpenCode. | PR na seção `Coding Agents` com tag de fast-track `🤖🤖🤖`. | Descoberta direta por dezenas de milhares de desenvolvedores de agentes. |
-| **2. `thruwire/foreman` (517★)** | O projeto líder em supervisão semântica com Jev. | PR/Issue propondo seção de Ecossistema Complementar System 1.5 e guia de interoperação. | Posicionamento conjunto como pilares do movimento **System 1.5**. |
+| **2. `thruwire/foreman` (535★)** | O projeto líder em supervisão semântica com Jev. | PR/Issue propondo seção de Ecossistema Complementar System 1.5 e guia de interoperação. | Posicionamento conjunto como pilares do movimento **System 1.5**. |
 | **3. `e2b-dev/awesome-ai-agents`** | Diretório referência de infraestrutura para ambientes e ferramentas de agentes autônomos. | PR na categoria `Developer Tools & Frameworks`. | Validação técnica perante mantenedores de sandboxes de código. |
 | **4. Comunidades Técnicas (Show HN, Reddit r/mcp, r/LocalLLaMA, Discord)** | Comunidades ativas onde desenvolvedores de agentes sofrem diariamente com custo e doom loops. | Post/Showcase técnico focado em benchmarks e economia real de tokens. | Adoção imediata e feedback de usuários reais. |
 
@@ -67,7 +67,7 @@ When autonomous coding agents hit test failures or compiler errors, the default 
 
 ---
 
-## 🤝 PR 2: `thruwire/foreman` (517★)
+## 🤝 PR 2: `thruwire/foreman` (535★)
 
 * **Repositório:** [`https://github.com/thruwire/foreman`](https://github.com/thruwire/foreman)
 * **Objetivo:** Adicionar seção ou guia sobre a composição de papéis no ecossistema System 1.5. Enquanto o Foreman é o supervisor de runtime de workers de código, o `jev-harness` é a camada de qualidade/testes chamável offline.
@@ -138,7 +138,7 @@ We treat the code-quality loop through Daniel Kahneman's cognitive paradigm:
 ### Key highlights:
 - 🛡️ **Zero external runtime dependencies:** Python stdlib (`urllib.request`), pure TypeScript/JavaScript, and pure Rust.
 - ⚡ **True offline mode:** Runs full deterministic triage offline (< 500µs in Rust, < 2ms in TS/Python) with no API key needed.
-- 🧪 **569 unit tests & replay calibration gate:** Includes 160 labeled corpus test cases with ECE calibration tracking.
+- 🧪 **626 unit tests & replay calibration gate:** Includes 160 labeled corpus test cases with ECE calibration tracking.
 - 🔌 **Universal MCP Server:** Exposes decision gates over stdio (`jev-mcp` ou `npx @ismaelsoilet/jev-harness mcp`).
 - 📦 **Quad-channel release:** Published on PyPI, npm, Crates.io, and GitHub Releases (`v0.2.0`).
 

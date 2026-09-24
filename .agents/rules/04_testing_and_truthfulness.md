@@ -36,9 +36,9 @@ Um **teste tautológico** é um teste que passa unicamente porque o mock local f
 
 ---
 
-## 3. Bateria Oficial Tri-Runtime (569 Testes)
+## 3. Bateria Oficial Tri-Runtime (626 Testes)
 
-O repositório mantém **569 testes exaustivos** com 100% de taxa de aprovação através dos três runtimes:
+O repositório mantém **626 testes exaustivos** com 100% de taxa de aprovação através dos três runtimes:
 
 ```bash
 # Executa a bateria completa unificada:
@@ -46,7 +46,7 @@ O repositório mantém **569 testes exaustivos** com 100% de taxa de aprovação
 ```
 
 ### Distribuição dos Testes:
-1. **Python (`tests/`)**: **393 testes**
+1. **Python (`tests/`)**: **432 testes**
    * `test_gates.py`: Testes unitários dos 6 gates semânticos.
    * `test_config.py`: Carregamento e honra do `.jev.json` (modelo, thresholds, clamp, arquivo corrompido) com isolamento de diretório de trabalho.
    * `test_adversarial.py`: Casos de concorrência com `fcntl.flock`, paridade de esquemas JSON, negação em português/inglês, truncamento UTF-8 com emojis de 4 bytes, domínio de palavras-chave arquiteturais sobre typos, telemetria de doom loop e dialeto limpo Anthropic.
@@ -56,9 +56,10 @@ O repositório mantém **569 testes exaustivos** com 100% de taxa de aprovação
    * `test_replay.py` / `test_mock_golden.py` / `triage_parity` (TS+Rust): o instrumento de medição em si — validação do corpus (ids duplicados, gate desconhecido), matriz de confusão/P-R-F1/ECE, gate de regressão e os vetores golden da mock compartilhados com TS/Rust (tolerância 1e-9).
    * `test_receipts.py` / `test_cache.py` / `test_measured_usage.py` / `test_doctor.py` / `test_github_action.py`: recibos append-only (hash estável, sem conteúdo bruto, TTL/tamanho, permissões, concorrência), cache por hash e debounce (TTL, `--no-cache`, shadow nunca cacheia, degradado nunca cacheia), custo/tokens medidos separados da estimativa, diagnóstico com OK/AVISO/FALHA e a Action de CI (verde nunca bloqueia, `fail-on` opt-in).
    * `test_provider_resilience.py` / `test_shadow_and_limits.py` / `test_live_payload_parity.py`: retry+`Retry-After` com servidor HTTP real, política fail-open/fail-closed, shadow mode, limites de payload (code points, fronteira exata), pin de modelo (arg/env/`.jev.json`/default + origem no `status`) e o fixture live compartilhado com os 3 runtimes. Inclui as regressões de CLI sem traceback: entrada literal maior que o limite de path do SO (`route --task`) e `--log` impossível de estatutar (exit `2`).
-2. **Rust (`packages/rust/tests/`)**: **87 testes**
+   * `test_foreman_integration.py`: superfície de integração com o `thruwire/foreman` (triagem determinística com categoria/`skip_llm`/`recovery` em `argv`, evidência de estagnação por fingerprints de output+diff, preset TOML, classe companion e o bundle de `export foreman`) — stdlib-only, com a validação Foreman-side sob skip guard.
+2. **Rust (`packages/rust/tests/`)**: **95 testes**
    * Testes assíncronos Tokio cobrindo todos os gates semânticos, simulação local, decodificação JSON, compilação de dialetos de reasoning effort, servidor MCP stdio nativo (`mcp.rs`), resiliência de provider com servidor TCP real, paridade do fixture live, shadow/limites e resolução de modelo exercitando o binário real em diretório próprio.
-3. **TypeScript (`packages/ts/tests/`)**: **89 testes**
+3. **TypeScript (`packages/ts/tests/`)**: **99 testes**
    * Testes nativos Node.js (`node --test`) cobrindo tipos, resolução de provedores (TypeSafe, OpenCode Zen, OpenRouter), gates, segurança de surrogate pairs UTF-16, detecção de edições não testadas no Nudge Gate, resiliência (fetch fake), shadow/limites, pin de modelo, fixture live e servidor MCP stdio nativo sem dependências externas.
 
 ---
@@ -67,5 +68,5 @@ O repositório mantém **569 testes exaustivos** com 100% de taxa de aprovação
 
 Ao relatar resultados de auditoria, execução ou teste:
 * **Relate o resultado no topo**: Diga imediatamente se os testes passaram, se falharam ou se há ressalvas.
-* **Nunca esconda regressões**: Se uma alteração causou a quebra de um único teste dos 569, pare imediatamente, não faça commit e investigue a causa raiz.
+* **Nunca esconda regressões**: Se uma alteração causou a quebra de um único teste dos 626, pare imediatamente, não faça commit e investigue a causa raiz.
 * **Transparência em Modo Mock**: Sempre evidencie se uma resposta foi gerada via simulação heurística local (`is_mock=true`) ou via chamada real ao Jev System One.

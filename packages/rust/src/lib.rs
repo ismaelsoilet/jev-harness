@@ -9,12 +9,18 @@
 pub mod cli;
 pub mod client;
 pub mod config;
+pub mod foreman;
 pub mod gates;
 pub mod mcp;
 pub mod types;
 pub mod uncertainty;
 
 pub use client::{looks_like_test_success, JevClient, COMMANDCODE_API_URL};
+pub use foreman::{
+    evaluate_worker_health, extract_test_results, find_assertion_line, ForemanHealthEvidence,
+    ForemanHealthVerdict, ForemanSnapshot, ForemanTriageRecord, FOREMAN_RESPONSIBILITY_TOML,
+    FOREMAN_SCHEMA_VERSION,
+};
 pub use config::{
     load_repo_config, load_repo_config_from, RepoConfig, DEFAULT_ABORT_THRESHOLD,
     DEFAULT_SKIP_LLM_THRESHOLD,

@@ -1,0 +1,36 @@
+# quality.jev-triage.toml — jev-harness -> Foreman integration preset.
+# Verified against thruwire/foreman v0.3.0 on 2026-09-23; re-verify by 2026-10-23.
+#
+# SHIP THE PAIR TOGETHER: this file only *configures* a responsibility implementation that must
+# already be installed in the Foreman installation (quality_jev_triage.py, class
+# JevTriageResponsibility). Foreman fails at startup when either half is missing — both exit 2:
+#   * class installed without this central TOML:
+#       ResponsibilityConfigError: installed responsibility has no central configuration: quality.jev-triage
+#   * this TOML without the class:
+#       ResponsibilityConfigError: configuration has no installed responsibility implementation: quality.jev-triage
+#
+# Activate:  foreman run --repo <repo> --job "<job>" --responsibilities-dir <this directory>
+#            (or export FOREMAN_RESPONSIBILITIES_DIR=<this directory>)
+# Never place this file inside a managed repository's .foreman/ directory (that is run state).
+
+enabled = true
+always = false
+routing_instructions = """
+Does this job involve running automated tests, compilers, or test-suite verification where a deterministic failure classification or stagnation signal would change the next supervisory action?
+"""
+routing_threshold = 0.50
+
+[checks.deterministic_recovery_available]
+instructions = """
+Does the latest worker or verifier output show an environment-classified failure (missing dependency, unusable environment) for which a deterministic recovery exists that the next worker turn could apply without further semantic analysis?
+"""
+min_threshold = 0.70
+
+[checks.assertion_failure_critical]
+instructions = """
+Does the latest test evidence indicate a genuine logic regression (assertion or business-logic failure) rather than an environment or configuration problem? A high probability vetoes proposing a deterministic-recovery retry.
+"""
+min_threshold = 0.75
+
+[settings]
+diff_timeout_seconds = 5

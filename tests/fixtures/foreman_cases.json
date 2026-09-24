@@ -1,0 +1,307 @@
+{
+  "capability_matrix": {
+    "python": [
+      "category",
+      "severity_score",
+      "confidence",
+      "skip_llm",
+      "action_recommendation",
+      "assertion_slice",
+      "recovery"
+    ],
+    "typescript": [
+      "category",
+      "severity_score",
+      "confidence",
+      "skip_llm",
+      "action_recommendation",
+      "assertion_slice"
+    ],
+    "rust": [
+      "category",
+      "severity_score",
+      "confidence",
+      "skip_llm",
+      "action_recommendation",
+      "assertion_slice"
+    ],
+    "recovery_divergence": "'python-only' means: Python returns a recovery object, TypeScript/Rust return null (declared divergence, never silently absent). The capability_matrix field names are the canonical snake_case names; the TypeScript runtime maps them to its camelCase convention."
+  },
+  "triage_cases": [
+    {
+      "name": "missing_dependency",
+      "stdout": "============================= test session starts ==============================\nplatform linux -- Python 3.11.9, pytest-8.2.0\ncollected 12 items\n\ntests/test_api.py::test_retry E\n==================================== ERRORS ====================================\n________________________ ERROR at setup of test_retry ________________________\nE   ModuleNotFoundError: No module named 'requests'\n=========================== short test summary info ============================\nERROR tests/test_api.py::test_retry - ModuleNotFoundError: No module named 'requests'\n=============================== 1 error in 0.12s ==============================\n",
+      "stderr": "",
+      "expect": {
+        "records": 1,
+        "category": "env_missing",
+        "skip_llm": true,
+        "severity_score": 2.0,
+        "confidence": 0.88,
+        "action_recommendation": "AUTO-ACTION: Install missing dependency or check environment configuration (Do NOT call LLM).",
+        "assertion_slice": "E   ModuleNotFoundError: No module named 'requests'",
+        "recovery": "python-only"
+      }
+    },
+    {
+      "name": "green_run",
+      "stdout": "12 passed in 0.31s",
+      "stderr": "",
+      "expect": {
+        "records": 0
+      }
+    },
+    {
+      "name": "assertion_failure",
+      "stdout": "FAILED tests/test_auth.py::test_login - AssertionError: assert 401 == 200\nE       AssertionError: assert 401 == 200\nE        +  where 401 = response.status_code\n1 failed, 3 passed in 0.42s\n",
+      "stderr": "",
+      "expect": {
+        "records": 1,
+        "category": "deep_logic",
+        "skip_llm": false,
+        "severity_score": 2.0,
+        "confidence": 0.88,
+        "action_recommendation": "ESCALATE: Real logic defect; dispatch to System 2 LLM with targeted context.",
+        "assertion_slice": "FAILED tests/test_auth.py::test_login - AssertionError: assert 401 == 200",
+        "recovery": false
+      }
+    },
+    {
+      "name": "empty_output",
+      "stdout": "",
+      "stderr": "",
+      "expect": {
+        "records": 0
+      }
+    }
+  ],
+  "health_cases": [
+    {
+      "name": "stagnant_output_and_diff",
+      "snapshots": [
+        {
+          "output": "running pytest -q\ntests/test_api.py E",
+          "diff": "diff --git a/app.py b/app.py\n+    return retry(on_error)"
+        },
+        {
+          "output": "running pytest -q\ntests/test_api.py E",
+          "diff": "diff --git a/app.py b/app.py\n+    return retry(on_error)"
+        },
+        {
+          "output": "running pytest -q\ntests/test_api.py E",
+          "diff": "diff --git a/app.py b/app.py\n+    return retry(on_error)"
+        },
+        {
+          "output": "running pytest -q\ntests/test_api.py E",
+          "diff": "diff --git a/app.py b/app.py\n+    return retry(on_error)"
+        },
+        {
+          "output": "running pytest -q\ntests/test_api.py E",
+          "diff": "diff --git a/app.py b/app.py\n+    return retry(on_error)"
+        }
+      ],
+      "window": 5,
+      "expect": {
+        "should_abort": true,
+        "reason": "STAGNANT_EVIDENCE",
+        "complete_signals": true,
+        "insufficient_history": false,
+        "stagnant_output": true,
+        "stagnant_diff": true
+      }
+    },
+    {
+      "name": "changing_diff_is_progress",
+      "snapshots": [
+        {
+          "output": "running pytest -q\ntests/test_api.py E",
+          "diff": "diff --git a/app.py b/app.py\n+    return retry(on_error)"
+        },
+        {
+          "output": "running pytest -q\ntests/test_api.py E",
+          "diff": "diff --git a/app.py b/app.py\n+    return retry(on_error)f"
+        },
+        {
+          "output": "running pytest -q\ntests/test_api.py E",
+          "diff": "diff --git a/app.py b/app.py\n+    return retry(on_error)g"
+        },
+        {
+          "output": "running pytest -q\ntests/test_api.py E",
+          "diff": "diff --git a/app.py b/app.py\n+    return retry(on_error)h"
+        },
+        {
+          "output": "running pytest -q\ntests/test_api.py E",
+          "diff": "diff --git a/app.py b/app.py\n+    return retry(on_error)i"
+        }
+      ],
+      "window": 5,
+      "expect": {
+        "should_abort": false,
+        "reason": "",
+        "complete_signals": true,
+        "insufficient_history": false,
+        "stagnant_output": true,
+        "stagnant_diff": false
+      }
+    },
+    {
+      "name": "changing_output_is_progress",
+      "snapshots": [
+        {
+          "output": "running pytest -q\ntests/test_api.py E",
+          "diff": "diff --git a/app.py b/app.py\n+    return retry(on_error)"
+        },
+        {
+          "output": "running pytest -q\ntests/test_api.py E1",
+          "diff": "diff --git a/app.py b/app.py\n+    return retry(on_error)"
+        },
+        {
+          "output": "running pytest -q\ntests/test_api.py E2",
+          "diff": "diff --git a/app.py b/app.py\n+    return retry(on_error)"
+        },
+        {
+          "output": "running pytest -q\ntests/test_api.py E3",
+          "diff": "diff --git a/app.py b/app.py\n+    return retry(on_error)"
+        },
+        {
+          "output": "running pytest -q\ntests/test_api.py E4",
+          "diff": "diff --git a/app.py b/app.py\n+    return retry(on_error)"
+        }
+      ],
+      "window": 5,
+      "expect": {
+        "should_abort": false,
+        "reason": "",
+        "complete_signals": true,
+        "insufficient_history": false,
+        "stagnant_output": false,
+        "stagnant_diff": true
+      }
+    },
+    {
+      "name": "null_diff_declines",
+      "snapshots": [
+        {
+          "output": "running pytest -q\ntests/test_api.py E",
+          "diff": null
+        },
+        {
+          "output": "running pytest -q\ntests/test_api.py E",
+          "diff": null
+        },
+        {
+          "output": "running pytest -q\ntests/test_api.py E",
+          "diff": null
+        },
+        {
+          "output": "running pytest -q\ntests/test_api.py E",
+          "diff": null
+        },
+        {
+          "output": "running pytest -q\ntests/test_api.py E",
+          "diff": null
+        }
+      ],
+      "window": 5,
+      "expect": {
+        "should_abort": false,
+        "reason": "",
+        "complete_signals": false,
+        "insufficient_history": false,
+        "stagnant_output": true,
+        "stagnant_diff": false
+      }
+    },
+    {
+      "name": "short_history",
+      "snapshots": [
+        {
+          "output": "running pytest -q\ntests/test_api.py E",
+          "diff": "diff --git a/app.py b/app.py\n+    return retry(on_error)"
+        },
+        {
+          "output": "running pytest -q\ntests/test_api.py E",
+          "diff": "diff --git a/app.py b/app.py\n+    return retry(on_error)"
+        }
+      ],
+      "window": 5,
+      "expect": {
+        "should_abort": false,
+        "reason": "",
+        "complete_signals": false,
+        "insufficient_history": true,
+        "stagnant_output": false,
+        "stagnant_diff": false
+      }
+    },
+    {
+      "name": "volatile_tokens_ignored",
+      "snapshots": [
+        {
+          "output": "tests in 0.10s",
+          "diff": "diff --git a/app.py b/app.py\n+    return retry(on_error)"
+        },
+        {
+          "output": "tests in 0.42s",
+          "diff": "diff --git a/app.py b/app.py\n+    return retry(on_error)"
+        },
+        {
+          "output": "tests in 1.03s",
+          "diff": "diff --git a/app.py b/app.py\n+    return retry(on_error)"
+        },
+        {
+          "output": "tests in 0.11s",
+          "diff": "diff --git a/app.py b/app.py\n+    return retry(on_error)"
+        },
+        {
+          "output": "tests in 0.98s",
+          "diff": "diff --git a/app.py b/app.py\n+    return retry(on_error)"
+        }
+      ],
+      "window": 5,
+      "expect": {
+        "should_abort": true,
+        "reason": "STAGNANT_EVIDENCE",
+        "complete_signals": true,
+        "insufficient_history": false,
+        "stagnant_output": true,
+        "stagnant_diff": true
+      }
+    },
+    {
+      "name": "timestamps_ignored",
+      "snapshots": [
+        {
+          "output": "2026-09-23T18:55:01 running tests",
+          "diff": "diff --git a/app.py b/app.py\n+    return retry(on_error)"
+        },
+        {
+          "output": "2026-09-23T18:55:02 running tests",
+          "diff": "diff --git a/app.py b/app.py\n+    return retry(on_error)"
+        },
+        {
+          "output": "2026-09-23T18:55:03 running tests",
+          "diff": "diff --git a/app.py b/app.py\n+    return retry(on_error)"
+        },
+        {
+          "output": "2026-09-23T18:55:04 running tests",
+          "diff": "diff --git a/app.py b/app.py\n+    return retry(on_error)"
+        },
+        {
+          "output": "2026-09-23T18:55:05 running tests",
+          "diff": "diff --git a/app.py b/app.py\n+    return retry(on_error)"
+        }
+      ],
+      "window": 5,
+      "expect": {
+        "should_abort": true,
+        "reason": "STAGNANT_EVIDENCE",
+        "complete_signals": true,
+        "insufficient_history": false,
+        "stagnant_output": true,
+        "stagnant_diff": true
+      }
+    }
+  ],
+  "_comment": "Shared golden fixtures for the Foreman adapter surface (change foreman-integration). Consumed by tests/test_foreman_integration.py, packages/ts/tests/foreman.test.ts and packages/rust/tests/foreman_test.rs. Verified against thruwire/foreman v0.3.0 on 2026-09-23; numeric fields are compared within 1e-9 and textual fields exactly."
+}

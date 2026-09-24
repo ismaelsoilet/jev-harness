@@ -19,6 +19,7 @@ if __package__ is None or __package__ == "":
 from . import __version__
 from .client import JevClient
 from .config import load_repo_config
+from .integrations.foreman import FOREMAN_DEFAULT_OUT_DIR
 from .session import (
     ASSUMED_COST_PER_ABORT_USD,
     ASSUMED_COST_PER_TRIAGE_SKIP_USD,
@@ -582,6 +583,57 @@ This repository is connected to the global **Jev System One Harness**.
     return 0
 
 
+def cmd_export(args: argparse.Namespace) -> int:
+    """`export foreman`: writes the operator bundle (preset TOML + companion class + README)."""
+    from .integrations import foreman as foreman_integration
+    from .integrations import foreman_responsibility
+
+    out_dir = Path(getattr(args, "out_dir", None) or foreman_integration.FOREMAN_DEFAULT_OUT_DIR)
+    if ".foreman" in out_dir.resolve().parts:
+        print(
+            "Error: refusing to write into a '.foreman/' directory - that path is Foreman run "
+            "state, not configuration. Point --out-dir at the Foreman installation's "
+            "responsibilities directory instead.",
+            file=sys.stderr,
+        )
+        return 2
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    preset = out_dir / foreman_integration.FOREMAN_PRESET_FILENAME
+    preset.write_text(foreman_integration.FOREMAN_RESPONSIBILITY_TOML, encoding="utf-8")
+    companion = out_dir / foreman_integration.FOREMAN_COMPANION_FILENAME
+    companion.write_text(
+        Path(foreman_responsibility.__file__).read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    readme = out_dir / foreman_integration.FOREMAN_README_FILENAME
+    readme.write_text(foreman_integration.FOREMAN_OPERATOR_README, encoding="utf-8")
+
+    if getattr(args, "json", False):
+        print(
+            json.dumps(
+                {
+                    "out_dir": str(out_dir),
+                    "files": [preset.name, companion.name, readme.name],
+                    "activation": f"foreman run --responsibilities-dir {out_dir}",
+                },
+                indent=2,
+            )
+        )
+        return 0
+    print(f"\n[OK] Foreman operator bundle written to: {out_dir}")
+    print(f"  [+] {preset.name}")
+    print(f"  [+] {companion.name}")
+    print(f"  [+] {readme.name}")
+    print("\nNext steps (the pair ships together; Foreman exits 2 when either half is missing):")
+    print("  1. Install the class in the Foreman environment (pip install jev-harness,")
+    print("     then pass JevTriageResponsibility() via configured_registry(additional=[...])")
+    print("     or register it in Foreman's builtin_registry).")
+    print(f"  2. Run: foreman run --repo <repo> --job \"<job>\" --responsibilities-dir {out_dir}")
+    print("     (or export FOREMAN_RESPONSIBILITIES_DIR=<that directory>).")
+    print("  Never place these files in a managed repository's .foreman/ directory.\n")
+    return 0
+
+
 def cmd_test_gate(args: argparse.Namespace) -> int:
     log_path = getattr(args, "log", None)
     raw_input = log_path or getattr(args, "sample", None) or getattr(args, "log_pos", None)
@@ -1050,6 +1102,25 @@ def main() -> None:
     p_init.add_argument("--test-cmd", default="", help="Override the detected test command for the generated git hook")
     p_init.add_argument("--all", action="store_true", help="Configure all integrations (Cursor, Antigravity, Git)")
     p_init.set_defaults(func=cmd_init)
+
+    # export (nested: `export foreman`)
+    p_export = subparsers.add_parser(
+        "export",
+        parents=[common_parser],
+        help="Write integration bundles for other tools (currently: foreman)",
+    )
+    export_targets = p_export.add_subparsers(dest="export_target", required=True)
+    p_export_foreman = export_targets.add_parser(
+        "foreman",
+        parents=[common_parser],
+        help="Write the Foreman operator bundle (preset TOML + companion class + README)",
+    )
+    p_export_foreman.add_argument(
+        "--out-dir",
+        default=None,
+        help=f"Target directory (default: ./{FOREMAN_DEFAULT_OUT_DIR}/)",
+    )
+    p_export_foreman.set_defaults(func=cmd_export)
 
     # doctor
     p_doctor = subparsers.add_parser(

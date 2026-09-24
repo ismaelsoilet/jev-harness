@@ -2,7 +2,7 @@
 
 <p align="center">
   <a href="https://github.com/ismaelsoilet/jev-harness/actions/workflows/ci.yml"><img src="https://github.com/ismaelsoilet/jev-harness/actions/workflows/ci.yml/badge.svg" alt="Status da CI"></a>
-  <a href="https://github.com/ismaelsoilet/jev-harness/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/tests-569%20passed-brightgreen.svg?logo=githubactions&logoColor=white" alt="Testes Passando"></a>
+  <a href="https://github.com/ismaelsoilet/jev-harness/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/tests-626%20passed-brightgreen.svg?logo=githubactions&logoColor=white" alt="Testes Passando"></a>
   <a href="https://github.com/ismaelsoilet/jev-harness/releases"><img src="https://img.shields.io/github/v/release/ismaelsoilet/jev-harness?color=teal&logo=github&logoColor=white&cacheSeconds=0" alt="Versão no GitHub Release"></a>
   <a href="https://pypi.org/project/jev-harness/"><img src="https://img.shields.io/pypi/v/jev-harness.svg?color=blue&logo=pypi&logoColor=white&cacheSeconds=0" alt="Versão no PyPI"></a>
   <a href="https://www.npmjs.com/package/@ismaelsoilet/jev-harness"><img src="https://img.shields.io/npm/v/@ismaelsoilet/jev-harness.svg?color=cb3837&logo=npm&logoColor=white&cacheSeconds=0" alt="Versão no npm"></a>
@@ -475,6 +475,8 @@ O impacto da modulação depende fundamentalmente da arquitetura do provedor:
 ## 🤖 Integrações Universais com Agentes e IDEs
 
 > 📖 **Procurando configuração pronta para o seu projeto?** Leia o [**Guia Universal de Integração para Agentes**](docs/AGENT_INTEGRATION_GUIDE.pt-BR.md) com modelos de copiar e colar para Claude Code, Codex, Pi, Oh My Pi, CommandCode, Cursor e CI/CD.
+>
+> 🏭 **Fábrica [`thruwire/foreman`](https://github.com/thruwire/foreman)?** Este harness também entrega uma superfície de adapter determinística, um bundle de operador (`jev-harness export foreman`) e os fatos verificados do upstream — veja o [guia de integração com o Foreman](docs/integrations/foreman.md).
 
 ### 1. Claude Code (CLI `claude` da Anthropic)
 Conecte o Jev ao Claude Code em 5 segundos via MCP nativo:
@@ -755,7 +757,7 @@ Quando o `--mock` (ou nenhuma credencial) está ativo, todos os gates rodam loca
 - 📌 **Pin e origem do modelo**: o modelo efetivo resolve como argumento explícito → `JEV_MODEL` → `"model"` no `.jev.json` → padrão do provedor, e o `status` agora informa **de onde ele veio** (`Model origin: repository .jev.json`), avisando que `jev-latest` é um alias móvel. Fixe uma versão quando os thresholds estiverem calibrados.
 - 🐛 **Sem traceback em entrada literal longa**: uma task, state ou valor de `--log` maior que o limite de path do SO derrubava `route`/`verify`/`effort` com `[Errno 36] File name too long` (exit `1` com traceback); esse valor agora é tratado como texto literal (ou reportado como "log file not found"), e um payload live grande demais sai com `2` e mensagem clara.
 - 👻 **Shadow mode**: `--shadow` (ou `"shadow": true` no `.jev.json`) decide e reporta `[SHADOW] would exit N` no stderr saindo sempre `0` — nos três runtimes, inclusive quando o provedor falha, caso em que reporta `[SHADOW] would exit 2` em vez de quebrar o pipeline. Uso incorreto do CLI ainda sai `2`; `test-gate --json` expõe `shadow` e `would_exit`.
-- 🧪 **Bateria de 569 Testes**: 393 Python + 89 TypeScript + 87 Rust, incluindo fixture live compartilhado, servidores HTTP/TCP reais de retry, probes de payload malformado e paridade de shadow/limites/pin de modelo.
+- 🧪 **Bateria de 626 Testes**: 432 Python + 99 TypeScript + 95 Rust, incluindo fixture live compartilhado, servidores HTTP/TCP reais de retry, probes de payload malformado e paridade de shadow/limites/pin de modelo.
 - 🧾 **Confiança, auditoria e autodiagnóstico**: `doctor` (OK/AVISO/FALHA + comando de correção, `--json` para agentes), `receipts` (trilha de auditoria append-only com hash estável de entrada, apenas hashes, `0600`, TTL/tamanho limitados), `.jev/` ignorado pelo git no repo e no `init`, `usage`/custo medidos separados das estimativas heurísticas no `metrics`, e cache de decisões com hit-rate reportado (`--no-cache` para ignorar).
 - 🧪 **Calibração medida em vez de acurácia presumida**: corpus rotulado de 160 casos (`tests/corpus`, 84 rotulados à mão) mais `replay`, que imprime matriz de confusão, precisão/recall/F1 e ECE por gate e falha a CI em regressão ou quando um log adversarial é classificado deterministicamente. O primeiro baseline e seus achados abertos estão em `docs/REPLAY_REPORT.md`.
 - 🛡️ **Logs não confiáveis tratados como não confiáveis**: um detector determinístico de injeção escala (nunca ignora o LLM) quando o log se dirige ao decisor, nos três runtimes — exigido pelo gate adversarial do corpus.
@@ -863,6 +865,7 @@ Quando o `--mock` (ou nenhuma credencial) está ativo, todos os gates rodam loca
 | [System 1.5 — Ecossistema e oportunidades](SYSTEM_1_5_OPPORTUNITIES.md) | Comparação com Foreman, JevRouter, Winnow e jev-guard; 21 oportunidades priorizadas; o veredito "podemos ser 1.5?" |
 | [System 1.5 — Plano de implementação](SYSTEM_1_5_IMPLEMENTATION.md) | Épicos, critérios de aceite, testes e sequenciamento (H1–H3) |
 | [Guia Universal de Integração para Agentes](docs/AGENT_INTEGRATION_GUIDE.pt-BR.md) | Configuração copy-paste de MCP, CLI, hooks e CI em qualquer projeto |
+| [Integração com o Foreman](docs/integrations/foreman.md) | Superfície de adapter, bundle de operador (`export foreman`) e os fatos verificados do [thruwire/foreman](https://github.com/thruwire/foreman) |
 
 ---
 

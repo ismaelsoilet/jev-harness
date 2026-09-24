@@ -2,7 +2,7 @@
 
 <p align="center">
   <a href="https://github.com/ismaelsoilet/jev-harness/actions/workflows/ci.yml"><img src="https://github.com/ismaelsoilet/jev-harness/actions/workflows/ci.yml/badge.svg" alt="CI Status"></a>
-  <a href="https://github.com/ismaelsoilet/jev-harness/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/tests-569%20passed-brightgreen.svg?logo=githubactions&logoColor=white" alt="Tests Passed"></a>
+  <a href="https://github.com/ismaelsoilet/jev-harness/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/tests-626%20passed-brightgreen.svg?logo=githubactions&logoColor=white" alt="Tests Passed"></a>
   <a href="https://github.com/ismaelsoilet/jev-harness/releases"><img src="https://img.shields.io/github/v/release/ismaelsoilet/jev-harness?color=teal&logo=github&logoColor=white&cacheSeconds=0" alt="GitHub Release"></a>
   <a href="https://pypi.org/project/jev-harness/"><img src="https://img.shields.io/pypi/v/jev-harness.svg?color=blue&logo=pypi&logoColor=white&cacheSeconds=0" alt="PyPI version"></a>
   <a href="https://www.npmjs.com/package/@ismaelsoilet/jev-harness"><img src="https://img.shields.io/npm/v/@ismaelsoilet/jev-harness.svg?color=cb3837&logo=npm&logoColor=white&cacheSeconds=0" alt="npm version"></a>
@@ -477,6 +477,8 @@ The value of dynamic reasoning modulation fundamentally depends on the provider 
 ## 🤖 Universal Agent & IDE Integrations
 
 > 📖 **Looking for a turnkey setup for any project?** Read the [**Universal AI Agent Integration Guide**](docs/AGENT_INTEGRATION_GUIDE.md) ([Português](docs/AGENT_INTEGRATION_GUIDE.pt-BR.md)) with copy-paste configs for Claude Code, Codex, Pi, Oh My Pi, CommandCode, Cursor, and CI/CD.
+>
+> 🏭 **Running a [`thruwire/foreman`](https://github.com/thruwire/foreman) factory?** This harness also ships a deterministic adapter surface, an operator bundle (`jev-harness export foreman`) and the verified upstream facts — see the [Foreman integration guide](docs/integrations/foreman.md).
 
 ### 1. Claude Code (`claude` CLI by Anthropic)
 Connect Jev to Claude Code in 5 seconds via native MCP:
@@ -824,6 +826,7 @@ When `--mock` (or no credentials) is active, every gate runs locally with zero n
 | [System 1.5 — Ecosystem & opportunities](SYSTEM_1_5_OPPORTUNITIES.md) | How we compare with Foreman, JevRouter, Winnow and jev-guard; 21 prioritised opportunities; the "can we be 1.5?" verdict |
 | [System 1.5 — Implementation plan](SYSTEM_1_5_IMPLEMENTATION.md) | Epics, acceptance criteria, tests and sequencing (H1–H3) |
 | [Universal Agent Integration Guide](docs/AGENT_INTEGRATION_GUIDE.md) | Copy-paste setup for MCP, CLI, hooks and CI in any project |
+| [Foreman integration](docs/integrations/foreman.md) | Adapter surface, operator bundle (`export foreman`) and the verified upstream facts for [thruwire/foreman](https://github.com/thruwire/foreman) factories |
 
 ---
 
@@ -853,7 +856,7 @@ To update the packages and documentation across all 3 registries:
 Use the automated multi-runtime script to check, bump versions, and publish:
 
 ```bash
-# 1. Run full test battery (Python, TS, Rust - 569 tests)
+# 1. Run full test battery (Python, TS, Rust - 626 tests)
 ./scripts/release.sh --check
 
 # 2. Synchronously bump version in pyproject.toml, package.json, and Cargo.toml
@@ -884,7 +887,7 @@ You can also trigger releases via GitHub Actions:
 - 📌 **Model pinning and origin**: the effective model resolves as explicit argument → `JEV_MODEL` → `"model"` in `.jev.json` → provider default, and `status` now reports **where it came from** (`Model origin: repository .jev.json`), warning that `jev-latest` is a moving alias. Pin a version once your thresholds are calibrated.
 - 🐛 **No more traceback on long literal input**: a task, state or `--log` value longer than the OS path limit used to crash `route`/`verify`/`effort` with `[Errno 36] File name too long` (exit `1` with a traceback); such a value is now treated as literal text (or reported as "log file not found"), and an oversized live payload exits `2` with a clear message.
 - 👻 **Shadow mode**: `--shadow` (or `"shadow": true` in `.jev.json`) decides and reports `[SHADOW] would exit N` on stderr while always exiting `0` — in all three runtimes, including when the provider fails, where it reports `[SHADOW] would exit 2` instead of breaking the pipeline. CLI misuse still exits `2`; `test-gate --json` exposes `shadow` and `would_exit`.
-- 🧪 **569-Test Battery**: 393 Python + 89 TypeScript + 87 Rust, including a shared live-payload fixture, real HTTP/TCP retry servers, malformed-payload probes, and shadow/payload-limit/model-pinning parity.
+- 🧪 **626-Test Battery**: 432 Python + 99 TypeScript + 95 Rust, including a shared live-payload fixture, real HTTP/TCP retry servers, malformed-payload probes, and shadow/payload-limit/model-pinning parity.
 - 🧾 **Trust, audit and self-diagnosis**: `doctor` (OK/AVISO/FALHA + the fix command, `--json` for agents), `receipts` (append-only audit trail with a stable input hash, hashes only, `0600`, TTL/size bounded), `.jev/` git-ignored by the repo and by `init`, measured `usage`/`cost` split from the heuristic estimates in `metrics`, and a decision cache with a reported hit-rate (`--no-cache` to bypass).
 - 🧪 **Measured calibration instead of assumed accuracy**: a 160-case labelled corpus (`tests/corpus`, 84 hand-labelled) plus `replay`, which prints the confusion matrix, precision/recall/F1 and ECE per gate and fails CI on a regression or on an adversarial log being classified deterministically. The first baseline and its open findings are published in `docs/REPLAY_REPORT.md`.
 - 🛡️ **Untrusted logs are treated as untrusted**: a deterministic prompt-injection detector escalates (never skips the LLM) when the failure log addresses the judge, in all three runtimes — required by the adversarial corpus gate.

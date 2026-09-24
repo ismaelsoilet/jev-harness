@@ -132,9 +132,24 @@ pub struct Cli {
 }
 
 #[derive(Subcommand)]
+pub enum ExportTargets {
+    #[command(about = "Write the Foreman operator bundle (preset TOML + companion class + README)")]
+    Foreman {
+        #[arg(long, help = "Target directory (default: ./foreman-responsibilities/)")]
+        out_dir: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum Commands {
     #[command(about = "Display active credentials, provider, and engine mode")]
     Status,
+
+    #[command(about = "Write integration bundles for other tools (currently: foreman)")]
+    Export {
+        #[command(subcommand)]
+        target: ExportTargets,
+    },
 
     #[command(about = "Run stdio MCP server for Cursor, Claude Desktop, Antigravity IDE")]
     Mcp,
@@ -474,6 +489,53 @@ pub async fn run_cli() {
                 process::exit(1);
             }
             process::exit(0);
+        }
+
+        Commands::Export { target } => {
+            match target {
+                ExportTargets::Foreman { out_dir } => {
+                    let directory = PathBuf::from(
+                        out_dir.unwrap_or_else(|| crate::foreman::FOREMAN_DEFAULT_OUT_DIR.to_string()),
+                    );
+                    if directory
+                        .components()
+                        .any(|component| component.as_os_str() == ".foreman")
+                    {
+                        eprintln!(
+                            "Error: refusing to write into a '.foreman/' directory - that path is Foreman run state, not configuration. Point --out-dir at the Foreman installation's responsibilities directory instead."
+                        );
+                        process::exit(2);
+                    }
+                    let _ = fs::create_dir_all(&directory);
+                    let _ = fs::write(
+                        directory.join(crate::foreman::FOREMAN_PRESET_FILENAME),
+                        crate::foreman::FOREMAN_RESPONSIBILITY_TOML,
+                    );
+                    let _ = fs::write(
+                        directory.join(crate::foreman::FOREMAN_COMPANION_FILENAME),
+                        crate::foreman::FOREMAN_COMPANION_CLASS_SOURCE,
+                    );
+                    let _ = fs::write(
+                        directory.join(crate::foreman::FOREMAN_README_FILENAME),
+                        crate::foreman::FOREMAN_OPERATOR_README,
+                    );
+                    println!(
+                        "\n[OK] Foreman operator bundle written to: {}",
+                        directory.display()
+                    );
+                    println!("  [+] {}", crate::foreman::FOREMAN_PRESET_FILENAME);
+                    println!("  [+] {}", crate::foreman::FOREMAN_COMPANION_FILENAME);
+                    println!("  [+] {}", crate::foreman::FOREMAN_README_FILENAME);
+                    println!(
+                        "The pair ships together: a TOML without the installed class makes foreman exit 2."
+                    );
+                    println!(
+                        "Next: foreman run --repo <repo> --job \"<job>\" --responsibilities-dir {}\n",
+                        directory.display()
+                    );
+                    process::exit(0);
+                }
+            }
         }
 
         Commands::Init {

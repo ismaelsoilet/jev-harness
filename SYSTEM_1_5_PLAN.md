@@ -205,7 +205,7 @@ Os itens abaixo foram confirmados por auditoria do dono + revisão adversarial i
 
 ## 6. Especificação corrigida (evolução pós-pré-requisitos)
 
-> Sem compromisso de versão. Cada item só entra em uma release quando passar a bateria vigente (hoje 569 testes) + os novos testes exigidos e a paridade tri-runtime — pelo protocolo normal do repositório.
+> Sem compromisso de versão. Cada item só entra em uma release quando passar a bateria vigente (hoje 626 testes) + os novos testes exigidos e a paridade tri-runtime — pelo protocolo normal do repositório.
 
 ### Pré-requisito P0 — Corrigir o parser Score do Rust (hotfix)
 

@@ -3,7 +3,7 @@
 > **Documento companheiro de [`SYSTEM_1_5_PLAN.md`](SYSTEM_1_5_PLAN.md) (arquitetura-alvo) e [`SYSTEM_1_5_OPPORTUNITIES.md`](SYSTEM_1_5_OPPORTUNITIES.md) (oportunidades e veredito).**
 > Este é o plano **executável**: cada item tem escopo, arquivos, critérios de aceite verificáveis e testes obrigatórios.
 > **Isto não é um plano de release.** Nenhum item fixa versão; cada um entra em release quando passar o DoD (§2) pelo protocolo do repositório (`.agents/rules/05_release_and_quad_sync_protocol.md`).
-> **Base:** `v0.2.0` · **H1 entregue** (E0.1–E0.3, E1.1) · 569 testes verdes (393 Python + 89 TS + 87 Rust) · pesquisa datada de 2026-09-23.
+> **Base:** `v0.2.0` · **H1 entregue** (E0.1–E0.3, E1.1) · 626 testes verdes (432 Python + 99 TS + 95 Rust) · pesquisa datada de 2026-09-23.
 
 ---
 
@@ -358,7 +358,7 @@ formatação herdada foi zerada).
 - "instant startup (< 50ms)" → valor medido (~80–100 ms no modo offline).
 - "never crash" → precisão: sem chave e 401/403 caem para offline; outras falhas sobem (e o E0.2 adiciona fail-open configurável).
 - "Zero-hallucination" → "probabilidades calibradas (não infalíveis; ver jaggedness do modelo)".
-- "122 tests" (seção de release) → a bateria vigente (hoje 569); "210-Test Battery" → idem; exemplos de bump `0.1.6` → versão atual/placeholder.
+- "122 tests" (seção de release) → a bateria vigente (hoje 626); "210-Test Battery" → idem; exemplos de bump `0.1.6` → versão atual/placeholder.
 - Adicionar data de verificação e link do método onde houver benchmark (offline latency): **só manter a tabela se reproduzível** — caso contrário, rotular como "medido na v0.1.7" ou re-medir com script versionado.
 **Aceite:** nenhum número/claim sem qualificação; auditoria de claims do README em `docs/` (checklist no E4.3); ambos os idiomas sincronizados.
 **Testes:** script de verificação (grep dos padrões proibidos) + revisão.
@@ -433,7 +433,7 @@ E4.1 overclaims (docs)      │        E3.1 incerteza        │             E3.
 2. **Confiabilidade:** 0 tracebacks em cenários de falha de provider; fallback marcado em 100% dos casos `--fail-open`.
 3. **Custo:** tokens/custo medidos por decisão no `metrics`; cache com hit-rate reportado.
 4. **Alcance:** GitHub Action instalada em ≥1 repo externo; ≥2 plugins publicados; `doctor` usado no guia.
-5. **Regressão:** 569+ testes verdes em 3 runtimes; clippy 0; `--verify-sync` verde.
+5. **Regressão:** 626+ testes verdes em 3 runtimes; clippy 0; `--verify-sync` verde.
 
 ---
 
@@ -453,7 +453,7 @@ E4.1 overclaims (docs)      │        E3.1 incerteza        │             E3.
 
 **Comandos de verificação obrigatórios:**
 ```bash
-./scripts/release.sh --check        # 569+ testes, 3 runtimes
+./scripts/release.sh --check        # 626+ testes, 3 runtimes
 ./scripts/release.sh --verify-sync  # paridade de manifestos
 python3 -m unittest discover -s tests
 (cd packages/ts && npm test) && (cd packages/rust && cargo test --quiet)

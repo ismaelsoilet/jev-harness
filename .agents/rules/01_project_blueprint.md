@@ -81,16 +81,18 @@ jev-harness/
 │   │   │   ├── client.rs             # Cliente HTTP Tokio e simulação heurística local
 │   │   │   ├── config.rs             # Carregador do .jev.json (modelo, thresholds e cache)
 │   │   │   ├── gates.rs              # Implementação de todos os gates semânticos
+│   │   │   ├── foreman.rs            # Adapter Foreman: triagem, estagnação e bundle (paridade com Python/TS)
 │   │   │   ├── lib.rs                # Ponto de exportação público da biblioteca Rust
 │   │   │   ├── mcp.rs                # Servidor MCP stdio nativo em Rust
 │   │   │   └── types.rs              # Tipos estruturados e respostas tipadas
 │   │   └── tests/
-│   │       ├── gates_test.rs         # Gates semânticos, dialetos e safeguards (49 testes, 100% pass)
+│   │       ├── gates_test.rs         # Gates semânticos, dialetos e safeguards (50 testes, 100% pass)
+│   │       ├── foreman_test.rs       # Adapter Foreman, fixtures compartilhados e CLI `export foreman` (8 testes)
 │   │       ├── live_payload_parity_test.rs  # Fixture live compartilhado (parser Score; 2 testes)
 │   │       ├── mock_golden_test.rs          # Vetores golden da mock (paridade 1e-9 com Python/TS)
 │   │       ├── triage_parity_test.rs        # Trava de paridade de veredito sobre o corpus (112 casos)
 │   │       ├── model_resolution_test.rs     # Pin/origem de modelo e precedência do shadow (6 testes)
-│   │       ├── provider_resilience_test.rs  # Retry/Retry-After e payload malformado, TCP real (12 testes)
+│   │       ├── provider_resilience_test.rs  # Retry/Retry-After e payload malformado, TCP real (13 testes)
 │   │       └── shadow_and_limits_test.rs    # Shadow mode e limites de payload (4 testes)
 │   └── ts/                           # Pacote oficial npm (`@ismaelsoilet/jev-harness`)
 │       ├── package.json              # Manifesto do pacote npm
@@ -105,14 +107,16 @@ jev-harness/
 │       │   ├── config.ts             # Carregador do .jev.json (modelo, thresholds e cache)
 │       │   ├── gates.ts              # Implementação dos gates semânticos
 │       │   ├── index.ts              # Exportações do pacote
+│       │   ├── foreman.ts            # Adapter Foreman: triagem, estagnação e bundle (paridade com Python/Rust)
 │       │   ├── mcp.ts                # Servidor MCP stdio nativo em TypeScript
 │       │   └── types.ts              # Interfaces TypeScript tipadas
 │       └── tests/
-│           ├── gates.test.ts         # Gates semânticos, provedores e safeguards (45 testes, 100% pass)
+│           ├── foreman.test.ts       # Adapter Foreman, fixtures e CLI `export foreman` (10 testes; paridade Py/Rust)
+│           ├── gates.test.ts         # Gates semânticos, provedores e safeguards (49 testes, 100% pass)
 │           ├── live_payload.test.ts  # Fixture live compartilhado (parser Score; 1 teste)
 │           ├── mock_golden.test.ts   # Vetores golden da mock (paridade 1e-9 com Python/Rust)
 │           ├── triage_parity.test.ts # Trava de paridade de veredito sobre o corpus (112 casos)
-│           ├── resilience.test.ts    # Retry/Retry-After, fail-open/fail-closed, payload malformado (16 testes)
+│           ├── resilience.test.ts    # Retry/Retry-After, fail-open/fail-closed, payload malformado (17 testes)
 │           └── shadow_and_limits.test.ts  # Shadow mode, limites, pin de modelo (10 testes)
 ├── src/
 │   └── jev_harness/                  # Pacote oficial Python (`pip install jev-harness`)
@@ -126,8 +130,12 @@ jev-harness/
 │       ├── mcp_server.py             # Servidor MCP stdio universal (`jev-mcp`)
 │       ├── receipts.py               # Trilha de auditoria append-only + higiene do `.jev/` (E1.3/E3.8)
 │       ├── replay.py                 # Corpus, matriz de confusão, ECE e gate de regressão (E1.2)
-│       └── session.py                # Telemetria, persistência de sessão e lock de concorrência
-├── tests/                            # Bateria de testes Python (393 testes, 100% pass)
+│       ├── session.py                # Telemetria, persistência de sessão e lock de concorrência
+│       └── integrations/             # Adapters por host e presets de configuração
+│           ├── __init__.py           # Presets (OpenCode/Cursor/Claude/Antigravity) + re-exports do adapter
+│           ├── foreman.py            # Adapter Foreman; `export foreman` escreve quality.jev-triage.toml + quality_jev_triage.py + README.md
+│           └── foreman_responsibility.py  # Classe companion `quality.jev-triage` (exportada por `jev-harness export foreman`)
+├── tests/                            # Bateria de testes Python (432 testes, 100% pass)
 │   ├── corpus/                       # Corpus rotulado de calibração (160 casos; ver README do diretório)
 │   ├── test_adversarial.py           # Testes adversariais, concorrência, negação, emojis UTF-8
 │   ├── test_config.py                # Testes do .jev.json (modelo, thresholds, clamp, corrompido)
@@ -146,14 +154,15 @@ jev-harness/
 │   ├── test_receipts.py              # Recibos, retenção e higiene de .gitignore
 │   ├── test_replay.py                # Corpus, métricas e o gate de regressão
 │   ├── test_shadow_and_limits.py     # Shadow mode, limites de payload e pin de modelo
-│   └── fixtures/                     # Payloads live gravados (contrato tri-runtime)
+│   ├── test_foreman_integration.py   # Adapter Foreman, breaker de estagnação, preset, classe companion e `export foreman`
+│   └── fixtures/                     # Payloads live + golden do Foreman (foreman_cases.json, foreman_responsibility.toml, foreman_operator_readme.md)
 ├── pyproject.toml                    # Configuração de build Python Hatchling
 ├── README.md                         # Documentação global oficial do repositório
 ├── AGENTS.md                         # Ponto de entrada obrigatório para agentes de IA
 ├── LICENSE                           # Licença MIT
 └── scripts/
     ├── jev_test_gate_hook.sh         # Wrapper do hook pre-commit (runner decide, Jev aconselha)
-    └── release.sh                    # Script mestre de release, check (569 testes) e sync
+    └── release.sh                    # Script mestre de release, check (626 testes) e sync
 ```
 
 ---

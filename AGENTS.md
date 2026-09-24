@@ -15,7 +15,7 @@ This document serves as the primary entry portal. The repository organizes its s
 1. 🏛️ **[System Architecture Blueprint](.agents/rules/01_project_blueprint.md)**: Directory mapping, tri-runtime layout (Python, TS, Rust), data pipelines, and zero-dependency contracts.
 2. 🧠 **[Core Software Engineering Principles](.agents/rules/02_software_engineering_principles.md)**: Karpathy principles, Fable loop, Kahneman System 1 vs 2, Unix philosophy, and anti-Frankenstein architecture.
 3. 🌐 **[Model Governance & 2026 Frontier Registry](.agents/rules/03_model_governance_and_frontier_registry.md)**: Golden rule against obsolete models, mandatory daily web research, provider dialects, and direct model safeguards.
-4. 🛡️ **[Exhaustive Testing & Absolute Truthfulness](.agents/rules/04_testing_and_truthfulness.md)**: Zero-trust posture, prohibition of tautological tests, 569-test battery.
+4. 🛡️ **[Exhaustive Testing & Absolute Truthfulness](.agents/rules/04_testing_and_truthfulness.md)**: Zero-trust posture, prohibition of tautological tests, 626-test battery.
 5. 🚀 **[Release Protocol & Quad-Sync Synchronization](.agents/rules/05_release_and_quad_sync_protocol.md)**: Synchronous pipeline across 4 registries (GitHub, PyPI, npm, Crates.io).
 6. 📝 **[Code Style and Language Conventions](.agents/rules/06_code_style_and_conventions.md)**: Strict standards for Python (pure stdlib), TypeScript (native ESM), and Rust (Tokio 2021).
 7. 🔌 **[MCP Quality & TDQS Standards](.agents/rules/07_mcp_quality_and_tdqs_standards.md)**: Glama TDQS A+ (5.0) requirements, verb_noun canonical naming, MCP annotations, usage guidelines, and tri-runtime parity.
@@ -106,7 +106,7 @@ Provider endpoints, model IDs, free tiers and prices were last verified on **202
 [Code or Docs Modification]
         │
         ▼
-[1. Run 569 Tests: ./scripts/release.sh --check]
+[1. Run 626 Tests: ./scripts/release.sh --check]
         │ (If 100% Passing)
         ▼
 [2. Synchronous Version Bump: ./scripts/release.sh --bump <version>]

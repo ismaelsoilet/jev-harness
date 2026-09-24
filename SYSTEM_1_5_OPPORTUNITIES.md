@@ -3,13 +3,13 @@
 > **Documento companheiro de [`SYSTEM_1_5_PLAN.md`](SYSTEM_1_5_PLAN.md).**
 > Responde a três perguntas: (1) que oportunidades temos para melhorar o `jev-harness` conforme a pesquisa? (2) trata-se de outra ferramenta? (3) podemos ser System 1.5 — sim ou não?
 > **Data da pesquisa: 2026-09-23** (válida por 30 dias — re-verificar após 2026-10-23).
-> **Base do produto: v0.1.14** (211 testes verdes, 4 canais publicados). **H1 entregue na v0.2.0** (H1 completo + E1.2–E1.4, E2.1, E2.4, E3.2/E3.3, E3.8, E3.9, E0.4, E3.1, E3.4–E3.7, E2.2, E2.3; 569 testes).
+> **Base do produto: v0.1.14** (211 testes verdes, 4 canais publicados). **H1 entregue na v0.2.0** (H1 completo + E1.2–E1.4, E2.1, E2.4, E3.2/E3.3, E3.8, E3.9, E0.4, E3.1, E3.4–E3.7, E2.2, E2.3; 626 testes).
 
 ---
 
 ## 1. Sumário executivo
 
-1. **Não é "outra ferramenta" — é um papel diferente na mesma categoria.** Em menos de 7 dias, o ecossistema Jev/System One se fragmentou em **5 papéis especializados**: supervisão de runtime ([Foreman](https://github.com/thruwire/foreman), 517★), roteamento de capacidades ([JevRouter](https://github.com/BillionsBobby/JevRouter), 173★), peneira de contexto ([Winnow](https://github.com/GhalebDweikat/winnow), 68★), segurança de tool calls ([jev-guard](https://github.com/leepokai/jev-guard), 26★) e **qualidade/testes (o nosso, 4★)**. Fundir tudo num só produto seria um Frankenstein técnico (stacks e loops incompatíveis) e competiria com MIT já maduro.
+1. **Não é "outra ferramenta" — é um papel diferente na mesma categoria.** Em menos de 7 dias, o ecossistema Jev/System One se fragmentou em **5 papéis especializados**: supervisão de runtime ([Foreman](https://github.com/thruwire/foreman), 535★), roteamento de capacidades ([JevRouter](https://github.com/BillionsBobby/JevRouter), 173★), peneira de contexto ([Winnow](https://github.com/GhalebDweikat/winnow), 68★), segurança de tool calls ([jev-guard](https://github.com/leepokai/jev-guard), 26★) e **qualidade/testes (o nosso, 4★)**. Fundir tudo num só produto seria um Frankenstein técnico (stacks e loops incompatíveis) e competiria com MIT já maduro.
 2. **Sim, podemos ser System 1.5** — como **a camada de decisão System 1.5 do ciclo de qualidade de código** (triagem de falha → veto de conclusão prematura → verificação → quebra de loop → esforço). Já somos uma implementação legítima e parcial. **Não** podemos ser "a System 1.5 inteira": isso é uma **categoria**, não uma ferramenta.
 3. **Encontramos 4 oportunidades Tier-0 de confiabilidade** que nenhum concorrente ignora: tratamento de `429`/`Retry-After`, política de falha explícita (fail-open/fail-closed), pin de versão do modelo e estado estruturado. Hoje, um erro de rede no gate vira **exceção não tratada** (evidência na §4-O0.2).
 4. **O maior gap de maturidade é confiança/calibração** — o Winnow já tem *shadow mode*, *replay* offline, curvas de calibração (ECE/ROC) e medição de *regret*; nós temos thresholds default sem dados. É a oportunidade de maior alavancagem depois do Tier-0.
@@ -24,7 +24,7 @@
 | **Papel** | Supervisor de workers de código | Roteador de capacidades | Peneira de contexto | Guardrail de tool calls | Gates de qualidade/testes |
 | **Stack** | Python 3.11 asyncio | Node 20 / TS | Python sidecar + TS hook | Node zero-dep | Python + TS + Rust |
 | **Licença** | MIT | MIT | MIT | MIT | MIT |
-| **★ / criado** | 517 / 17-09 | 173 / 18-09 | 68 / 16-09 | 26 / 17-09 | 4 / 21-09 |
+| **★ / criado** | 535 / 17-09 | 173 / 18-09 | 68 / 16-09 | 26 / 17-09 | 4 / 21-09 |
 | **Como decide** | 10 Noul em 1 chamada + árbitro determinístico | 1 Choice (+ `plan` serial/batch/decompose) | 1 Noul por bloco de output | risk(Score)+approval+user_requested+from_untrusted (Noul) | 6 gates: Choice/Score/Noul |
 | **Ações** | continue / steer / stop / retry / verify / finish / escalate | decision-only (nada executa; médio/alto exige confirmação) | esconde blocos com recall key | deny / ask / allow | exit 0/1/2 + ação recomendada |
 | **Persistência** | `.foreman/runs/` (state+events) | `.jevrouter/decisions` + receipts com hash | cache + `decisions.jsonl` | `~/.jev-guard/sessions` + cache | `.jev/session.json` + telemetria |
@@ -65,7 +65,7 @@ re-verifique endpoints, estrelas e escopo após **2026-10-23**.
 | :--- | :--- | :--- | :--- |
 | **Qualidade, teste, commit** (nós) | **jev-harness** | Triagem de falha, veto de conclusão prematura, quebra de doom loop, esforço e roteamento dentro do **ciclo de trabalho de código**; offline determinístico; tri-runtime | este repositório (`v0.2.0`, 2026-09-23) |
 | **Ações de ferramenta** | [jev-guard](https://github.com/leepokai/jev-guard) (26★, criado 2026-09-17) | Antes de executar um tool call perigoso: `deny`/`ask`/`allow` com policy por risco. Nós julgamos *trabalho*, eles julgam *ações* | repositório/README do projeto (inspeção 2026-09-23) |
-| **Supervisão de runtime** | [Foreman](https://github.com/thruwire/foreman) (517★, criado 2026-09-17) | Orquestrar workers de código de ponta a ponta (Codex/OpenCode), decidir `continue`/`steer`/`stop` em tempo real | repositório/README do projeto (inspeção 2026-09-23) |
+| **Supervisão de runtime** | [Foreman](https://github.com/thruwire/foreman) (535★, criado 2026-09-17) | Orquestrar workers de código de ponta a ponta (Codex/OpenCode), decidir `continue`/`steer`/`stop` em tempo real | repositório/README do projeto (inspeção 2026-09-23) |
 | **Peneira de contexto** | [Winnow](https://github.com/GhalebDweikat/winnow) (68★, criado 2026-09-16) | Reduzir o que entra na janela do Claude Code, com shadow mode/replay/ECE para calibrar | repositório/README do projeto (inspeção 2026-09-23) |
 | **Roteamento de capacidades** | [JevRouter](https://github.com/BillionsBobby/JevRouter) (173★, criado 2026-09-18) | Escolher *qual modelo/ferramenta* resolve uma tarefa, com política e `no_decision` por confiança | repositório/README do projeto (inspeção 2026-09-23) |
 
@@ -152,7 +152,7 @@ Legenda: **E** = esforço (P/M/G), **R** = risco (baixo/médio/alto), **Encaixe*
 | :--- | :--- | :--- |
 | **N1 — Usar Jev como camada de decisão** | Chamar o System 1 para julgamentos estreitos e compor em código | ✅ **Sim, já fazemos** (6 gates, política determinística, offline fallback) |
 | **N2 — Ser o tecido conjuntivo System 1.5 de um domínio** | Ser a camada que conecta o System 1 ao System 2 com contratos, evidência e política, num domínio específico | ✅ **Sim — no domínio de qualidade de código**; já somos parcialmente (triage/abort/nudge/verify/effort/route + hook + MCP). Tier-0/1 fecham o restante |
-| **N3 — Ser "a" System 1.5 completa** | Substituir a categoria inteira (runtime + roteamento + contexto + segurança + qualidade + artefatos) | ❌ **Não.** É uma categoria, não uma ferramenta: 5 papéis já ocupados por projetos MIT ativos (517★/173★/68★/26★). Tentar seria anti-Karpathy e anti-Frankenstein |
+| **N3 — Ser "a" System 1.5 completa** | Substituir a categoria inteira (runtime + roteamento + contexto + segurança + qualidade + artefatos) | ❌ **Não.** É uma categoria, não uma ferramenta: 5 papéis já ocupados por projetos MIT ativos (535★/173★/68★/26★). Tentar seria anti-Karpathy e anti-Frankenstein |
 
 **Scorecard pelos 5 pilares (0–5, com base nos fatos auditados):**
 

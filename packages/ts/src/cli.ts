@@ -12,6 +12,15 @@ import {
   verifyStepCompletion,
 } from "./gates.js";
 import { runMcpServer } from "./mcp.js";
+import {
+  FOREMAN_COMPANION_CLASS_SOURCE,
+  FOREMAN_COMPANION_FILENAME,
+  FOREMAN_DEFAULT_OUT_DIR,
+  FOREMAN_OPERATOR_README,
+  FOREMAN_PRESET_FILENAME,
+  FOREMAN_README_FILENAME,
+  FOREMAN_RESPONSIBILITY_TOML,
+} from "./foreman.js";
 
 // Heuristic savings model (documented planning assumptions, NOT measured token counts):
 // mirrors the Python and Rust runtimes so every metrics surface stays honest.
@@ -261,7 +270,8 @@ async function runCliInner(argv: string[] = process.argv.slice(2)): Promise<numb
           args[i] === "--session-context-tokens" ||
           args[i] === "--tokens" ||
           args[i] === "--supported-efforts" ||
-          args[i] === "--max-lease-steps") &&
+          args[i] === "--max-lease-steps" ||
+          args[i] === "--out-dir") &&
         i + 1 < args.length &&
         !args[i + 1].startsWith("-")
       ) {
@@ -270,7 +280,9 @@ async function runCliInner(argv: string[] = process.argv.slice(2)): Promise<numb
       }
     }
   }
-  const command = args.find((_, idx) => !nonCommandIndices.has(idx));
+  const positional = args.filter((_, idx) => !nonCommandIndices.has(idx));
+  const command = positional[0];
+  const nestedCommand = positional[1];
 
   const shadowExit = (code: number): number => {
     if (shadow) {
@@ -463,6 +475,51 @@ This repository is connected to the global **Jev System One Harness**.
       console.log(
         "\n[!] Repository configured, but the Jev commit gate is NOT active (an existing hook was preserved). Merge .git/hooks/pre-commit.jev to enable it.\n"
       );
+    }
+    return 0;
+  }
+
+  if (command === "export") {
+    if (nestedCommand !== "foreman") {
+      process.stderr.write("Usage: jev-harness export foreman [--out-dir <directory>]\n");
+      return 2;
+    }
+    let outDir: string | undefined;
+    const outDirEq = args.find((a) => a.startsWith("--out-dir="));
+    if (outDirEq) {
+      outDir = outDirEq.split("=")[1];
+    } else {
+      const outDirIdx = args.findIndex((a) => a === "--out-dir");
+      if (outDirIdx !== -1 && args[outDirIdx + 1]) outDir = args[outDirIdx + 1];
+    }
+    const target = path.resolve(outDir ?? FOREMAN_DEFAULT_OUT_DIR);
+    if (target.split(path.sep).includes(".foreman")) {
+      process.stderr.write(
+        "Error: refusing to write into a '.foreman/' directory - that path is Foreman run state, not configuration. Point --out-dir at the Foreman installation's responsibilities directory instead.\n"
+      );
+      return 2;
+    }
+    fs.mkdirSync(target, { recursive: true });
+    fs.writeFileSync(path.join(target, FOREMAN_PRESET_FILENAME), FOREMAN_RESPONSIBILITY_TOML, "utf-8");
+    fs.writeFileSync(path.join(target, FOREMAN_COMPANION_FILENAME), FOREMAN_COMPANION_CLASS_SOURCE, "utf-8");
+    fs.writeFileSync(path.join(target, FOREMAN_README_FILENAME), FOREMAN_OPERATOR_README, "utf-8");
+    if (isJson) {
+      process.stdout.write(
+        JSON.stringify(
+          {
+            outDir: target,
+            files: [FOREMAN_PRESET_FILENAME, FOREMAN_COMPANION_FILENAME, FOREMAN_README_FILENAME],
+            activation: `foreman run --responsibilities-dir ${target}`,
+          },
+          null,
+          2
+        ) + "\n"
+      );
+    } else {
+      process.stdout.write(`\n[OK] Foreman operator bundle written to: ${target}\n`);
+      process.stdout.write(`  [+] ${FOREMAN_PRESET_FILENAME}\n  [+] ${FOREMAN_COMPANION_FILENAME}\n  [+] ${FOREMAN_README_FILENAME}\n`);
+      process.stdout.write("The pair ships together: a TOML without the installed class makes foreman exit 2.\n");
+      process.stdout.write(`Next: foreman run --repo <repo> --job "<job>" --responsibilities-dir ${target}\n\n`);
     }
     return 0;
   }

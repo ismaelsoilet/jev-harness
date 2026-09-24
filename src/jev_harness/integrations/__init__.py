@@ -7,7 +7,23 @@ Integration configurations and presets for leading AI coding environments:
 - Antigravity IDE
 - Windsurf & Zed
 - Git / Husky / Pre-commit
+- thruwire/foreman (adapter surface in `foreman.py`; companion class in
+  `foreman_responsibility.py`, exported by `jev-harness export foreman`)
 """
+
+from .foreman import (  # noqa: F401  (adapter surface; standard library plus jev-harness only)
+    ASSERTION_SLICE_MAX_CHARS,
+    DEFAULT_WINDOW,
+    FOREMAN_COMPANION_FILENAME,
+    FOREMAN_DEFAULT_OUT_DIR,
+    FOREMAN_PRESET_FILENAME,
+    FOREMAN_README_FILENAME,
+    FOREMAN_RESPONSIBILITY_TOML,
+    FOREMAN_SCHEMA_VERSION,
+    STAGNANT_EVIDENCE,
+    ForemanCircuitBreaker,
+    ForemanTriageObserver,
+)
 
 OPENCODE_CONFIG_SNIPPET = """# .opencode/config.json or agent tool registration
 {

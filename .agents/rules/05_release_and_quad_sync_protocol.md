@@ -22,8 +22,8 @@ O `jev-harness` é distribuído simultaneamente para três ecossistemas de lingu
 
 Toda nova versão, build ou correção que mereça lançamento deve seguir estritamente estes 6 passos sequenciais:
 
-### Passo 1: Execução da Bateria Completa de 569 Testes
-Antes de qualquer alteração de versão, todos os 569 testes devem passar nos 3 runtimes:
+### Passo 1: Execução da Bateria Completa de 626 Testes
+Antes de qualquer alteração de versão, todos os 626 testes devem passar nos 3 runtimes:
 ```bash
 ./scripts/release.sh --check
 ```
