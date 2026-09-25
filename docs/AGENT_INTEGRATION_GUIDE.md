@@ -6,7 +6,7 @@
 
 > **Turnkey implementation playbook for autonomous AI coding agents (Claude Code, OpenAI Codex, Pi, Oh My Pi, CommandCode, Cursor, Antigravity, OpenCode, Windsurf, Zed, Devin, Aider) and engineers equipping agentic workflows in ANY project.**
 
-> **Where this fits:** `jev-harness` is the System 1.5 quality-decision layer (test triage, doom-loop breaking, completion veto). Architecture, ecosystem comparison and roadmap: [System 1.5 plan](../SYSTEM_1_5_PLAN.md) · [Opportunities](../SYSTEM_1_5_OPPORTUNITIES.md) · [Implementation plan](../SYSTEM_1_5_IMPLEMENTATION.md).
+> **Where this fits:** `jev-harness` is the System 1.5 quality-decision layer (test triage, doom-loop breaking, completion veto). Architecture, ecosystem comparison and roadmap: [System 1.5 plan](system_1_5/SYSTEM_1_5_PLAN.md) · [Opportunities](system_1_5/SYSTEM_1_5_OPPORTUNITIES.md) · [Implementation plan](system_1_5/SYSTEM_1_5_IMPLEMENTATION.md) · [Documentation Hub](README.md).
 
 ---
 

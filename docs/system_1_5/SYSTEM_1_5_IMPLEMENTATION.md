@@ -1,8 +1,10 @@
 # 🛠️ Plano de Implementação — System 1.5 (jev-harness)
 
+[ 🏠 Repositório](../../README.md) | [ 📚 Hub de Documentação](../README.md) | [ 🧠 Plano System 1.5](SYSTEM_1_5_PLAN.md) | [ 🧭 Oportunidades](SYSTEM_1_5_OPPORTUNITIES.md) | [ 🚀 Implementação](SYSTEM_1_5_IMPLEMENTATION.md)
+
 > **Documento companheiro de [`SYSTEM_1_5_PLAN.md`](SYSTEM_1_5_PLAN.md) (arquitetura-alvo) e [`SYSTEM_1_5_OPPORTUNITIES.md`](SYSTEM_1_5_OPPORTUNITIES.md) (oportunidades e veredito).**
 > Este é o plano **executável**: cada item tem escopo, arquivos, critérios de aceite verificáveis e testes obrigatórios.
-> **Isto não é um plano de release.** Nenhum item fixa versão; cada um entra em release quando passar o DoD (§2) pelo protocolo do repositório (`.agents/rules/05_release_and_quad_sync_protocol.md`).
+> **Isto não é um plano de release.** Nenhum item fixa versão; cada um entra em release quando passar o DoD (§2) pelo protocolo do repositório ([`../../.agents/rules/05_release_and_quad_sync_protocol.md`](../../.agents/rules/05_release_and_quad_sync_protocol.md)).
 > **Base:** `v0.2.0` · **H1 entregue** (E0.1–E0.3, E1.1) · 626 testes verdes (432 Python + 99 TS + 95 Rust) · pesquisa datada de 2026-09-23.
 
 ---
@@ -459,4 +461,4 @@ python3 -m unittest discover -s tests
 (cd packages/ts && npm test) && (cd packages/rust && cargo test --quiet)
 ```
 
-**Referências:** [`SYSTEM_1_5_PLAN.md`](SYSTEM_1_5_PLAN.md) (fatos verificados e fontes) · [`SYSTEM_1_5_OPPORTUNITIES.md`](SYSTEM_1_5_OPPORTUNITIES.md) (ecossistema e oportunidades) · [`docs/AGENT_INTEGRATION_GUIDE.md`](docs/AGENT_INTEGRATION_GUIDE.md) (integração).
+**Referências:** [`SYSTEM_1_5_PLAN.md`](SYSTEM_1_5_PLAN.md) (fatos verificados e fontes) · [`SYSTEM_1_5_OPPORTUNITIES.md`](SYSTEM_1_5_OPPORTUNITIES.md) (ecossistema e oportunidades) · [`AGENT_INTEGRATION_GUIDE.md`](../AGENT_INTEGRATION_GUIDE.md) (integração).

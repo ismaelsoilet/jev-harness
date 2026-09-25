@@ -6,7 +6,7 @@
 
 > **Manual de implementação pronta para uso (turnkey) para agentes autônomos de codificação com IA (Claude Code, OpenAI Codex, Pi, Oh My Pi, CommandCode, Cursor, Antigravity, OpenCode, Windsurf, Zed, Devin, Aider) e engenheiros equipando fluxos de agentes em QUALQUER projeto.**
 
-> **Onde isto se encaixa:** o `jev-harness` é a camada de decisão de qualidade System 1.5 (triagem de testes, quebra de doom loops, veto de conclusão). Arquitetura, comparativo de ecossistema e roadmap: [Plano System 1.5](../SYSTEM_1_5_PLAN.md) · [Oportunidades](../SYSTEM_1_5_OPPORTUNITIES.md) · [Plano de implementação](../SYSTEM_1_5_IMPLEMENTATION.md).
+> **Onde isto se encaixa:** o `jev-harness` é a camada de decisão de qualidade System 1.5 (triagem de testes, quebra de doom loops, veto de conclusão). Arquitetura, comparativo de ecossistema e roadmap: [Plano System 1.5](system_1_5/SYSTEM_1_5_PLAN.md) · [Oportunidades](system_1_5/SYSTEM_1_5_OPPORTUNITIES.md) · [Plano de implementação](system_1_5/SYSTEM_1_5_IMPLEMENTATION.md) · [Catálogo da Documentação](README.pt-BR.md).
 
 ---
 

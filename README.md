@@ -14,7 +14,7 @@
   <a href="https://typesafe.ai"><img src="https://img.shields.io/badge/powered%20by-TypeSafe%20Jev%20System%20One-orange.svg" alt="TypeSafe Jev"></a>
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-Compatible-purple.svg" alt="MCP Compatible"></a>
   <a href="#"><img src="https://img.shields.io/badge/dependencies-0%20(pure%20stdlib)-success.svg" alt="Zero Dependencies"></a>
-  <a href="SYSTEM_1_5_IMPLEMENTATION.md"><img src="https://img.shields.io/badge/architecture-System%201.5%20Layer-8A2BE2.svg" alt="System 1.5 Architecture"></a>
+  <a href="docs/system_1_5/SYSTEM_1_5_IMPLEMENTATION.md"><img src="https://img.shields.io/badge/architecture-System%201.5%20Layer-8A2BE2.svg" alt="System 1.5 Architecture"></a>
 </p>
 
 <p align="center">
@@ -169,7 +169,7 @@ Daniel Kahneman's cognitive paradigm applied to agentic engineering, with this h
 
 **Our unique combination:** the only tool in this set that (1) works **fully offline** with a deterministic engine, (2) ships **three runtimes with semantic parity** for gate verdicts (Python / TypeScript / Rust — known mock-probability divergence is tracked as E3.9), and (3) owns the **test / commit / CI quality gate**.
 
-📚 Architecture & roadmap: [System 1.5 plan](SYSTEM_1_5_PLAN.md) · [Ecosystem & opportunities](SYSTEM_1_5_OPPORTUNITIES.md) · [Implementation plan](SYSTEM_1_5_IMPLEMENTATION.md).
+📚 Architecture & roadmap: [System 1.5 plan](docs/system_1_5/SYSTEM_1_5_PLAN.md) · [Ecosystem & opportunities](docs/system_1_5/SYSTEM_1_5_OPPORTUNITIES.md) · [Implementation plan](docs/system_1_5/SYSTEM_1_5_IMPLEMENTATION.md) · [Documentation Hub](docs/README.md).
 
 ---
 
@@ -822,9 +822,10 @@ When `--mock` (or no credentials) is active, every gate runs locally with zero n
 
 | Document | What it answers |
 | :--- | :--- |
-| [System 1.5 — Architecture & verified facts](SYSTEM_1_5_PLAN.md) | Where the tool sits between System 1 (Jev) and System 2; what is verified today (v0.2.0) and what is missing |
-| [System 1.5 — Ecosystem & opportunities](SYSTEM_1_5_OPPORTUNITIES.md) | How we compare with Foreman, JevRouter, Winnow and jev-guard; 21 prioritised opportunities; the "can we be 1.5?" verdict |
-| [System 1.5 — Implementation plan](SYSTEM_1_5_IMPLEMENTATION.md) | Epics, acceptance criteria, tests and sequencing (H1–H3) |
+| [Documentation Map & Catalog](docs/README.md) | Central documentation directory, audience navigation, and complete file index |
+| [System 1.5 — Architecture & verified facts](docs/system_1_5/SYSTEM_1_5_PLAN.md) | Where the tool sits between System 1 (Jev) and System 2; what is verified today (v0.2.0) and what is missing |
+| [System 1.5 — Ecosystem & opportunities](docs/system_1_5/SYSTEM_1_5_OPPORTUNITIES.md) | How we compare with Foreman, JevRouter, Winnow and jev-guard; 21 prioritised opportunities; the "can we be 1.5?" verdict |
+| [System 1.5 — Implementation plan](docs/system_1_5/SYSTEM_1_5_IMPLEMENTATION.md) | Epics, acceptance criteria, tests and sequencing (H1–H3) |
 | [Universal Agent Integration Guide](docs/AGENT_INTEGRATION_GUIDE.md) | Copy-paste setup for MCP, CLI, hooks and CI in any project |
 | [Foreman integration](docs/integrations/foreman.md) | Adapter surface, operator bundle (`export foreman`) and the verified upstream facts for [thruwire/foreman](https://github.com/thruwire/foreman) factories |
 
@@ -895,7 +896,7 @@ You can also trigger releases via GitHub Actions:
 - 🎯 **Decision quality made explicit**: `uncertainty` per result (shape + escalation), `recovery` as structured data with an allowlist-backed safety flag, a focused slice instead of a raw log for the provider, state-level secret redaction, session memory in the gates and a bounded effort lease with a caller break-glass. All additive: no exit code or `skip_llm` changed.
 - 🔀 **Tri-runtime parity is now enforced, not claimed**: `tests/fixtures/corpus_parity.json` locks 160 corpus cases × 6 gates across Python, TypeScript and Rust. Building it exposed and fixed real divergences, including a non-deterministic `HashMap` iteration order in the Rust mock.
 - 📦 **Distribution**: host plugin bundles (Claude Code, Codex/OpenCode), an interop section with sourced dates, and an offline documentation link checker wired into CI.
-- 🧭 **System 1.5 documentation**: architecture, ecosystem comparison and implementation plan are linked from the README (`SYSTEM_1_5_*.md`).
+- 🧭 **System 1.5 documentation**: architecture, ecosystem comparison and implementation plan are organized under `docs/system_1_5/` (`docs/system_1_5/SYSTEM_1_5_*.md`).
 - 🔒 **Privacy/ops unchanged**: offline mode still makes zero network calls; degraded live answers are always labeled, never silent.
 
 ## 🌟 What's New in v0.1.14

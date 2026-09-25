@@ -1,7 +1,9 @@
 # 🧠 SYSTEM 1.5 — Arquitetura-Alvo e Mapa de Capacidades Verificadas
 
+[ 🏠 Repositório](../../README.md) | [ 📚 Hub de Documentação](../README.md) | [ 🧠 Plano System 1.5](SYSTEM_1_5_PLAN.md) | [ 🧭 Oportunidades](SYSTEM_1_5_OPPORTUNITIES.md) | [ 🚀 Implementação](SYSTEM_1_5_IMPLEMENTATION.md)
+
 > **⚠️ Este documento NÃO é o plano de release da `v0.2.0`.**
-> Ele descreve a **arquitetura-alvo "System 1.5"** (norte conceitual) e o que a ferramenta **realmente é hoje**, com fatos verificados e pesquisa externa. A próxima versão do produto continua sendo a **`v0.2.0`**, conduzida separadamente pelo protocolo de release do repositório (`.agents/rules/05_release_and_quad_sync_protocol.md`). Nada aqui autoriza implementação nem fixa versão.
+> Ele descreve a **arquitetura-alvo "System 1.5"** (norte conceitual) e o que a ferramenta **realmente é hoje**, com fatos verificados e pesquisa externa. A próxima versão do produto continua sendo a **`v0.2.0`**, conduzida separadamente pelo protocolo de release do repositório ([`../../.agents/rules/05_release_and_quad_sync_protocol.md`](../../.agents/rules/05_release_and_quad_sync_protocol.md)). Nada aqui autoriza implementação nem fixa versão.
 >
 > **📎 Documento companheiro:** [`SYSTEM_1_5_OPPORTUNITIES.md`](SYSTEM_1_5_OPPORTUNITIES.md) — comparativo do ecossistema (Foreman, JevRouter, Winnow, jev-guard) e catálogo priorizado de oportunidades.
 

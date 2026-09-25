@@ -25,7 +25,7 @@ class TestDocumentationLinks(unittest.TestCase):
         self.assertEqual(broken, [], "internal documentation links must resolve:\n" + "\n".join(broken))
 
     def test_the_interop_section_states_its_sources_and_dates(self):
-        text = (REPO_ROOT / "SYSTEM_1_5_OPPORTUNITIES.md").read_text(encoding="utf-8")
+        text = (REPO_ROOT / "docs" / "system_1_5" / "SYSTEM_1_5_OPPORTUNITIES.md").read_text(encoding="utf-8")
         self.assertIn("## 3.1 Interop", text)
         for tool in ("jev-guard", "foreman", "winnow", "JevRouter"):
             with self.subTest(tool):

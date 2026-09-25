@@ -8,7 +8,7 @@
   <a href="https://github.com/ismaelsoilet/jev-harness/releases"><img src="https://img.shields.io/github/v/release/ismaelsoilet/jev-harness?color=teal&logo=github&logoColor=white&cacheSeconds=0" alt="GitHub Release"></a>
   <a href="https://search.sigstore.dev/?logIndex=2908239242"><img src="https://img.shields.io/badge/provenance-Sigstore-blue?logo=npm" alt="npm Provenance"></a>
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-5.x-blue.svg?logo=typescript&logoColor=white" alt="TypeScript"></a>
-  <a href="../../SYSTEM_1_5_IMPLEMENTATION.md"><img src="https://img.shields.io/badge/architecture-System%201.5%20Layer-8A2BE2.svg" alt="System 1.5 Architecture"></a>
+  <a href="../../docs/system_1_5/SYSTEM_1_5_IMPLEMENTATION.md"><img src="https://img.shields.io/badge/architecture-System%201.5%20Layer-8A2BE2.svg" alt="System 1.5 Architecture"></a>
   <a href="https://github.com/ismaelsoilet/jev-harness/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License MIT"></a>
   <a href="https://typesafe.ai"><img src="https://img.shields.io/badge/powered%20by-TypeSafe%20Jev%20System%20One-orange.svg" alt="TypeSafe Jev"></a>
   <a href="https://github.com/ismaelsoilet/jev-harness"><img src="https://img.shields.io/badge/dependencies-0-success.svg" alt="Zero Dependencies"></a>

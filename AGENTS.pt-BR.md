@@ -20,7 +20,8 @@ Este documento é o portal de entrada. O repositório organiza suas convenções
 6. 📝 **[Convenções de Código por Linguagem](.agents/rules/06_code_style_and_conventions.md)**: Padrões estritos para Python (stdlib pura), TypeScript (ESM nativo) e Rust (Tokio 2021).
 7. 🔌 **[Padrões de Qualidade MCP e TDQS](.agents/rules/07_mcp_quality_and_tdqs_standards.md)**: Requisitos Glama TDQS A+ (5.0), nomenclatura canônica verb_noun, anotações MCP (`readOnlyHint`, `idempotentHint`), diretrizes de uso e paridade estrita nos 3 runtimes.
 8. 🤖 **[Guia de Implementação Rápida para Agentes em Qualquer Projeto](docs/AGENT_INTEGRATION_GUIDE.pt-BR.md)** ([English](docs/AGENT_INTEGRATION_GUIDE.md)): Como plugar o Jev Harness via MCP, CLI ou SDK nativo no seu projeto em 2 minutos.
-9. 🗺️ **[System 1.5 — Arquitetura, Oportunidades e Plano de Implementação](SYSTEM_1_5_IMPLEMENTATION.md)**: posicionamento entre o System 1 (Jev) e o System 2, fatos verificados, comparativo de ecossistema e o plano faseado. **Não é um plano de release** — a próxima versão (v0.2.0) segue o protocolo de `.agents/rules/05`.
+9. 🗺️ **[System 1.5 — Arquitetura, Oportunidades e Plano de Implementação](docs/system_1_5/SYSTEM_1_5_IMPLEMENTATION.md)**: posicionamento entre o System 1 (Jev) e o System 2, fatos verificados, comparativo de ecossistema e o plano faseado. **Não é um plano de release** — a próxima versão (v0.2.0) segue o protocolo de `.agents/rules/05`.
+10. 📚 **[Mapa e Catálogo da Documentação](docs/README.pt-BR.md)** ([English](docs/README.md)): Inventário completo e guia de navegação de toda a documentação.
 
 ---
 

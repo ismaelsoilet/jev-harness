@@ -53,12 +53,15 @@ def links_of(text: str) -> List[str]:
     return [match.group("target") for match in MARKDOWN_LINK.finditer(stripped)]
 
 
-def check_documents(root: Path, patterns: Sequence[str] = ("*.md",)) -> Tuple[List[str], Dict[str, List[str]]]:
+def check_documents(root: Path, patterns: Sequence[str] = ("*.md", "docs/**/*.md")) -> Tuple[List[str], Dict[str, List[str]]]:
     """Returns (broken internal links, external link inventory by file)."""
+    seen = set()
     documents: List[Path] = []
     for pattern in patterns:
-        documents.extend(sorted(root.glob(pattern)))
-    documents = [doc for doc in documents if ".git/" not in str(doc)]
+        for doc in sorted(root.glob(pattern)):
+            if doc not in seen and ".git/" not in str(doc) and doc.is_file():
+                seen.add(doc)
+                documents.append(doc)
 
     anchor_cache: Dict[Path, set] = {doc: anchors_of(doc.read_text(encoding="utf-8")) for doc in documents}
     broken: List[str] = []

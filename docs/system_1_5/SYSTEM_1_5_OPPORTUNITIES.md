@@ -1,5 +1,7 @@
 # 🔭 SYSTEM 1.5 — Oportunidades, Comparativo de Ecossistema e Veredito "Podemos ser 1.5?"
 
+[ 🏠 Repositório](../../README.md) | [ 📚 Hub de Documentação](../README.md) | [ 🧠 Plano System 1.5](SYSTEM_1_5_PLAN.md) | [ 🧭 Oportunidades](SYSTEM_1_5_OPPORTUNITIES.md) | [ 🚀 Implementação](SYSTEM_1_5_IMPLEMENTATION.md)
+
 > **Documento companheiro de [`SYSTEM_1_5_PLAN.md`](SYSTEM_1_5_PLAN.md).**
 > Responde a três perguntas: (1) que oportunidades temos para melhorar o `jev-harness` conforme a pesquisa? (2) trata-se de outra ferramenta? (3) podemos ser System 1.5 — sim ou não?
 > **Data da pesquisa: 2026-09-23** (válida por 30 dias — re-verificar após 2026-10-23).

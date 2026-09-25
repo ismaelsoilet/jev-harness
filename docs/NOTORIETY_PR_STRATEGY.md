@@ -143,7 +143,7 @@ We treat the code-quality loop through Daniel Kahneman's cognitive paradigm:
 - 📦 **Quad-channel release:** Published on PyPI, npm, Crates.io, and GitHub Releases (`v0.2.0`).
 
 GitHub: https://github.com/ismaelsoilet/jev-harness
-Documentation & System 1.5 Plan: https://github.com/ismaelsoilet/jev-harness/blob/main/SYSTEM_1_5_PLAN.md
+Documentation & System 1.5 Plan: https://github.com/ismaelsoilet/jev-harness/blob/main/docs/system_1_5/SYSTEM_1_5_PLAN.md
 
 We’d love feedback, issues, or ideas on where you're seeing agent token waste!
 ```

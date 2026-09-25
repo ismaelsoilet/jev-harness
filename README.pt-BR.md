@@ -14,7 +14,7 @@
   <a href="https://typesafe.ai"><img src="https://img.shields.io/badge/powered%20by-TypeSafe%20Jev%20System%20One-orange.svg" alt="TypeSafe Jev"></a>
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-Compatible-purple.svg" alt="Compatível com MCP"></a>
   <a href="#"><img src="https://img.shields.io/badge/dependencies-0%20(pure%20stdlib)-success.svg" alt="Zero Dependências"></a>
-  <a href="SYSTEM_1_5_IMPLEMENTATION.md"><img src="https://img.shields.io/badge/architecture-System%201.5%20Layer-8A2BE2.svg" alt="Arquitetura System 1.5"></a>
+  <a href="docs/system_1_5/SYSTEM_1_5_IMPLEMENTATION.md"><img src="https://img.shields.io/badge/architecture-System%201.5%20Layer-8A2BE2.svg" alt="Arquitetura System 1.5"></a>
 </p>
 
 <p align="center">
@@ -169,7 +169,7 @@ O `jev-harness` é um papel na categoria emergente **System 1.5**: conectar um m
 
 **Nossa combinação única:** a única ferramenta do conjunto que (1) funciona **totalmente offline** com um motor determinístico, (2) entrega **três runtimes com paridade semântica de veredito** (Python / TypeScript / Rust — divergência conhecida nas probabilidades da mock é rastreada como E3.9) e (3) é dona do **gate de qualidade de teste / commit / CI**.
 
-📚 Arquitetura e roadmap: [Plano System 1.5](SYSTEM_1_5_PLAN.md) · [Ecossistema e oportunidades](SYSTEM_1_5_OPPORTUNITIES.md) · [Plano de implementação](SYSTEM_1_5_IMPLEMENTATION.md).
+📚 Arquitetura e roadmap: [Plano System 1.5](docs/system_1_5/SYSTEM_1_5_PLAN.md) · [Ecossistema e oportunidades](docs/system_1_5/SYSTEM_1_5_OPPORTUNITIES.md) · [Plano de implementação](docs/system_1_5/SYSTEM_1_5_IMPLEMENTATION.md) · [Catálogo da Documentação](docs/README.pt-BR.md).
 
 ---
 
@@ -476,7 +476,7 @@ O impacto da modulação depende fundamentalmente da arquitetura do provedor:
 
 > 📖 **Procurando configuração pronta para o seu projeto?** Leia o [**Guia Universal de Integração para Agentes**](docs/AGENT_INTEGRATION_GUIDE.pt-BR.md) com modelos de copiar e colar para Claude Code, Codex, Pi, Oh My Pi, CommandCode, Cursor e CI/CD.
 >
-> 🏭 **Fábrica [`thruwire/foreman`](https://github.com/thruwire/foreman)?** Este harness também entrega uma superfície de adapter determinística, um bundle de operador (`jev-harness export foreman`) e os fatos verificados do upstream — veja o [guia de integração com o Foreman](docs/integrations/foreman.md).
+> 🏭 **Fábrica [`thruwire/foreman`](https://github.com/thruwire/foreman)?** Este harness também entrega uma superfície de adapter determinística, o bundle de operador (`jev-harness export foreman`) e o caminho API-1 da classe acompanhante. A extensão nativa API-2 ainda está indisponível até a publicação de uma wheel API-2 revisada e fixada — veja o [guia de integração com o Foreman](docs/integrations/foreman.pt-BR.md) ([English version](docs/integrations/foreman.md)).
 
 ### 1. Claude Code (CLI `claude` da Anthropic)
 Conecte o Jev ao Claude Code em 5 segundos via MCP nativo:
@@ -765,7 +765,7 @@ Quando o `--mock` (ou nenhuma credencial) está ativo, todos os gates rodam loca
 - 🎯 **Qualidade de decisão explícita**: `uncertainty` por resultado, `recovery` como dado estruturado com flag de segurança baseada em allowlist, slice focado em vez de log bruto para o provedor, redação de segredos no state, memória de sessão nos gates e lease de esforço com break-glass. Tudo aditivo: nenhum exit code ou `skip_llm` mudou.
 - 🔀 **Paridade tri-runtime agora é imposta, não declarada**: `tests/fixtures/corpus_parity.json` trava 160 casos × 6 gates entre Python, TypeScript e Rust. Construí-lo expôs e corrigiu divergências reais, incluindo ordem de iteração não determinística do `HashMap` na mock do Rust.
 - 📦 **Distribuição**: bundles de plugin por host (Claude Code, Codex/OpenCode), seção de interop com datas de fonte e link-checker de documentação offline na CI.
-- 🧭 **Documentação System 1.5**: arquitetura, comparativo de ecossistema e plano de implementação linkados no README (`SYSTEM_1_5_*.md`).
+- 🧭 **Documentação System 1.5**: arquitetura, comparativo de ecossistema e plano de implementação organizados em `docs/system_1_5/` (`docs/system_1_5/SYSTEM_1_5_*.md`).
 - 🔒 **Privacidade/operação inalteradas**: o modo offline continua sem nenhuma chamada de rede; respostas live degradadas são sempre rotuladas, nunca silenciosas.
 
 ## 🌟 O que há de Novo na v0.1.14
@@ -861,11 +861,12 @@ Quando o `--mock` (ou nenhuma credencial) está ativo, todos os gates rodam loca
 
 | Documento | O que responde |
 | :--- | :--- |
-| [System 1.5 — Arquitetura e fatos verificados](SYSTEM_1_5_PLAN.md) | Onde a ferramenta se posiciona entre o System 1 (Jev) e o System 2; o que está verificado hoje (v0.2.0) e o que falta |
-| [System 1.5 — Ecossistema e oportunidades](SYSTEM_1_5_OPPORTUNITIES.md) | Comparação com Foreman, JevRouter, Winnow e jev-guard; 21 oportunidades priorizadas; o veredito "podemos ser 1.5?" |
-| [System 1.5 — Plano de implementação](SYSTEM_1_5_IMPLEMENTATION.md) | Épicos, critérios de aceite, testes e sequenciamento (H1–H3) |
+| [Catálogo e Mapa da Documentação](docs/README.pt-BR.md) ([English](docs/README.md)) | Diretório central de documentação, navegação por persona e índice de arquivos |
+| [System 1.5 — Arquitetura e fatos verificados](docs/system_1_5/SYSTEM_1_5_PLAN.md) | Onde a ferramenta se posiciona entre o System 1 (Jev) e o System 2; o que está verificado hoje (v0.2.0) e o que falta |
+| [System 1.5 — Ecossistema e oportunidades](docs/system_1_5/SYSTEM_1_5_OPPORTUNITIES.md) | Comparação com Foreman, JevRouter, Winnow e jev-guard; 21 oportunidades priorizadas; o veredito "podemos ser 1.5?" |
+| [System 1.5 — Plano de implementação](docs/system_1_5/SYSTEM_1_5_IMPLEMENTATION.md) | Épicos, critérios de aceite, testes e sequenciamento (H1–H3) |
 | [Guia Universal de Integração para Agentes](docs/AGENT_INTEGRATION_GUIDE.pt-BR.md) | Configuração copy-paste de MCP, CLI, hooks e CI em qualquer projeto |
-| [Integração com o Foreman](docs/integrations/foreman.md) | Superfície de adapter, bundle de operador (`export foreman`) e os fatos verificados do [thruwire/foreman](https://github.com/thruwire/foreman) |
+| [Integração com o Foreman](docs/integrations/foreman.pt-BR.md) ([English](docs/integrations/foreman.md)) | Superfície de adapter, bundle de operador, caminho API-1 da classe acompanhante e fatos verificados do [thruwire/foreman](https://github.com/thruwire/foreman); a extensão nativa API-2 ainda está indisponível |
 
 ---
 

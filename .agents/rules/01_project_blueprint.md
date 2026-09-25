@@ -60,6 +60,18 @@ jev-harness/
 │       ├── 04_testing_and_truthfulness.md          # Postura anti-viés e política de testes exaustivos
 │       ├── 05_release_and_quad_sync_protocol.md    # Protocolo de 4 locais (GitHub, PyPI, npm, Crates.io)
 │       └── 06_code_style_and_conventions.md        # Estilo de código e convenções por linguagem
+├── docs/                             # Hub de Documentação e Guias Especializados
+│   ├── README.md                     # Catálogo e mapa de navegação de toda a documentação
+│   ├── AGENT_INTEGRATION_GUIDE.md    # Guia universal de integração para agentes (MCP/CLI)
+│   ├── RELEASE_NOTES_v0.2.0.md       # Notas da versão v0.2.0 nos 4 registries
+│   ├── NOTORIETY_PR_STRATEGY.md      # Estratégia de comunidade e ecossistema
+│   ├── REPLAY_REPORT.md              # Relatório de benchmark, corpus e calibração ECE
+│   ├── system_1_5/                   # Trilogia de arquitetura e pesquisa System 1.5
+│   │   ├── SYSTEM_1_5_PLAN.md        # Arquitetura-alvo e fatos verificados
+│   │   ├── SYSTEM_1_5_OPPORTUNITIES.md # Ecossistema comparativo e 21 oportunidades
+│   │   └── SYSTEM_1_5_IMPLEMENTATION.md # Plano faseado de implementação (H1–H3)
+│   └── integrations/                 # Adapters e integrações com runtimes
+│       └── foreman.md                # Integração com o supervisor Foreman
 ├── .github/                          # Workflows do GitHub Actions
 │   └── workflows/
 │       ├── ci.yml                    # CI multi-runtime (Python 3.9-3.13, Node 18-22, Rust stable)
