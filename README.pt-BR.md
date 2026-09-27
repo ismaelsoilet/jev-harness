@@ -4,7 +4,7 @@
   <a href="https://github.com/ismaelsoilet/jev-harness/actions/workflows/ci.yml"><img src="https://github.com/ismaelsoilet/jev-harness/actions/workflows/ci.yml/badge.svg" alt="Status da CI"></a>
   <a href="https://github.com/ismaelsoilet/jev-harness/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/tests-626%20passed-brightgreen.svg?logo=githubactions&logoColor=white" alt="Testes Passando"></a>
   <a href="https://github.com/ismaelsoilet/jev-harness/releases"><img src="https://img.shields.io/github/v/release/ismaelsoilet/jev-harness?color=teal&logo=github&logoColor=white&cacheSeconds=0" alt="Versão no GitHub Release"></a>
-  <a href="https://pypi.org/project/jev-harness/"><img src="https://img.shields.io/pypi/v/jev-harness.svg?color=blue&logo=pypi&logoColor=white&cacheSeconds=0" alt="Versão no PyPI"></a>
+  <a href="https://pypi.org/project/jev-harness/"><img src="https://img.shields.io/pypi/v/jev-harness?color=blue&logo=pypi&logoColor=white" alt="Versão no PyPI"></a>
   <a href="https://www.npmjs.com/package/@ismaelsoilet/jev-harness"><img src="https://img.shields.io/npm/v/@ismaelsoilet/jev-harness.svg?color=cb3837&logo=npm&logoColor=white&cacheSeconds=0" alt="Versão no npm"></a>
   <a href="https://crates.io/crates/jev-harness"><img src="https://img.shields.io/crates/v/jev-harness.svg?color=dea584&logo=rust&logoColor=white&cacheSeconds=0" alt="Versão no crates.io"></a>
   <a href="https://docs.rs/jev-harness"><img src="https://docs.rs/jev-harness/badge.svg" alt="docs.rs"></a>
@@ -199,7 +199,7 @@ Disponível nos três principais registries sem dependências externas de runtim
 
 | Ecossistema | Registry | Pacote / Comando | Status |
 | :--- | :--- | :--- | :--- |
-| **Python** | [PyPI](https://pypi.org/project/jev-harness/) | `pip install jev-harness` | [![PyPI](https://img.shields.io/pypi/v/jev-harness.svg?color=blue&logo=pypi&logoColor=white&cacheSeconds=0)](https://pypi.org/project/jev-harness/) |
+| **Python** | [PyPI](https://pypi.org/project/jev-harness/) | `pip install jev-harness` | [![PyPI](https://img.shields.io/pypi/v/jev-harness?color=blue&logo=pypi&logoColor=white)](https://pypi.org/project/jev-harness/) |
 | **TypeScript / Node** | [npm](https://www.npmjs.com/package/@ismaelsoilet/jev-harness) | `npm install @ismaelsoilet/jev-harness` | [![npm](https://img.shields.io/npm/v/@ismaelsoilet/jev-harness.svg?color=cb3837&logo=npm&logoColor=white&cacheSeconds=0)](https://www.npmjs.com/package/@ismaelsoilet/jev-harness) |
 | **Rust** | [crates.io](https://crates.io/crates/jev-harness) | `cargo add jev-harness` | [![crates.io](https://img.shields.io/crates/v/jev-harness.svg?color=dea584&logo=rust&logoColor=white&cacheSeconds=0)](https://crates.io/crates/jev-harness) |
 | **GitHub Releases** | [Releases](https://github.com/ismaelsoilet/jev-harness/releases) | Binários pré-compilados e assets | [![Versão no GitHub Release](https://img.shields.io/github/v/release/ismaelsoilet/jev-harness?color=teal&logo=github&logoColor=white&cacheSeconds=0)](https://github.com/ismaelsoilet/jev-harness/releases) |
