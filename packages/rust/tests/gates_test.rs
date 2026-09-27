@@ -942,20 +942,28 @@ async fn test_rust_mcp_server_protocol() {
 
     // 4b. Tools call: check abort (canonical name) and abort check (legacy alias)
     let call_abort_canonical = r#"{"jsonrpc":"2.0","id":41,"method":"tools/call","params":{"name":"jev_check_abort","arguments":{"proposed_step":"Retry same step"}}}"#;
-    let abort_resp1 = process_message(call_abort_canonical, &client).await.expect("Expected response");
+    let abort_resp1 = process_message(call_abort_canonical, &client)
+        .await
+        .expect("Expected response");
     assert_eq!(abort_resp1["result"]["isError"], false);
 
     let call_abort_alias = r#"{"jsonrpc":"2.0","id":42,"method":"tools/call","params":{"name":"jev_abort_check","arguments":{"proposed_step":"Retry same step"}}}"#;
-    let abort_resp2 = process_message(call_abort_alias, &client).await.expect("Expected response");
+    let abort_resp2 = process_message(call_abort_alias, &client)
+        .await
+        .expect("Expected response");
     assert_eq!(abort_resp2["result"]["isError"], false);
 
     // 4c. Tools call: evaluate nudge (canonical name) and should nudge (legacy alias)
     let call_nudge_canonical = r#"{"jsonrpc":"2.0","id":43,"method":"tools/call","params":{"name":"jev_evaluate_nudge","arguments":{"transcript_tail":"Task executed without verify."}}}"#;
-    let nudge_resp1 = process_message(call_nudge_canonical, &client).await.expect("Expected response");
+    let nudge_resp1 = process_message(call_nudge_canonical, &client)
+        .await
+        .expect("Expected response");
     assert_eq!(nudge_resp1["result"]["isError"], false);
 
     let call_nudge_alias = r#"{"jsonrpc":"2.0","id":44,"method":"tools/call","params":{"name":"jev_should_nudge_continuation","arguments":{"transcript_tail":"Task executed without verify."}}}"#;
-    let nudge_resp2 = process_message(call_nudge_alias, &client).await.expect("Expected response");
+    let nudge_resp2 = process_message(call_nudge_alias, &client)
+        .await
+        .expect("Expected response");
     assert_eq!(nudge_resp2["result"]["isError"], false);
 
     // 5. Tools call: missing required argument

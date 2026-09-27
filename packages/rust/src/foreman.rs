@@ -487,7 +487,10 @@ pub fn normalize_output(text: &str) -> String {
     for pattern in volatile_patterns() {
         normalized = pattern.replace_all(&normalized, "<v>$1").into_owned();
     }
-    whitespace_regex().replace_all(&normalized, " ").trim().to_string()
+    whitespace_regex()
+        .replace_all(&normalized, " ")
+        .trim()
+        .to_string()
 }
 
 /// Deterministic triage records for `FactoryObservation.test_results` (one record per log).
@@ -525,7 +528,10 @@ pub async fn extract_test_results(
         confidence: result.confidence,
         skip_llm: result.skip_llm,
         action_recommendation: result.action_recommendation,
-        assertion_slice: assertion_slice.chars().take(ASSERTION_SLICE_MAX_CHARS).collect(),
+        assertion_slice: assertion_slice
+            .chars()
+            .take(ASSERTION_SLICE_MAX_CHARS)
+            .collect(),
         recovery: None,
         is_mock: result.is_mock,
         degraded_reason: result.degraded_reason,
@@ -535,7 +541,10 @@ pub async fn extract_test_results(
 
 /// Conservative stagnation evidence: abort only when the normalized output AND the diff are
 /// unchanged across the whole window. No diff in the window -> decline (`complete_signals: false`).
-pub fn evaluate_worker_health(snapshots: &[ForemanSnapshot], window: usize) -> ForemanHealthVerdict {
+pub fn evaluate_worker_health(
+    snapshots: &[ForemanSnapshot],
+    window: usize,
+) -> ForemanHealthVerdict {
     let effective_window = window.max(2);
 
     if snapshots.len() < effective_window {

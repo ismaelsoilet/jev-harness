@@ -14,12 +14,16 @@ use serde_json::Value;
 const CASES: &str = include_str!("../../../tests/fixtures/foreman_cases.json");
 const TOML_FIXTURE: &str = include_str!("../../../tests/fixtures/foreman_responsibility.toml");
 const README_FIXTURE: &str = include_str!("../../../tests/fixtures/foreman_operator_readme.md");
-const CLASS_SOURCE: &str = include_str!("../../../src/jev_harness/integrations/foreman_responsibility.py");
+const CLASS_SOURCE: &str =
+    include_str!("../../../src/jev_harness/integrations/foreman_responsibility.py");
 
 #[tokio::test]
 async fn triage_cases_match_the_shared_golden_values() {
     let cases: Value = serde_json::from_str(CASES).expect("fixture is valid JSON");
-    for case in cases["triage_cases"].as_array().expect("triage_cases array") {
+    for case in cases["triage_cases"]
+        .as_array()
+        .expect("triage_cases array")
+    {
         let name = case["name"].as_str().unwrap();
         let stdout = case["stdout"].as_str().unwrap();
         let stderr = case["stderr"].as_str().unwrap();
@@ -37,8 +41,16 @@ async fn triage_cases_match_the_shared_golden_values() {
             continue;
         }
         let record = &records[0];
-        assert_eq!(record.category, expected["category"].as_str().unwrap(), "{name}");
-        assert_eq!(record.skip_llm, expected["skip_llm"].as_bool().unwrap(), "{name}");
+        assert_eq!(
+            record.category,
+            expected["category"].as_str().unwrap(),
+            "{name}"
+        );
+        assert_eq!(
+            record.skip_llm,
+            expected["skip_llm"].as_bool().unwrap(),
+            "{name}"
+        );
         assert_eq!(
             record.action_recommendation,
             expected["action_recommendation"].as_str().unwrap(),
@@ -58,14 +70,20 @@ async fn triage_cases_match_the_shared_golden_values() {
             "{name}"
         );
         assert_eq!(record.foreman_schema_version, FOREMAN_SCHEMA_VERSION);
-        assert!(record.recovery.is_none(), "declared divergence: recovery is Python-only ({name})");
+        assert!(
+            record.recovery.is_none(),
+            "declared divergence: recovery is Python-only ({name})"
+        );
     }
 }
 
 #[test]
 fn health_cases_match_the_shared_golden_values() {
     let cases: Value = serde_json::from_str(CASES).expect("fixture is valid JSON");
-    for case in cases["health_cases"].as_array().expect("health_cases array") {
+    for case in cases["health_cases"]
+        .as_array()
+        .expect("health_cases array")
+    {
         let name = case["name"].as_str().unwrap();
         let snapshots: Vec<ForemanSnapshot> = case["snapshots"]
             .as_array()
@@ -80,8 +98,16 @@ fn health_cases_match_the_shared_golden_values() {
         let verdict = evaluate_worker_health(&snapshots, window);
         let expected = &case["expect"];
 
-        assert_eq!(verdict.should_abort, expected["should_abort"].as_bool().unwrap(), "{name}");
-        assert_eq!(verdict.reason, expected["reason"].as_str().unwrap(), "{name}");
+        assert_eq!(
+            verdict.should_abort,
+            expected["should_abort"].as_bool().unwrap(),
+            "{name}"
+        );
+        assert_eq!(
+            verdict.reason,
+            expected["reason"].as_str().unwrap(),
+            "{name}"
+        );
         assert_eq!(
             verdict.evidence.complete_signals,
             expected["complete_signals"].as_bool().unwrap(),
@@ -130,7 +156,9 @@ fn stagnation_reason_constant_is_shared() {
 #[test]
 fn find_assertion_line_ports_the_perception_primitive() {
     assert_eq!(
-        find_assertion_line("collected 1 item\nE   ModuleNotFoundError: No module named 'requests'"),
+        find_assertion_line(
+            "collected 1 item\nE   ModuleNotFoundError: No module named 'requests'"
+        ),
         Some("E   ModuleNotFoundError: No module named 'requests'".to_string())
     );
     assert_eq!(find_assertion_line("12 passed in 0.31s"), None);
@@ -215,7 +243,10 @@ fn capability_matrix_declares_the_recovery_divergence() {
 #[test]
 fn offline_triage_accepts_an_explicit_mock_client() {
     let client = JevClient::with_mock();
-    let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
     let records = runtime
         .block_on(extract_test_results(
             "E   ModuleNotFoundError: No module named 'requests'",

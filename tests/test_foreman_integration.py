@@ -6,6 +6,7 @@ optional Foreman-side validation reports `skipped` instead of failing. The golde
 `tests/fixtures/foreman_cases.json`, shared verbatim with the TypeScript and Rust suites.
 """
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -346,7 +347,8 @@ class TestZeroDependencyInvariant(unittest.TestCase):
             "import sys; sys.modules['pydantic'] = None; sys.modules['foreman'] = None;"
             f"import {module} as m; print('ok', getattr(m, 'FOREMAN_SCHEMA_VERSION', 'n/a'))"
         )
-        env = {"PYTHONPATH": str(REPO_ROOT / "src"), "PATH": "/usr/bin:/bin"}
+        env = dict(os.environ)
+        env["PYTHONPATH"] = str(REPO_ROOT / "src")
         return subprocess.run(
             [sys.executable, "-c", script], capture_output=True, text=True, env=env, cwd=str(REPO_ROOT)
         )
@@ -408,7 +410,8 @@ class TestCapabilityMatrix(unittest.TestCase):
 
 class TestExportCommand(unittest.TestCase):
     def _run_export(self, out_dir=None, cwd=None):
-        env = {"PYTHONPATH": str(REPO_ROOT / "src"), "PATH": "/usr/bin:/bin"}
+        env = dict(os.environ)
+        env["PYTHONPATH"] = str(REPO_ROOT / "src")
         command = [sys.executable, "-m", "jev_harness.cli", "export", "foreman"]
         if out_dir is not None:
             command += ["--out-dir", str(out_dir)]
