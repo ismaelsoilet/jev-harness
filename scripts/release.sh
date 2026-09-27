@@ -11,6 +11,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PYPROJECT="${REPO_ROOT}/pyproject.toml"
 PACKAGE_JSON="${REPO_ROOT}/packages/ts/package.json"
 CARGO_TOML="${REPO_ROOT}/packages/rust/Cargo.toml"
+CLAUDE_PLUGIN_JSON="${REPO_ROOT}/plugins/claude-code/.claude-plugin/plugin.json"
 
 usage() {
     echo "Usage: $0 [COMMAND] [OPTIONS]"
@@ -37,6 +38,9 @@ show_versions() {
     echo "Python (pyproject.toml):    $(grep '^version = ' "${PYPROJECT}" | cut -d'"' -f2)"
     echo "TypeScript (package.json):  $(grep '"version":' "${PACKAGE_JSON}" | head -n1 | cut -d'"' -f4)"
     echo "Rust (Cargo.toml):          $(grep '^version = ' "${CARGO_TOML}" | head -n1 | cut -d'"' -f2)"
+    if [[ -f "${CLAUDE_PLUGIN_JSON}" ]]; then
+        echo "Claude Plugin (plugin.json):$(grep '"version":' "${CLAUDE_PLUGIN_JSON}" | head -n1 | cut -d'"' -f4)"
+    fi
     echo "================================="
 }
 
@@ -119,6 +123,11 @@ bump_version() {
         sed -i -E "s/jev-harness = \"[^\"]+\"/jev-harness = \"${new_ver}\"/g" "${REPO_ROOT}"/.wiki/*.md || true
     fi
 
+    # 5. Update Claude Code plugin manifest
+    if [[ -f "${CLAUDE_PLUGIN_JSON}" ]]; then
+        sed -i -E "s/\"version\": \"[^\"]+\"/\"version\": \"${new_ver}\"/" "${CLAUDE_PLUGIN_JSON}"
+    fi
+
     show_versions
     echo "✅ Version bump complete across all manifests, code, and docs."
 }
@@ -181,22 +190,24 @@ git_tag_release() {
 
 verify_sync() {
     echo "================================================================="
-    echo "🔍 Strict Quad-Manifest & Version Parity Verification"
+    echo "🔍 Strict Multi-Manifest & Version Parity Verification"
     echo "================================================================="
 
-    local py_ver ts_ver rust_ver init_ver
+    local py_ver ts_ver rust_ver init_ver plugin_ver
     py_ver="$(grep '^version = ' "${PYPROJECT}" | cut -d'"' -f2)"
     ts_ver="$(grep '"version":' "${PACKAGE_JSON}" | head -n1 | cut -d'"' -f4)"
     rust_ver="$(grep '^version = ' "${CARGO_TOML}" | head -n1 | cut -d'"' -f2)"
     init_ver="$(grep '^__version__ = ' "${REPO_ROOT}/src/jev_harness/__init__.py" | cut -d'"' -f2)"
+    plugin_ver="$(grep '"version":' "${CLAUDE_PLUGIN_JSON}" | head -n1 | cut -d'"' -f4)"
 
     echo "Manifest Versions:"
     echo "  - Python (pyproject.toml):        ${py_ver}"
     echo "  - Python (__init__.__version__): ${init_ver}"
     echo "  - TypeScript (package.json):      ${ts_ver}"
     echo "  - Rust (Cargo.toml):              ${rust_ver}"
+    echo "  - Claude Plugin (plugin.json):    ${plugin_ver}"
 
-    if [[ "${py_ver}" != "${ts_ver}" || "${py_ver}" != "${rust_ver}" || "${py_ver}" != "${init_ver}" ]]; then
+    if [[ "${py_ver}" != "${ts_ver}" || "${py_ver}" != "${rust_ver}" || "${py_ver}" != "${init_ver}" || "${py_ver}" != "${plugin_ver}" ]]; then
         echo ""
         echo "❌ FATAL: Version mismatch detected across manifests!"
         echo "All manifests must be strictly identical before any push or release."
