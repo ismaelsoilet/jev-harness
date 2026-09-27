@@ -984,14 +984,7 @@ def should_nudge_continuation(
         else:
             rationale = f"No nudge needed: nudge probability ({nudge_prob:.2f}) below threshold ({threshold:.2f})."
 
-    if record_session:
-        try:
-            record_nudge_event(should_nudge)
-            record_gate_decision("nudge-gate", result.workflow_phase, action="nudge" if result.should_nudge else "hold")
-        except Exception:
-            pass
-
-    return NudgeGateResult(
+    result = NudgeGateResult(
         should_nudge=should_nudge,
         nudge_probability=nudge_prob,
         waiting_probability=waiting_prob,
@@ -1005,3 +998,12 @@ def should_nudge_continuation(
         debounced=bool(getattr(resp, "debounced", False)),
         uncertainty=uncertainty_from_answer(nudge_ans),
     )
+
+    if record_session:
+        try:
+            record_nudge_event(result.should_nudge)
+            record_gate_decision("nudge-gate", result.workflow_phase, action="nudge" if result.should_nudge else "hold")
+        except Exception:
+            pass
+
+    return result

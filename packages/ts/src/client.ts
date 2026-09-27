@@ -27,7 +27,7 @@ export const DEFAULT_MODEL = "jev-latest";
 export const MAX_STATE_CHARS = 128000;
 export const MAX_TOTAL_CHARS = 256000;
 
-export const DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.2.0; +https://github.com/ismaelsoilet/jev-harness)";
+export const DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.2.1; +https://github.com/ismaelsoilet/jev-harness)";
 
 /**
  * Mock distribution contract (E3.9). Mirrored in `src/jev_harness/client.py` and

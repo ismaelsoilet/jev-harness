@@ -58,7 +58,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-jev-harness = "0.2.0"
+jev-harness = "0.2.1"
 tokio = { version = "1", features = ["full"] }
 ```
 

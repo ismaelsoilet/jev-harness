@@ -37,7 +37,7 @@ DEFAULT_MODEL = "jev-latest"
 # Characters are a conservative proxy (~4 chars/token) with no external tokenizer.
 MAX_STATE_CHARS = 128_000
 MAX_TOTAL_CHARS = 256_000
-DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.2.0; +https://github.com/ismaelsoilet/jev-harness)"
+DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.2.1; +https://github.com/ismaelsoilet/jev-harness)"
 
 # Success summaries emitted by common runners when a suite is green. Used to short-circuit
 # triage: a passing run must never be escalated, and it must never cost an API call.

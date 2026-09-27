@@ -117,9 +117,9 @@ def _receipt(args: argparse.Namespace, gate: str, input_text: str, res: Any, cli
 
 
 def _mock_mode_label(result: Any) -> str:
-    """`[SIMULATION/MOCK]`, naming the degradation when a provider failure caused it (E0.2)."""
+    """`[LOCAL DETERMINISTIC (System 1.5)]`, naming the degradation when a provider failure caused it (E0.2)."""
     reason = getattr(result, "degraded_reason", "")
-    return f"[SIMULATION/MOCK - degraded: {reason}]" if reason else "[SIMULATION/MOCK]"
+    return f"[LOCAL DETERMINISTIC (System 1.5) - degraded: {reason}]" if reason else "[LOCAL DETERMINISTIC (System 1.5)]"
 
 
 def _model_origin_label(client: JevClient) -> str:
@@ -157,7 +157,7 @@ def cmd_status(args: argparse.Namespace) -> int:
             print("Engine Mode: LIVE")
     else:
         print("API Key:     NOT DETECTED")
-        print("Engine Mode: SIMULATION / MOCK (fully offline deterministic engine)")
+        print("Engine Mode: LOCAL DETERMINISTIC (System 1.5 - fully offline engine)")
         print("\nNo key is required: offline mode is free and makes zero network calls.")
         print("To enable LIVE mode, pick one provider:")
         print("  - OpenCode Zen (free tier): export JEV_PROVIDER=opencode OPENCODE_API_KEY=<key>  # https://opencode.ai/auth")

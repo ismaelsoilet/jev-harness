@@ -152,7 +152,7 @@ function getPackageVersion(): string {
   } catch {
     // fallback
   }
-  return "0.2.0";
+  return "0.2.1";
 }
 
 function modelOriginLabel(source: string): string {
@@ -165,10 +165,10 @@ function modelOriginLabel(source: string): string {
   return labels[source] ?? source;
 }
 
-/** `[SIMULATION/MOCK]`, naming the degradation when a provider failure caused it (E0.2). */
+/** `[LOCAL DETERMINISTIC (System 1.5)]`, naming the degradation when a provider failure caused it (E0.2). */
 function mockModeLabel(res: { degradedReason?: string }): string {
   const reason = res.degradedReason ?? "";
-  return reason ? `[SIMULATION/MOCK - degraded: ${reason}]` : "[SIMULATION/MOCK]";
+  return reason ? `[LOCAL DETERMINISTIC (System 1.5) - degraded: ${reason}]` : "[LOCAL DETERMINISTIC (System 1.5)]";
 }
 
 /**
@@ -620,7 +620,7 @@ This repository is connected to the global **Jev System One Harness**.
       }
     } else {
       console.log("API Key:     NOT DETECTED");
-      console.log("Engine Mode: SIMULATION / MOCK (Heuristic offline mode active)");
+      console.log("Engine Mode: LOCAL DETERMINISTIC (System 1.5 - Heuristic offline engine active)");
     }
     console.log(`Model:       ${client.model}`);
     console.log(`Model origin: ${modelOriginLabel(client.modelSource)}`);

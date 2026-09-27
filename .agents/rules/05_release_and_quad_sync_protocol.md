@@ -1,6 +1,6 @@
 # 🚀 Protocolo de Release e Sincronização nos 4 Registries (Quad-Sync)
 
-> **Documento Oficial de Engenharia — Versão: v0.2.0**  
+> **Documento Oficial de Engenharia — Versão: v0.2.1**  
 > *Procedimento Obrigatório para Releases, Builds e Sincronização.*
 
 ---

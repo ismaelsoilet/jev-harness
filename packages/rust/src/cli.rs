@@ -28,12 +28,12 @@ pub fn exit_gate_error(shadow: bool, message: &str) -> ! {
     process::exit(shadow_exit(shadow, 2));
 }
 
-/// `[SIMULATION/MOCK]`, naming the degradation when a provider failure caused it (E0.2).
+/// `[LOCAL DETERMINISTIC (System 1.5)]`, naming the degradation when a provider failure caused it (E0.2).
 pub fn mock_mode_label(degraded_reason: &str) -> String {
     if degraded_reason.is_empty() {
-        "[SIMULATION/MOCK]".to_string()
+        "[LOCAL DETERMINISTIC (System 1.5)]".to_string()
     } else {
-        format!("[SIMULATION/MOCK - degraded: {}]", degraded_reason)
+        format!("[LOCAL DETERMINISTIC (System 1.5) - degraded: {}]", degraded_reason)
     }
 }
 
@@ -470,7 +470,7 @@ pub async fn run_cli() {
                 }
             } else {
                 println!("API Key:     NOT DETECTED");
-                println!("Engine Mode: SIMULATION / MOCK (Heuristic offline mode active)");
+                println!("Engine Mode: LOCAL DETERMINISTIC (System 1.5 - Heuristic offline engine active)");
             }
             println!("Model:       {}", client.model);
             println!("Model origin: {}", model_origin_label(&client.model_source));

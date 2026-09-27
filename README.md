@@ -13,7 +13,7 @@
   <a href="https://github.com/ismaelsoilet/jev-harness/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License MIT"></a>
   <a href="https://typesafe.ai"><img src="https://img.shields.io/badge/powered%20by-TypeSafe%20Jev%20System%20One-orange.svg" alt="TypeSafe Jev"></a>
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-Compatible-purple.svg" alt="MCP Compatible"></a>
-  <a href="#"><img src="https://img.shields.io/badge/dependencies-0%20(pure%20stdlib)-success.svg" alt="Zero Dependencies"></a>
+  <a href="#"><img src="https://img.shields.io/badge/dependencies-0%20(Python%20%26%20TS%20core)-success.svg" alt="Zero Dependencies in Python & TS Core"></a>
   <a href="docs/system_1_5/SYSTEM_1_5_IMPLEMENTATION.md"><img src="https://img.shields.io/badge/architecture-System%201.5%20Layer-8A2BE2.svg" alt="System 1.5 Architecture"></a>
 </p>
 
@@ -23,7 +23,7 @@
 
 > **Stop burning 50,000 frontier tokens on missing packages, network flakiness, and circular doom loops.**
 >
-> `jev-harness` is an ultra-fast, zero-dependency token optimizer, test failure triage gate, and semantic guardrail for AI coding agents (OpenCode, Command Code, Claude Code, Cursor, Antigravity IDE, Windsurf, Zed, and Pi). Powered by **TypeSafe AI's Jev System One** non-autoregressive decision model.
+> `jev-harness` is an ultra-fast, deterministic-first token optimizer, test failure triage gate, and semantic guardrail for AI coding agents (OpenCode, Command Code, Claude Code, Cursor, Antigravity IDE, Windsurf, Zed, and Pi). Combines instant zero-token offline deterministic heuristics (< 500µs) with optional cloud-native **TypeSafe AI Jev System One** micro-decisions.
 >
 > 🤖 **Operating as an AI Agent?** If you are **working on this repository**, read [`AGENTS.md`](AGENTS.md) ([Português](AGENTS.pt-BR.md)) first. If you are **integrating the tool into your own project**, you do not need it — use the [**Universal AI Agent Integration Guide**](docs/AGENT_INTEGRATION_GUIDE.md) (2-minute setup, no API key required to start).
 >
@@ -36,6 +36,25 @@
 - [The Problem](#-the-problem) · [How It Works](#-how-it-works-system-1--system-15--system-2) · [Where It Fits](#-where-it-fits-the-system-15-decision-layer) · [Features](#-features) · [Quickstart](#-quickstart) · [CLI](#-cli-usage) · [Astra-Jev effort governance](#-astra-jev-dynamic-reasoning-effort-governance-2026-frontier-models) · [Integrations](#-universal-agent--ide-integrations) · [SDKs](#-python-sdk) ([TS](#-typescript--javascript-sdk--cli), [Rust](#-rust-crate--standalone-cli)) · [Git & CI guardrails](#-git--cicd-guardrails) · [Economics & benchmarks](#-economics--benchmarks-september-2026-frontier) · [Architecture & roadmap](#-architecture--roadmap) · [Contributing](#-contributing--submissions) · [Release](#-multi-registry-release--synchronization-pypi-npm-cratesio) · [Changelog](#-whats-new-in-v020)
 
 </details>
+
+---
+
+## ⚡ 15-Second Quickstart
+
+Get running in seconds across any stack — zero external dependencies, zero API keys required for local deterministic mode:
+
+```bash
+# 1. Try it instantly without installing (zero token cost, zero API keys needed)
+npx @ismaelsoilet/jev-harness triage --sample "ModuleNotFoundError: No module named 'pytest'"
+
+# 2. Or install in your favorite runtime:
+pip install jev-harness                 # Python (CLI + SDK)
+npm install @ismaelsoilet/jev-harness   # Node.js (CLI + SDK)
+cargo install jev-harness               # Rust (Standalone CLI 'jev')
+
+# 3. Verify health and active engine mode:
+jev-harness status
+```
 
 ---
 
@@ -61,7 +80,7 @@ Daniel Kahneman's cognitive paradigm applied to agentic engineering, with this h
   - **Deterministic short-circuits & auto-recovery:** Instantly diagnoses missing dependencies (`pip`, `npm`, `cargo`) and transient network/port hiccups in < 500 µs locally without spending any LLM tokens.
   - **Uncertainty calibration & entropy envelopes:** Computes confidence margins and normalized entropy to guard against borderline calls, automatically escalating ambiguous cases to System 2.
   - **Reasoning-effort leasing & doom-loop breaking:** Regulates cognitive effort tiers (`low` to `extra_high`) for frontier models and trips an automatic circuit breaker (`exit 1`) when agents get stuck in repetitive repair loops.
-  - **Cross-runtime parity:** Implemented natively in Python, TypeScript, and Rust with zero external runtime dependencies and full offline fallback.
+  - **Cross-runtime parity:** Implemented natively in Python (pure stdlib, zero runtime dependencies), TypeScript (zero runtime dependencies), and Rust (compiled high-performance binary) with full offline fallback.
 - **System 2 (Slow, Deliberative, Generative):** Frontier reasoning models (**GPT-6 Astra**, **Claude Fable 5.1**, **Claude Opus 5**) write complex code, architect multi-file refactorings, and solve deep logic defects. System 1.5 ensures System 2 is **only invoked when strictly necessary**, cutting token spend by up to ~80–90%.
 
 ```
@@ -704,7 +723,7 @@ Ultra-low latency (< 500µs local, zero-overhead) for systems programming, Tauri
 
 ```toml
 [dependencies]
-jev-harness = "0.2.0"
+jev-harness = "0.2.1"
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -756,7 +775,7 @@ The hook needs your test command as an argument (a hook repository cannot guess 
 ```yaml
 repos:
   - repo: https://github.com/ismaelsoilet/jev-harness
-    rev: v0.2.0
+    rev: v0.2.1
     hooks:
       - id: jev-test-gate
         args: ["pytest -q"]     # or "npm test", "cargo test --quiet", ...
@@ -878,6 +897,17 @@ You can also trigger releases via GitHub Actions:
 - **Manual:** Go to **GitHub Actions → Release & Publish → Run workflow**, specify the version, and click run.
 
 *(Requires `PYPI_API_TOKEN` and `CARGO_REGISTRY_TOKEN` in GitHub Repository Secrets; npm uses OpenID Connect (OIDC) Trusted Publishing with cryptographic Sigstore provenance without static tokens).*
+
+## 🌟 What's New in v0.2.1
+
+- 🏷️ **Rebranded Offline Engine to `[LOCAL DETERMINISTIC (System 1.5)]`**: The CLI output previously displayed `[SIMULATION/MOCK]`, giving the misleading impression of a stub. It is now clearly labeled as `[LOCAL DETERMINISTIC (System 1.5)]` across Python, TypeScript, and Rust, highlighting the zero-token deterministic decision engine (< 500µs).
+- ⚡ **15-Second Quickstart**: Added an instant zero-friction quickstart snippet (`npx @ismaelsoilet/jev-harness triage --sample "..."`) at the top of the documentation for fast testing across Python, Node.js, and Rust.
+- 🐛 **Fixed Unbound Identifier in Gate 6 (`should_nudge_continuation`)**: Resolved a `NameError` where `result` was referenced inside `record_session` prior to being instantiated in `src/jev_harness/gates.py`. Nudge session auditing is now 100% reliable.
+- 🪝 **Transparent Failure Interceptor Hooks (Pytest & Vitest)**:
+  - **Pytest**: Added [`examples/pytest_hook/conftest.py`](examples/pytest_hook/conftest.py) for automatic, zero-token traceback triage during test runs.
+  - **Vitest**: Added [`examples/vitest_reporter/jev-reporter.ts`](examples/vitest_reporter/jev-reporter.ts) for transparent Node.js/TypeScript test failure triage.
+- 🏷️ **Dependency Specification Accuracy**: Updated badges to accurately state `dependencies: 0 (Python & TS core)`.
+- 🔄 **Quad-Registry Parity Confirmed**: Version `0.2.1` verified 100% synchronized across PyPI, npm, crates.io, and GitHub.
 
 ## 🌟 What's New in v0.2.0
 

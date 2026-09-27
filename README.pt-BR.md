@@ -13,7 +13,7 @@
   <a href="https://github.com/ismaelsoilet/jev-harness/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="Licença MIT"></a>
   <a href="https://typesafe.ai"><img src="https://img.shields.io/badge/powered%20by-TypeSafe%20Jev%20System%20One-orange.svg" alt="TypeSafe Jev"></a>
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-Compatible-purple.svg" alt="Compatível com MCP"></a>
-  <a href="#"><img src="https://img.shields.io/badge/dependencies-0%20(pure%20stdlib)-success.svg" alt="Zero Dependências"></a>
+  <a href="#"><img src="https://img.shields.io/badge/dependências-0%20(Python%20e%20TS%20core)-success.svg" alt="Zero Dependências no Core Python e TS"></a>
   <a href="docs/system_1_5/SYSTEM_1_5_IMPLEMENTATION.md"><img src="https://img.shields.io/badge/architecture-System%201.5%20Layer-8A2BE2.svg" alt="Arquitetura System 1.5"></a>
 </p>
 
@@ -23,7 +23,7 @@
 
 > **Pare de queimar 50.000 tokens de fronteira com pacotes ausentes, instabilidades de rede efêmeras e loops circulares da desgraça (doom loops).**
 >
-> `jev-harness` é um otimizador de tokens ultra-rápido com zero dependências externas, porta de triagem de erros de testes e guardrail semântico para agentes autônomos de codificação com IA (OpenCode, Command Code, Claude Code, Cursor, Antigravity IDE, Windsurf, Zed e Pi). Desenvolvido sobre o modelo de decisão não-autorregressivo **TypeSafe AI Jev System One**.
+> `jev-harness` é um otimizador de tokens ultra-rápido, determinístico por design, porta de triagem de erros de testes e guardrail semântico para agentes autônomos de codificação com IA (OpenCode, Command Code, Claude Code, Cursor, Antigravity IDE, Windsurf, Zed e Pi). Combina heurísticas determinísticas locais instantâneas a 0 tokens (< 500µs) com micro-decisões opcionais em nuvem via **TypeSafe AI Jev System One**.
 >
 > 🤖 **Operando como Agente de IA?** Você **DEVE** ler o [`AGENTS.md`](AGENTS.md) ([Português](AGENTS.pt-BR.md)) antes de executar tarefas, e consultar o nosso [**Guia de Integração Universal para Agentes**](docs/AGENT_INTEGRATION_GUIDE.pt-BR.md) para plugar o harness no seu projeto em 2 minutos.
 >
@@ -36,6 +36,25 @@
 - [O Problema](#-o-problema) · [Como Funciona](#-como-funciona-sistema-1--sistema-15--sistema-2) · [Onde se Encaixa](#-onde-ele-se-encaixa-a-camada-de-decisão-system-15) · [Recursos](#-recursos) · [Início Rápido](#-início-rápido) · [CLI](#-uso-da-linha-de-comando-cli) · [Astra-Jev](#-astra-jev-governança-dinâmica-de-esforço-de-raciocínio-modelos-de-fronteira-2026) · [Integrações](#-integrações-universais-com-agentes-e-ides) · [SDKs](#-python-sdk) ([TS](#-typescript--javascript-sdk--cli), [Rust](#-rust-crate--standalone-cli)) · [Git & CI](#-guardrails-para-git--cicd) · [Economia e Benchmarks](#-economia-e-benchmarks-fronteira-setembro-de-2026) · [Arquitetura & Roadmap](#-arquitetura--roadmap) · [Changelog](#-o-que-há-de-novo-na-v020)
 
 </details>
+
+---
+
+## ⚡ Início Rápido em 15 Segundos
+
+Comece a usar em segundos em qualquer stack — zero dependências externas e zero chaves de API necessárias para o modo determinístico local:
+
+```bash
+# 1. Teste instantaneamente sem instalar (zero custo de tokens, sem necessidade de API key)
+npx @ismaelsoilet/jev-harness triage --sample "ModuleNotFoundError: No module named 'pytest'"
+
+# 2. Ou instale no seu ecossistema preferido:
+pip install jev-harness                 # Python (CLI + SDK)
+npm install @ismaelsoilet/jev-harness   # Node.js (CLI + SDK)
+cargo install jev-harness               # Rust (CLI standalone 'jev')
+
+# 3. Verifique a saúde e o modo ativo do motor:
+jev-harness status
+```
 
 ---
 
@@ -61,7 +80,7 @@ O paradigma cognitivo de Daniel Kahneman aplicado à engenharia de agentes, com 
   - **Curto-circuitos determinísticos e recuperação estruturada:** Diagnostica instantaneamente dependências ausentes (`pip`, `npm`, `cargo`) e instabilidades efêmeras de rede/porta em < 500 µs locais sem gastar nenhum token de LLM.
   - **Calibração de incerteza e envelopes de entropia:** Calcula margem de confiança e entropia normalizada para proteger contra decisões limítrofes, escalando casos ambíguos para o Sistema 2.
   - **Leasing de esforço de raciocínio e quebra de doom loops:** Regula tiers de esforço cognitivo (`low` a `extra_high`) para modelos de fronteira e aciona o disjuntor semântico (`exit 1`) quando o agente entra em ciclos circulares de repetição.
-  - **Paridade nativa entre runtimes:** Implementado nativamente em Python, TypeScript e Rust com zero dependências externas de runtime e fallback offline completo.
+  - **Paridade nativa entre runtimes:** Implementado nativamente em Python (stdlib pura, zero dependências de runtime), TypeScript (zero dependências de runtime) e Rust (binário compilado de alta performance) com fallback offline completo.
 - **Sistema 2 (Lento, Deliberativo, Generativo):** LLMs de fronteira de alto raciocínio (**GPT-6 Astra**, **Claude Fable 5.1**, **Claude Opus 5**) escrevem código, realizam refatorações multi-arquivos e solucionam defeitos lógicos profundos. O Sistema 1.5 garante que o Sistema 2 **só seja acionado quando estritamente necessário**, reduzindo o gasto de tokens em até ~80–90%.
 
 ```
@@ -660,7 +679,7 @@ Latência ultra-baixa (< 500µs local, zero-overhead) para Tauri, ferramentas de
 
 ```toml
 [dependencies]
-jev-harness = "0.2.0"
+jev-harness = "0.2.1"
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -686,7 +705,7 @@ O hook exige o seu comando de teste como argumento (um repositório de hooks nã
 ```yaml
 repos:
   - repo: https://github.com/ismaelsoilet/jev-harness
-    rev: v0.2.0
+    rev: v0.2.1
     hooks:
       - id: jev-test-gate
         args: ["pytest -q"]     # ou "npm test", "cargo test --quiet", ...
@@ -747,6 +766,17 @@ Quando o `--mock` (ou nenhuma credencial) está ativo, todos os gates rodam loca
 > ⚡ **Reproduzir / zero-overhead:** o Rust assegura o orçamento em `packages/rust/tests/gates_test.rs` (`cargo test --test gates_test -- --nocapture`); Os valores de Python e TypeScript são uma **amostra pontual** (23/09/2026, este host, cliente mock forçado in-process), não uma asserção de CI. Re-meça no seu hardware antes de citar; o **orçamento**, não o microssegundo exato, é o contrato. Canalizar executores de teste pelos gates continua adicionando overhead muito abaixo da percepção humana.
 
 ---
+
+## 🌟 O que há de Novo na v0.2.1
+
+- 🏷️ **Rebranding do Motor Offline para `[LOCAL DETERMINISTIC (System 1.5)]`**: A saída do CLI exibia anteriormente `[SIMULATION/MOCK]`, passando a falsa impressão de um mock stub. Agora é formalmente rotulado como `[LOCAL DETERMINISTIC (System 1.5)]` em Python, TypeScript e Rust, evidenciando o motor determinístico local a zero tokens (< 500µs).
+- ⚡ **Início Rápido em 15 Segundos**: Adicionado snippet de experimentação instantânea sem fricção (`npx @ismaelsoilet/jev-harness triage --sample "..."`) no topo da documentação para testes ágeis em Python, Node.js e Rust.
+- 🐛 **Correção de Identificador Unbound no Gate 6 (`should_nudge_continuation`)**: Resolvido `NameError` onde `result` era referenciado dentro de `record_session` antes de sua instanciação em `src/jev_harness/gates.py`. A auditoria de sessão de nudges agora é 100% confiável.
+- 🪝 **Hooks Transparentes de Intercepção de Testes (Pytest e Vitest)**:
+  - **Pytest**: Adicionado [`examples/pytest_hook/conftest.py`](examples/pytest_hook/conftest.py) para triagem automática a zero tokens durante a execução de testes.
+  - **Vitest**: Adicionado [`examples/vitest_reporter/jev-reporter.ts`](examples/vitest_reporter/jev-reporter.ts) para triagem transparente de testes em Node.js/TypeScript.
+- 🏷️ **Precisão na Declaração de Dependências**: Badges atualizados para `dependências: 0 (Python e TS core)`.
+- 🔄 **Paridade Quad-Manifest Confirmada**: Versão `0.2.1` verificada e 100% sincronizada entre PyPI, npm, crates.io e GitHub.
 
 ## 🌟 O que há de Novo na v0.2.0
 
