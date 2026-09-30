@@ -1007,3 +1007,13 @@ def should_nudge_continuation(
             pass
 
     return result
+
+
+# Convenience aliases matching MCP tool names and agent conventions
+route_task = route_model_tier
+evaluate_nudge = should_nudge_continuation
+triage_error = triage_test_failure
+
+RouteTaskResult = ModelRouteResult
+EvaluateNudgeResult = NudgeGateResult
+TriageErrorResult = TestTriageResult

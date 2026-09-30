@@ -489,6 +489,64 @@ class TestProviderResilienceAgainstRealServer(unittest.TestCase):
         resp = client.system_one("é" * (MAX_STATE_CHARS - 1), {"q": client_mod.NoulQuestion("x")})
         self.assertTrue(resp.is_mock)  # accepted by the guard, degraded by the dead endpoint
 
+    def test_opencode_zen_401_model_error(self):
+        model_err_json = json.dumps({
+            "type": "error",
+            "error": {
+                "type": "ModelError",
+                "message": "Model typesafe/jev is not supported",
+            },
+        })
+        server, url = self._serve([(401, model_err_json, None), (401, model_err_json, None)])
+        try:
+            client = JevClient(provider="opencode", api_key="test-key", retry_base_delay=0.0, max_retries=1, fail_open=True)
+            client.base_url = url
+            resp = client.system_one("state", self._questions(client))
+            self.assertTrue(resp.is_mock)
+            self.assertEqual(resp.degraded_reason, "auth_401")
+
+            client_closed = JevClient(provider="opencode", api_key="test-key", retry_base_delay=0.0, max_retries=1, fail_open=False)
+            client_closed.base_url = url
+            with self.assertRaises(RuntimeError) as cm:
+                client_closed.system_one("state", self._questions(client_closed))
+            self.assertIn("jev-1.13-free", str(cm.exception))
+        finally:
+            server.shutdown()
+
+    def test_force_mock_env_vars(self):
+        prev_force_mock = os.getenv("JEV_FORCE_MOCK")
+        prev_provider = os.getenv("JEV_PROVIDER")
+        try:
+            os.environ["JEV_FORCE_MOCK"] = "true"
+            if "JEV_PROVIDER" in os.environ:
+                del os.environ["JEV_PROVIDER"]
+            c1 = JevClient(provider="opencode")
+            self.assertTrue(c1.force_mock)
+            self.assertFalse(c1.is_live)
+            resp1 = c1.system_one("state", self._questions(c1))
+            self.assertTrue(resp1.is_mock)
+
+            del os.environ["JEV_FORCE_MOCK"]
+            os.environ["JEV_PROVIDER"] = "mock"
+            c2 = JevClient()
+            self.assertTrue(c2.force_mock)
+            self.assertFalse(c2.is_live)
+            resp2 = c2.system_one("state", self._questions(c2))
+            self.assertTrue(resp2.is_mock)
+        finally:
+            if prev_force_mock is not None:
+                os.environ["JEV_FORCE_MOCK"] = prev_force_mock
+            elif "JEV_FORCE_MOCK" in os.environ:
+                del os.environ["JEV_FORCE_MOCK"]
+            if prev_provider is not None:
+                os.environ["JEV_PROVIDER"] = prev_provider
+            elif "JEV_PROVIDER" in os.environ:
+                del os.environ["JEV_PROVIDER"]
+
+    def test_opencode_legacy_model_fallback(self):
+        c = JevClient(provider="opencode", model="typesafe/jev")
+        self.assertEqual(c.model, "jev-1.13-free")
+
 
 if __name__ == "__main__":
     unittest.main()

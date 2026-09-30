@@ -708,3 +708,8 @@ export async function shouldNudgeContinuation(
     degradedReason: resp.degradedReason ?? "",
   };
 }
+
+// Convenience aliases matching MCP tool names and agent conventions
+export const routeTask = routeModelTier;
+export const evaluateNudge = shouldNudgeContinuation;
+export const triageError = triageTestFailure;

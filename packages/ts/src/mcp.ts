@@ -11,7 +11,7 @@ import {
 
 const PROTOCOL_VERSION = "2024-11-05";
 const SERVER_NAME = "jev-harness";
-const SERVER_VERSION = "0.2.1";
+const SERVER_VERSION = "0.2.2";
 
 export const MCP_TOOL_ANNOTATIONS = {
   readOnlyHint: true,

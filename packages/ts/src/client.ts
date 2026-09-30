@@ -27,7 +27,7 @@ export const DEFAULT_MODEL = "jev-latest";
 export const MAX_STATE_CHARS = 128000;
 export const MAX_TOTAL_CHARS = 256000;
 
-export const DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.2.1; +https://github.com/ismaelsoilet/jev-harness)";
+export const DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.2.2; +https://github.com/ismaelsoilet/jev-harness)";
 
 /**
  * Mock distribution contract (E3.9). Mirrored in `src/jev_harness/client.py` and
@@ -262,6 +262,7 @@ export function looksLikeTestSuccess(log: string): boolean {
 }
 
 export class JevClient {
+  private static hasWarnedOpenCodeModelNormalization = false;
   public apiKey?: string;
   public provider: string;
   public baseUrl: string;
@@ -276,14 +277,20 @@ export class JevClient {
 
   constructor(options: JevClientOptions = {}) {
     this.timeoutMs = options.timeoutMs ?? 15000;
-    this.forceMock = options.forceMock ?? false;
     this.maxRetries = Math.max(1, options.maxRetries ?? 3);
     this.retryBaseDelayMs = Math.max(0, options.retryBaseDelayMs ?? 500);
     this.failOpen = options.failOpen ?? true;
 
-    const { key, provider } = this.resolveCredentials(options.apiKey);
-    this.apiKey = key;
-    this.provider = options.provider || provider;
+    const creds = this.resolveCredentials(options.apiKey);
+    this.apiKey = creds.key;
+    this.provider = options.provider || creds.provider;
+
+    const envForceMock = typeof process !== "undefined" && process.env && (
+      process.env.JEV_FORCE_MOCK === "true" ||
+      process.env.JEV_FORCE_MOCK === "1" ||
+      process.env.JEV_PROVIDER === "mock"
+    );
+    this.forceMock = options.forceMock ?? Boolean(creds.forceMock || this.provider === "mock" || envForceMock);
 
     if (options.baseUrl) {
       this.baseUrl = options.baseUrl;
@@ -330,6 +337,17 @@ export class JevClient {
       this.model = DEFAULT_MODEL;
       this.modelSource = "provider_default";
     }
+
+    // Defensive fallback: OpenCode Zen free tier does not support legacy 'typesafe/jev'
+    if (this.provider === "opencode" && this.model === "typesafe/jev") {
+      this.model = "jev-1.13-free";
+      if (!JevClient.hasWarnedOpenCodeModelNormalization) {
+        process.stderr.write(
+          `[JEV INFO] OpenCode Zen não suporta 'typesafe/jev'. Normalizando automaticamente para 'jev-1.13-free'.\n`
+        );
+        JevClient.hasWarnedOpenCodeModelNormalization = true;
+      }
+    }
   }
 
   public get isLive(): boolean {
@@ -338,7 +356,18 @@ export class JevClient {
     return Boolean(this.apiKey);
   }
 
-  private resolveCredentials(explicitKey?: string): { key?: string; provider: string } {
+  private resolveCredentials(explicitKey?: string): { key?: string; provider: string; forceMock?: boolean } {
+    // 0. Air-gapped CI / offline env override
+    if (typeof process !== "undefined" && process.env) {
+      if (
+        process.env.JEV_FORCE_MOCK === "true" ||
+        process.env.JEV_FORCE_MOCK === "1" ||
+        process.env.JEV_PROVIDER === "mock"
+      ) {
+        return { key: undefined, provider: "mock", forceMock: true };
+      }
+    }
+
     if (explicitKey) return { key: explicitKey, provider: "typesafe" };
 
     // 1. Environment variables
@@ -433,7 +462,17 @@ export class JevClient {
   ): Promise<JevResponse> {
     const rawState = typeof state === "string" ? state : JSON.stringify(state);
     const stateStr = redactSecrets(rawState);
-    const chosenModel = overrideModel || this.model;
+    let chosenModel = overrideModel || this.model;
+
+    if (this.provider === "opencode" && chosenModel === "typesafe/jev") {
+      chosenModel = "jev-1.13-free";
+      if (!JevClient.hasWarnedOpenCodeModelNormalization) {
+        process.stderr.write(
+          `[JEV INFO] OpenCode Zen não suporta 'typesafe/jev'. Normalizando automaticamente para 'jev-1.13-free'.\n`
+        );
+        JevClient.hasWarnedOpenCodeModelNormalization = true;
+      }
+    }
 
     if (!this.isLive) {
       return this.simulateSystemOne(stateStr, questions, chosenModel);
@@ -501,9 +540,36 @@ export class JevClient {
         if (!resp.ok) {
           const errText = JevClient.redactSecrets(await resp.text(), this.apiKey);
           if (resp.status === 401 || resp.status === 403) {
-            const authMessage = `${providerName} auth failed (HTTP ${resp.status})`;
-            if (!this.failOpen) throw new Error(authMessage);
-            process.stderr.write(`[JEV WARNING] ${authMessage}; falling back to offline simulation.\n`);
+            let isModelError = false;
+            let modelErrMsg = "";
+
+            if (this.provider === "opencode") {
+              try {
+                const parsed = JSON.parse(errText);
+                const errObj = parsed?.error || parsed;
+                const errType = errObj?.type || parsed?.type;
+                const msg = errObj?.message || parsed?.message || (typeof errObj === "string" ? errObj : "");
+                if (errType === "ModelError" || /is not supported/i.test(msg) || /is not supported/i.test(errText)) {
+                  isModelError = true;
+                  modelErrMsg = msg || `Model ${chosenModel} is not supported`;
+                }
+              } catch {
+                if (errText.includes("ModelError") || /is not supported/i.test(errText)) {
+                  isModelError = true;
+                  modelErrMsg = `Model ${chosenModel} is not supported`;
+                }
+              }
+            }
+
+            if (isModelError) {
+              const warningMsg = `OpenCode Zen: ${modelErrMsg}. Suporte gratuito utiliza 'jev-1.13-free'.`;
+              if (!this.failOpen) throw new Error(warningMsg);
+              process.stderr.write(`[JEV WARNING] ${warningMsg} Alternando para simulação offline.\n`);
+            } else {
+              const authMessage = `${providerName} auth failed (HTTP ${resp.status})`;
+              if (!this.failOpen) throw new Error(authMessage);
+              process.stderr.write(`[JEV WARNING] ${authMessage}; falling back to offline simulation.\n`);
+            }
             return this.markDegraded(this.simulateSystemOne(stateStr, questions, chosenModel), `auth_${resp.status}`);
           }
           const retryable = resp.status === 429 || resp.status >= 500;

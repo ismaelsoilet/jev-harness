@@ -1,6 +1,6 @@
 # 🛡️ Testes Exaustivos, Verificação Adversarial e Honestidade Absoluta
 
-> **Documento Oficial de Engenharia — Versão: v0.2.1**  
+> **Documento Oficial de Engenharia — Versão: v0.2.2**  
 > *Diretrizes Inegociáveis de Qualidade para Agentes de IA.*
 
 ---

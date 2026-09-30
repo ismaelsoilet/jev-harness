@@ -1,6 +1,6 @@
 # 🔌 Padrões de Qualidade MCP e Diretrizes TDQS (Glama A+)
 
-> **Documento Oficial de Engenharia — Versão: v0.2.1**  
+> **Documento Oficial de Engenharia — Versão: v0.2.2**  
 > *Diretrizes Estritas para Definição de Ferramentas Model Context Protocol (MCP) e Conformidade com o Tool Definition Quality Score (TDQS).*
 
 ---

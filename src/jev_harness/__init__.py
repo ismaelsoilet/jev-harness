@@ -3,7 +3,7 @@ Jev System One Decision Harness & Token Optimizer.
 Fast, non-autoregressive semantic decisions for AI coding agents.
 """
 
-__version__ = "0.2.1"
+__version__ = "0.2.2"
 __author__ = "Ismael Hosni Soilet de Lima"
 __license__ = "MIT"
 
@@ -28,15 +28,20 @@ from .client import (
 )
 from .gates import (
     AbortGateResult,
+    EvaluateNudgeResult,
     ModelRouteResult,
     NudgeGateResult,
     ReasoningEffortResult,
+    RouteTaskResult,
     TestTriageResult,
-    VerificationResult,
+    TriageErrorResult,
+    evaluate_nudge,
     modulate_reasoning_effort,
     route_model_tier,
+    route_task,
     should_abort_trajectory,
     should_nudge_continuation,
+    triage_error,
     triage_test_failure,
     verify_step_completion,
 )
@@ -59,15 +64,21 @@ __all__ = [
     "AnswerType",
     "JevResponse",
     "triage_test_failure",
+    "triage_error",
     "TestTriageResult",
+    "TriageErrorResult",
     "should_abort_trajectory",
     "AbortGateResult",
     "route_model_tier",
+    "route_task",
     "ModelRouteResult",
+    "RouteTaskResult",
     "verify_step_completion",
     "VerificationResult",
     "modulate_reasoning_effort",
     "ReasoningEffortResult",
     "should_nudge_continuation",
+    "evaluate_nudge",
     "NudgeGateResult",
+    "EvaluateNudgeResult",
 ]

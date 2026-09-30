@@ -304,3 +304,109 @@ test("E3.5 credential-shaped material is masked before the state leaves the proc
   }
   assert.equal(redactSecrets("AssertionError: assert 4 == 5"), "AssertionError: assert 4 == 5");
 });
+
+test("OpenCode Zen 401 ModelError parses JSON and formats friendly warning", async () => {
+  const modelErrJson = JSON.stringify({
+    type: "error",
+    error: {
+      type: "ModelError",
+      message: "Model typesafe/jev is not supported",
+    },
+  });
+
+  const warnings: string[] = [];
+  const originalStderr = process.stderr.write;
+  process.stderr.write = ((chunk: any) => {
+    warnings.push(String(chunk));
+    return true;
+  }) as any;
+
+  try {
+    await withFetch(
+      async () => new Response(modelErrJson, { status: 401, headers: { "content-type": "application/json" } }),
+      async () => {
+        const c = new JevClient({ provider: "opencode", failOpen: true, maxRetries: 1 });
+        const resp = await c.systemOne("state", { q: { type: "noul", instructions: "x" } } as any);
+        assert.equal(resp.isMock, true);
+        assert.equal(resp.degradedReason, "auth_401");
+        assert.ok(
+          warnings.some((w) =>
+            w.includes("OpenCode Zen: Model typesafe/jev is not supported. Suporte gratuito utiliza 'jev-1.13-free'.")
+          )
+        );
+      }
+    );
+
+    await withFetch(
+      async () => new Response(modelErrJson, { status: 401, headers: { "content-type": "application/json" } }),
+      async () => {
+        const c = new JevClient({ provider: "opencode", failOpen: false, maxRetries: 1 });
+        await assert.rejects(
+          () => c.systemOne("state", { q: { type: "noul", instructions: "x" } } as any),
+          /Suporte gratuito utiliza 'jev-1.13-free'/
+        );
+      }
+    );
+  } finally {
+    process.stderr.write = originalStderr;
+  }
+});
+
+test("JEV_PROVIDER=mock or JEV_FORCE_MOCK=true suppresses network requests", async () => {
+  const prevForceMock = process.env.JEV_FORCE_MOCK;
+  const prevProvider = process.env.JEV_PROVIDER;
+
+  let fetchCalled = false;
+  await withFetch(
+    async () => {
+      fetchCalled = true;
+      throw new Error("Network should not be touched in forced mock mode");
+    },
+    async () => {
+      // Test 1: JEV_FORCE_MOCK="true"
+      process.env.JEV_FORCE_MOCK = "true";
+      delete process.env.JEV_PROVIDER;
+
+      const c1 = new JevClient({ provider: "opencode" });
+      assert.equal(c1.forceMock, true);
+      assert.equal(c1.isLive, false);
+      const resp1 = await c1.systemOne("state", { q: { type: "noul", instructions: "x" } } as any);
+      assert.equal(resp1.isMock, true);
+      assert.equal(fetchCalled, false);
+
+      // Test 2: JEV_PROVIDER="mock"
+      delete process.env.JEV_FORCE_MOCK;
+      process.env.JEV_PROVIDER = "mock";
+
+      const c2 = new JevClient();
+      assert.equal(c2.forceMock, true);
+      assert.equal(c2.isLive, false);
+      const resp2 = await c2.systemOne("state", { q: { type: "noul", instructions: "x" } } as any);
+      assert.equal(resp2.isMock, true);
+      assert.equal(fetchCalled, false);
+    }
+  );
+
+  if (prevForceMock !== undefined) process.env.JEV_FORCE_MOCK = prevForceMock;
+  else delete process.env.JEV_FORCE_MOCK;
+
+  if (prevProvider !== undefined) process.env.JEV_PROVIDER = prevProvider;
+  else delete process.env.JEV_PROVIDER;
+});
+
+test("OpenCode Zen legacy model typesafe/jev falls back to jev-1.13-free with informative log", () => {
+  const infos: string[] = [];
+  const originalStderr = process.stderr.write;
+  process.stderr.write = ((chunk: any) => {
+    infos.push(String(chunk));
+    return true;
+  }) as any;
+
+  try {
+    const c = new JevClient({ provider: "opencode", model: "typesafe/jev" });
+    assert.equal(c.model, "jev-1.13-free");
+    assert.ok(infos.some((msg) => msg.includes("OpenCode Zen não suporta 'typesafe/jev'")));
+  } finally {
+    process.stderr.write = originalStderr;
+  }
+});

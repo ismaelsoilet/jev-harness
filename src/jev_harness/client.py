@@ -37,7 +37,7 @@ DEFAULT_MODEL = "jev-latest"
 # Characters are a conservative proxy (~4 chars/token) with no external tokenizer.
 MAX_STATE_CHARS = 128_000
 MAX_TOTAL_CHARS = 256_000
-DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.2.1; +https://github.com/ismaelsoilet/jev-harness)"
+DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; JevHarness/0.2.2; +https://github.com/ismaelsoilet/jev-harness)"
 
 # Success summaries emitted by common runners when a suite is green. Used to short-circuit
 # triage: a passing run must never be escalated, and it must never cost an API call.
@@ -435,7 +435,7 @@ class JevClient:
         cache: bool = False,
     ):
         self.timeout = timeout
-        self.force_mock = force_mock
+        env_force_mock = os.getenv("JEV_FORCE_MOCK", "").lower() in ("true", "1") or os.getenv("JEV_PROVIDER") == "mock"
         self.max_retries = max(1, int(max_retries))
         self.retry_base_delay = max(0.0, float(retry_base_delay))
         self.fail_open = bool(fail_open)
@@ -446,6 +446,7 @@ class JevClient:
         resolved_key, resolved_provider = self._resolve_credentials()
         self.provider = provider or resolved_provider
         self.api_key = api_key or resolved_key
+        self.force_mock = bool(force_mock or env_force_mock or self.provider == "mock")
 
         # Configure URL and model based on provider
         if base_url:
@@ -492,9 +493,17 @@ class JevClient:
             self.model = DEFAULT_MODEL
             self.model_source = "provider_default"
 
+        # Defensive fallback: OpenCode Zen free tier does not support legacy 'typesafe/jev'
+        if self.provider == "opencode" and self.model == "typesafe/jev":
+            self.model = "jev-1.13-free"
+
     @staticmethod
     def _resolve_credentials() -> tuple[Optional[str], str]:
         """Resolves API key and provider using hierarchical cascade."""
+        # 0. Air-gapped CI / offline env override
+        if os.getenv("JEV_FORCE_MOCK", "").lower() in ("true", "1") or os.getenv("JEV_PROVIDER") == "mock":
+            return None, "mock"
+
         # 1. Environment variables
         if os.getenv("JEV_PROVIDER") == "opencode":
             return os.getenv("OPENCODE_API_KEY"), "opencode"
@@ -617,6 +626,8 @@ class JevClient:
         # funnel through here). The guard below then measures the string that actually leaves.
         state_str = redact_secrets(state_str)
         chosen_model = model or self.model
+        if self.provider == "opencode" and chosen_model == "typesafe/jev":
+            chosen_model = "jev-1.13-free"
 
         # Fallback to simulation/mock if no key is configured or forced mock
         if not self.is_live:
@@ -720,6 +731,36 @@ class JevClient:
                     err_body = str(e)
                 err_body = self._redact_secrets(err_body, self.api_key)
                 if e.code in (401, 403):
+                    is_model_error = False
+                    model_err_msg = ""
+                    if self.provider == "opencode":
+                        try:
+                            parsed = json.loads(err_body)
+                            err_obj = parsed.get("error") if isinstance(parsed, dict) else parsed
+                            if isinstance(err_obj, dict):
+                                err_type = err_obj.get("type")
+                                msg = err_obj.get("message", "")
+                            else:
+                                err_type = parsed.get("type") if isinstance(parsed, dict) else None
+                                msg = str(err_obj) if err_obj else ""
+                            if err_type == "ModelError" or "is not supported" in str(msg).lower() or "is not supported" in err_body.lower():
+                                is_model_error = True
+                                model_err_msg = msg or f"Model {chosen_model} is not supported"
+                        except Exception:
+                            if "ModelError" in err_body or "is not supported" in err_body.lower():
+                                is_model_error = True
+                                model_err_msg = f"Model {chosen_model} is not supported"
+
+                    if is_model_error:
+                        warning_msg = f"OpenCode Zen: {model_err_msg}. Suporte gratuito utiliza 'jev-1.13-free'."
+                        if not self.fail_open:
+                            raise RuntimeError(warning_msg) from e
+                        sys.stderr.write(f"[JEV WARNING] {warning_msg} Alternando para simulação offline.\n")
+                        return self._mark_degraded(
+                            self._simulate_system_one(state_str, questions, chosen_model),
+                            f"auth_{e.code}",
+                        )
+
                     try:
                         return self._degrade_or_raise(
                             f"{provider_label} auth failed (HTTP {e.code})",

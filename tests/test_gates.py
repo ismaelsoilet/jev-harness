@@ -13,18 +13,25 @@ if _PKG_ROOT not in sys.path:
 from jev_harness.client import COMMANDCODE_API_URL, JevClient
 from jev_harness.gates import (
     AbortGateResult,
+    EvaluateNudgeResult,
     ModelRouteResult,
     NudgeGateResult,
     ReasoningEffortResult,
+    RouteTaskResult,
     TestTriageResult,
+    TriageErrorResult,
     VerificationResult,
+    evaluate_nudge,
     modulate_reasoning_effort,
     route_model_tier,
+    route_task,
     should_abort_trajectory,
     should_nudge_continuation,
+    triage_error,
     triage_test_failure,
     verify_step_completion,
 )
+import jev_harness
 
 
 class TestSemanticGates(unittest.TestCase):
@@ -254,6 +261,29 @@ class TestSemanticGates(unittest.TestCase):
         )
         self.assertFalse(res_done.should_nudge)
         self.assertEqual(res_done.workflow_phase, "complete")
+
+    def test_convenience_aliases(self):
+        self.assertIs(route_task, route_model_tier)
+        self.assertIs(evaluate_nudge, should_nudge_continuation)
+        self.assertIs(triage_error, triage_test_failure)
+        self.assertIs(jev_harness.route_task, jev_harness.route_model_tier)
+        self.assertIs(jev_harness.evaluate_nudge, jev_harness.should_nudge_continuation)
+        self.assertIs(jev_harness.triage_error, jev_harness.triage_test_failure)
+        self.assertIs(RouteTaskResult, ModelRouteResult)
+        self.assertIs(EvaluateNudgeResult, NudgeGateResult)
+        self.assertIs(TriageErrorResult, TestTriageResult)
+
+        task_res = route_task("Implement caching layer", client=self.client)
+        tier_res = route_model_tier("Implement caching layer", client=self.client)
+        self.assertEqual(task_res, tier_res)
+
+        nudge_res = evaluate_nudge("Agent completed phase 1", client=self.client)
+        should_nudge_res = should_nudge_continuation("Agent completed phase 1", client=self.client)
+        self.assertEqual(nudge_res, should_nudge_res)
+
+        triage_res = triage_error("ModuleNotFoundError: No module named 'numpy'", client=self.client)
+        orig_triage_res = triage_test_failure("ModuleNotFoundError: No module named 'numpy'", client=self.client)
+        self.assertEqual(triage_res, orig_triage_res)
 
 
 if __name__ == "__main__":

@@ -135,6 +135,9 @@ export interface NudgeGateResult {
 
 export type AbortCheckResult = AbortGateResult;
 export type StepVerificationResult = VerificationResult;
+export type RouteTaskResult = ModelRouteResult;
+export type EvaluateNudgeResult = NudgeGateResult;
+export type TriageErrorResult = TestTriageResult;
 
 export interface JevClientOptions {
   apiKey?: string;

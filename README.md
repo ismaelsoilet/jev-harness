@@ -723,7 +723,7 @@ Ultra-low latency (< 500µs local, zero-overhead) for systems programming, Tauri
 
 ```toml
 [dependencies]
-jev-harness = "0.2.1"
+jev-harness = "0.2.2"
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -775,7 +775,7 @@ The hook needs your test command as an argument (a hook repository cannot guess 
 ```yaml
 repos:
   - repo: https://github.com/ismaelsoilet/jev-harness
-    rev: v0.2.1
+    rev: v0.2.2
     hooks:
       - id: jev-test-gate
         args: ["pytest -q"]     # or "npm test", "cargo test --quiet", ...
